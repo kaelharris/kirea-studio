@@ -10,7 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="#quick-start"><img alt="Platform: Windows 10 / 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-4f7bfc?style=flat-square&labelColor=17171a" /></a>
+  <a href="https://github.com/kaelharris/kirea-studio/releases/latest"><img alt="Download Kirea Studio 1.0.1 for Windows" src="https://img.shields.io/badge/Download-1.0.1%20for%20Windows-4f7bfc?style=flat-square&labelColor=17171a" /></a>
+  <a href="#quick-start"><img alt="Platform: Windows 10 / 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-d9c9a8?style=flat-square&labelColor=17171a" /></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-d9c9a8?style=flat-square&labelColor=17171a" /></a>
   <img alt="Electron 45" src="https://img.shields.io/badge/Electron-45-d9c9a8?style=flat-square&labelColor=17171a" />
   <img alt="React 19" src="https://img.shields.io/badge/React-19-4f7bfc?style=flat-square&labelColor=17171a" />
@@ -64,6 +65,8 @@ Both modes talk only to loopback HTTP and WebSocket (`127.0.0.1:8188` by default
 ## Install
 
 Kirea Studio ships as a per-user NSIS installer for Windows 10/11 x64. There is no bundled model weight and no bundled Python environment: the installer contains the app, and the managed runtime is downloaded only if you choose it.
+
+**[Download Kirea Studio 1.0.1 for Windows](https://github.com/kaelharris/kirea-studio/releases/latest)** (138 MB, unsigned — verify the SHA-256 on the release page). It installs per user with Desktop and Start Menu shortcuts.
 
 To produce the installer from source:
 
@@ -159,7 +162,7 @@ Nothing is uploaded. There is no account system, no analytics, and no telemetry.
 
 ## Status
 
-Version **1.0.1** — a renderer polish release on top of the 1.0.0 studio. Typecheck is clean and 108 tests pass; the live end-to-end generation test is opt-in via `KIREA_E2E_COMFY_PATH`. The NSIS installer is built and smoke-tested on Windows 11 with an RTX 4070 Ti SUPER.
+Version **1.0.1** — a renderer polish release on top of the 1.0.0 studio. Typecheck is clean and 108 tests pass; the live end-to-end generation test is opt-in via `KIREA_E2E_COMFY_PATH`. The NSIS installer is built, smoke-tested, and published on the [releases page](https://github.com/kaelharris/kirea-studio/releases/latest).
 
 ## License
 
