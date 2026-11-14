@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-electron/
+release/
+release-build/
+*.tsbuildinfo
+
+# Logs and local artifacts
+*.log
+npm-debug.log*
+app-smoke-*.log
+.vite/
+coverage/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Local environment and secrets — never commit
+.env
+.env.*
+!.env.example

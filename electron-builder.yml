@@ -1,0 +1,38 @@
+appId: com.kireastudio.desktop
+productName: Kirea Studio
+copyright: Copyright © 2026 kaellabsstudio
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - assets/**/*
+  - src/splash.html
+  - LICENSE
+  - THIRD_PARTY_NOTICES.md
+  - package.json
+asarUnpack:
+  - node_modules/better-sqlite3/**/*
+  - node_modules/sharp/**/*
+  - node_modules/@img/**/*
+  - node_modules/7zip-bin/**/*
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  artifactName: Kirea-Studio-Setup-${version}-win-${arch}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Kirea Studio
+  menuCategory: Kirea Studio
+  uninstallDisplayName: Kirea Studio
+  deleteAppDataOnUninstall: false
+  runAfterFinish: true
+

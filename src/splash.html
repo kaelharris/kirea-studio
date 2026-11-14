@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+<title>Kirea Studio</title>
+<style>
+  :root {
+    --ink: #141A2E;
+    --gold: #A87E26;
+    --blue: #1E3BFF;
+    --muted: #4A5468;
+    --faint: #6A7185;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+    cursor: default;
+  }
+
+  .frame {
+    position: absolute;
+    inset: 0;
+    border-radius: 16px;
+    overflow: hidden;
+    background: #F4F1EA;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+    -webkit-app-region: drag;
+    animation: frame-in 700ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  }
+
+  .art {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform-origin: 62% 40%;
+    animation: drift 18s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+    -webkit-user-drag: none;
+  }
+
+  /* Airy veil that keeps the typography pristine over the garden */
+  .veil {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(90deg,
+      rgba(255, 255, 255, 0.95) 0%,
+      rgba(255, 255, 255, 0.88) 22%,
+      rgba(255, 255, 255, 0.58) 40%,
+      rgba(255, 255, 255, 0.00) 60%);
+  }
+
+  .content {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 54%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 0 26px 0 46px;
+  }
+
+  .wordmark {
+    margin: 0;
+    font-family: "Bodoni MT", Didot, "Playfair Display", Georgia, "Times New Roman", serif;
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-indent: 0.2em;
+    white-space: nowrap;
+    color: var(--ink);
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+  }
+
+  .edition {
+    margin: 8px 0 0;
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+    font-size: 9px;
+    letter-spacing: 0.3em;
+    text-indent: 0.3em;
+    color: var(--gold);
+    white-space: nowrap;
+  }
+
+  .rule {
+    margin-top: 13px;
+    width: 34px;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(168, 126, 38, 0.9), rgba(168, 126, 38, 0));
+  }
+
+  .status {
+    margin: 13px 0 0;
+    height: 12px;
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--muted);
+    opacity: 1;
+    transition: opacity 200ms ease;
+  }
+
+  .status.is-fading { opacity: 0.35; }
+
+  .progress {
+    margin-top: 12px;
+    width: 200px;
+  }
+
+  .track {
+    height: 2px;
+    border-radius: 999px;
+    background: rgba(20, 26, 46, 0.16);
+    overflow: hidden;
+  }
+
+  .fill {
+    width: 6%;
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(30, 59, 255, 0.5) 0%, #1E3BFF 62%, #6E84FF 100%);
+    box-shadow: 0 0 10px rgba(30, 59, 255, 0.35);
+    animation: load 3200ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+  }
+
+  .meta {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+    font-size: 8px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
+  .meta .blue { color: var(--blue); }
+
+  @keyframes frame-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes drift {
+    from { transform: scale(1.035); }
+    to { transform: scale(1.0); }
+  }
+
+  @keyframes load {
+    0% { width: 6%; }
+    35% { width: 42%; }
+    70% { width: 74%; }
+    100% { width: 94%; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .frame, .art, .fill { animation: none; }
+    .fill { width: 62%; }
+    .status { transition: none; }
+  }
+</style>
+</head>
+<body>
+  <main class="frame" role="status" aria-label="Kirea Studio is starting">
+    <img class="art" src="../assets/brand/splash-heavenly-garden.jpg" alt="The Kirea muse with a dove in a heavenly floral garden" draggable="false" />
+    <div class="veil" aria-hidden="true"></div>
+
+    <div class="content">
+      <h1 class="wordmark">KIREA STUDIO</h1>
+      <p class="edition">ATELIER EDITION &middot; v1.0.1</p>
+      <div class="rule" aria-hidden="true"></div>
+
+      <p class="status" id="status" aria-live="polite">Initializing neural workspace...</p>
+
+      <div class="progress" aria-hidden="true">
+        <div class="track"><div class="fill"></div></div>
+        <div class="meta">
+          <span>Local inference</span>
+          <span class="blue">No cloud</span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      var messages = [
+        "Initializing neural workspace...",
+        "Connecting to ComfyUI runtime...",
+        "Loading local model vaults..."
+      ];
+      var label = document.getElementById("status");
+      if (!label) return;
+      var index = 0;
+      window.setInterval(function () {
+        label.classList.add("is-fading");
+        window.setTimeout(function () {
+          index = (index + 1) % messages.length;
+          label.textContent = messages[index];
+          label.classList.remove("is-fading");
+        }, 220);
+      }, 1250);
+    })();
+  </script>
+</body>
+</html>
