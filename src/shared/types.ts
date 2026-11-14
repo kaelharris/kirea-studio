@@ -4,6 +4,7 @@ export type NavSection =
   | "create"
   | "characters"
   | "stories"
+  | "pixel"
   | "library"
   | "models"
   | "workflows"

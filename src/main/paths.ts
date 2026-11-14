@@ -15,6 +15,8 @@ export interface StudioPaths {
   inputUploadCacheDir: string;
   modelPreviewCacheDir: string;
   charactersDir: string;
+  pixelAssetsDir: string;
+  pixelExportsDir: string;
 }
 
 export function resolveStudioPaths(): StudioPaths {
@@ -34,6 +36,8 @@ export function resolveStudioPaths(): StudioPaths {
     inputUploadCacheDir: path.join(userDataDir, "cache", "inputs"),
     modelPreviewCacheDir: path.join(userDataDir, "model-previews"),
     charactersDir: path.join(userDataDir, "characters"),
+    pixelAssetsDir: path.join(userDataDir, "pixel-assets"),
+    pixelExportsDir: path.join(userDataDir, "pixel-exports"),
   };
 
   for (const dir of [
@@ -47,6 +51,8 @@ export function resolveStudioPaths(): StudioPaths {
     paths.inputUploadCacheDir,
     paths.modelPreviewCacheDir,
     paths.charactersDir,
+    paths.pixelAssetsDir,
+    paths.pixelExportsDir,
   ]) {
     fs.mkdirSync(dir, { recursive: true });
   }

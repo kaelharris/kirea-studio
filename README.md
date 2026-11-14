@@ -49,6 +49,8 @@ It is built for people who already run ComfyUI and want a workspace around it, a
 
 **Characters & Stories** — Identity profiles that inject prompt tokens, checkpoints, and LoRA recipes into every generation. Story Studio sequences scenes into a draft, and Story Canvas lays them out with overlays and exports to PNG or PDF.
 
+**Pixel Studio** — A separate, local game-asset workspace: seeded pixel generation for characters, creatures, items, tilesets, and effects; persistent character identities with four facings; a real frame timeline with playback, onion skin, and frame editing; a full pixel editor with crop and nearest-neighbour resize; version history; and exports to PNG, sprite sheets, GIF/APNG, ZIP, Godot `SpriteFrames`, and Unity/Phaser atlases. Rendering is deterministic and CPU-only, so it works without ComfyUI and leaves existing models untouched. See [Pixel Studio](docs/PIXEL_STUDIO.md).
+
 **Craft** — Dark, Light, and Match System themes on one token set; Manrope for UI and Geist Mono for technical text, using the fonts already bundled with the app. Generation progress, completion, and failure are announced to screen readers.
 
 ## Two ways to run the engine
@@ -154,6 +156,7 @@ Nothing is uploaded. There is no account system, no analytics, and no telemetry.
 | [Architecture](docs/ARCHITECTURE.md) | Process model, IPC boundary, generation pipeline, persistence, security |
 | [Development](docs/DEVELOPMENT.md) | Setup, scripts, dev loop, testing, packaging, troubleshooting |
 | [Runtime Compatibility](docs/RUNTIME_COMPATIBILITY.md) | Verified ComfyUI versions, isolation flags, VRAM profiles |
+| [Pixel Studio](docs/PIXEL_STUDIO.md) | Pixel engines, generation, timeline, editor, data model, exports, limitations |
 | [UI System Design](docs/UI_SYSTEM_DESIGN.md) | Tokens, typography, theme model, component rules |
 | [Test Report](docs/TEST_REPORT.md) | Coverage areas and verification notes |
 | [Release Notes](RELEASE_NOTES.md) | What changed in each version |
@@ -162,7 +165,7 @@ Nothing is uploaded. There is no account system, no analytics, and no telemetry.
 
 ## Status
 
-Version **1.0.1** — a renderer polish release on top of the 1.0.0 studio. Typecheck is clean and 108 tests pass; the live end-to-end generation test is opt-in via `KIREA_E2E_COMFY_PATH`. The NSIS installer is built, smoke-tested, and published on the [releases page](https://github.com/kaelharris/kirea-studio/releases/latest).
+Version **1.0.1** plus the Pixel Studio workspace. Typecheck is clean and 113 tests pass; the live end-to-end generation test is opt-in via `KIREA_E2E_COMFY_PATH`. Pixel Studio was exercised in the packaged app: generation, playback, editing, versioning, character facings, exports, and persistence. The NSIS installer is built, smoke-tested, and published on the [releases page](https://github.com/kaelharris/kirea-studio/releases/latest).
 
 ## License
 

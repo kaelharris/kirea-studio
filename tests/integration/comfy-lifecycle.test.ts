@@ -318,6 +318,8 @@ describe("ComfyUI HTTP/WS Integration Lifecycle", () => {
       inputUploadCacheDir: path.join(tmp, "inputs"),
       modelPreviewCacheDir: path.join(tmp, "model-previews"),
       charactersDir: path.join(tmp, "characters"),
+      pixelAssetsDir: path.join(tmp, "pixel-assets"),
+      pixelExportsDir: path.join(tmp, "pixel-exports"),
     };
     fs.mkdirSync(paths.logsDir, { recursive: true });
     fs.mkdirSync(paths.defaultOutputDir, { recursive: true });

@@ -81,13 +81,13 @@ function makeModelRecord(overrides: Partial<ModelRecord> = {}): ModelRecord {
 }
 
 describe("StudioDatabase & StudioRepository", () => {
-  it("initializes schema v5 and persists settings, images, collections, and prompts across restarts", () => {
+  it("initializes schema v6 and persists settings, images, collections, and prompts across restarts", () => {
     const dir = makeTempDir();
     const dbPath = path.join(dir, "studio.db");
 
     const db1 = new StudioDatabase(dbPath);
     expect(db1.recoveredFromCorruption).toBe(false);
-    expect(db1.getSchemaVersion()).toBe(5);
+    expect(db1.getSchemaVersion()).toBe(6);
 
     const repo1 = new StudioRepository(db1);
     repo1.upsertWorkflowMetadata(WORKFLOW_TEMPLATES);
@@ -208,14 +208,14 @@ describe("StudioDatabase & StudioRepository", () => {
 
     const db = new StudioDatabase(dbPath);
     expect(db.recoveredFromCorruption).toBe(true);
-    expect(db.getSchemaVersion()).toBe(5);
+    expect(db.getSchemaVersion()).toBe(6);
     db.close();
 
     const files = fs.readdirSync(dir);
     expect(files.some((f) => f.includes(".corrupt."))).toBe(true);
   });
 
-  it("upgrades an existing v1 database to v5 without losing v1 data", () => {
+  it("upgrades an existing v1 database to v6 without losing v1 data", () => {
     const dir = makeTempDir();
     const dbPath = path.join(dir, "studio.db");
 
@@ -243,7 +243,7 @@ describe("StudioDatabase & StudioRepository", () => {
     raw.close();
 
     const db = new StudioDatabase(dbPath);
-    expect(db.getSchemaVersion()).toBe(5);
+    expect(db.getSchemaVersion()).toBe(6);
 
     const tableNames = (
       db.db

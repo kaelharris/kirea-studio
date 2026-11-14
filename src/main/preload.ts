@@ -146,6 +146,32 @@ const api: KireaDesktopApi = {
   savePrompt: (record) => ipcRenderer.invoke("prompts:save", record),
   deletePrompt: (id) => ipcRenderer.invoke("prompts:delete", id),
 
+  // Pixel Studio
+  listPixelProjects: () => ipcRenderer.invoke("pixel:listProjects"),
+  savePixelProject: (input) => ipcRenderer.invoke("pixel:saveProject", input),
+  deletePixelProject: (id) => ipcRenderer.invoke("pixel:deleteProject", id),
+  listPixelCharacters: (projectId) => ipcRenderer.invoke("pixel:listCharacters", projectId),
+  savePixelCharacter: (input) => ipcRenderer.invoke("pixel:saveCharacter", input),
+  deletePixelCharacter: (id) => ipcRenderer.invoke("pixel:deleteCharacter", id),
+  generatePixelCharacterViews: (characterId, seed, width, height) =>
+    ipcRenderer.invoke("pixel:generateCharacterViews", characterId, seed, width, height),
+  listPixelAssets: (filters) => ipcRenderer.invoke("pixel:listAssets", filters),
+  getPixelAsset: (id) => ipcRenderer.invoke("pixel:getAsset", id),
+  generatePixelAsset: (input) => ipcRenderer.invoke("pixel:generateAsset", input),
+  importPixelAsset: (input) => ipcRenderer.invoke("pixel:importAsset", input),
+  savePixelAssetFrames: (assetId, frames, dimensions) =>
+    ipcRenderer.invoke("pixel:saveFrames", { assetId, frames, ...(dimensions ?? {}) }),
+  listPixelAssetVersions: (assetId) => ipcRenderer.invoke("pixel:listVersions", assetId),
+  renamePixelAsset: (id, name) => ipcRenderer.invoke("pixel:renameAsset", id, name),
+  duplicatePixelAsset: (id, name) => ipcRenderer.invoke("pixel:duplicateAsset", id, name),
+  deletePixelAsset: (id) => ipcRenderer.invoke("pixel:deleteAsset", id),
+  exportPixelAsset: (id, format, options) =>
+    ipcRenderer.invoke("pixel:exportAsset", { assetId: id, format, options }),
+  openPixelExportFolder: (assetId) =>
+    ipcRenderer.invoke("pixel:openExportFolder", assetId),
+  pickPixelReferenceImage: () => ipcRenderer.invoke("pixel:pickImage"),
+  getSpriteKilnReport: () => ipcRenderer.invoke("pixel:spriteKilnReport"),
+
   // Push events
   onRuntimeChanged: (cb) => subscribe("event:runtimeChanged", cb),
   onJobUpdated: (cb) => subscribe("event:jobUpdated", cb),

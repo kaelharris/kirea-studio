@@ -2,6 +2,7 @@ import {
   BookOpen,
   Compass,
   FolderKanban,
+  Grid3X3,
   Home,
   Layers,
   ListChecks,
@@ -117,6 +118,7 @@ export const NAV_ITEMS: Array<{
   { id: "explore", label: "Explore", icon: Compass },
   { id: "library", label: "Library", icon: FolderKanban },
   { id: "characters", label: "Characters", icon: Users },
+  { id: "pixel", label: "Pixel Studio", icon: Grid3X3 },
   { id: "stories", label: "Stories", icon: BookOpen },
   { id: "models", label: "Models", icon: Layers },
   { id: "workflows", label: "Workflows", icon: Workflow },
@@ -126,7 +128,7 @@ export const NAV_ITEMS: Array<{
 
 export const NAV_GROUPS: Array<{ label: string; items: NavSection[] }> = [
   { label: "Workspace", items: ["home", "create", "explore", "library"] },
-  { label: "Studio", items: ["characters", "stories", "models", "workflows"] },
+  { label: "Studio", items: ["characters", "pixel", "stories", "models", "workflows"] },
   { label: "System", items: ["queue", "settings"] },
 ];
 

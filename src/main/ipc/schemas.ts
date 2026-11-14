@@ -23,6 +23,7 @@ export const NavSectionSchema = z.enum([
   "library",
   "characters",
   "stories",
+  "pixel",
   "models",
   "workflows",
   "queue",
@@ -432,6 +433,132 @@ export const CivitaiStartDownloadSchema = z
     versionId: z.number().int().positive(),
   })
   .strict();
+
+export const PixelKindSchema = z.enum([
+  "character",
+  "creature",
+  "weapon",
+  "item",
+  "object",
+  "tileset",
+  "environment",
+  "effect",
+]);
+
+export const PixelPaletteIdSchema = z.enum(["kirea", "ember", "forest", "neon", "mono"]);
+export const PixelDirectionSchema = z.enum(["front", "back", "side"]);
+export const PixelExportFormatSchema = z.enum([
+  "png",
+  "sheet",
+  "gif",
+  "apng",
+  "zip",
+  "godot",
+  "unity",
+  "phaser",
+]);
+export const PixelIdSchema = z.string().min(1).max(64);
+
+export const PixelProjectInputSchema = z
+  .object({
+    id: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{1,64}$/, "Invalid pixel project identifier.")
+      .optional(),
+    name: z.string().trim().min(1).max(120),
+    description: z.string().max(2000).optional(),
+    width: z.number().int().min(8).max(256).optional(),
+    height: z.number().int().min(8).max(256).optional(),
+  })
+  .strict();
+
+export const PixelCharacterInputSchema = z
+  .object({
+    id: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{1,64}$/, "Invalid pixel character identifier.")
+      .optional(),
+    projectId: PixelIdSchema,
+    name: z.string().trim().min(1).max(120),
+    description: z.string().max(4000).optional(),
+    seed: z.number().int().min(0).max(4294967295).optional(),
+    paletteId: PixelPaletteIdSchema.optional(),
+    referenceAssetId: z.string().max(64).nullable().optional(),
+  })
+  .strict();
+
+export const PixelGenerateSchema = z
+  .object({
+    projectId: PixelIdSchema,
+    characterId: z.string().max(64).nullable().optional(),
+    kind: PixelKindSchema,
+    name: z.string().trim().min(1).max(120),
+    width: z.number().int().min(8).max(256),
+    height: z.number().int().min(8).max(256),
+    paletteId: PixelPaletteIdSchema,
+    seed: z.number().int().min(0).max(4294967295),
+    direction: PixelDirectionSchema.optional(),
+    prompt: z.string().max(4000).optional(),
+  })
+  .strict();
+
+export const PixelImportSchema = z
+  .object({
+    projectId: PixelIdSchema,
+    imageId: z.string().min(1).max(100),
+    name: z.string().trim().min(1).max(120),
+    width: z.number().int().min(8).max(256),
+    height: z.number().int().min(8).max(256),
+    paletteId: PixelPaletteIdSchema,
+    transparent: z.boolean().optional(),
+  })
+  .strict();
+
+export const PixelFrameInputSchema = z
+  .object({
+    index: z.number().int().min(0).max(255),
+    name: z.string().trim().min(1).max(60),
+    durationMs: z.number().int().min(1).max(60000),
+    dataUrl: z
+      .string()
+      .max(16_000_000)
+      .regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/, "Frame must be a base64 PNG."),
+  })
+  .strict();
+
+export const PixelSaveFramesSchema = z
+  .object({
+    assetId: PixelIdSchema,
+    frames: z.array(PixelFrameInputSchema).min(1).max(256),
+    width: z.number().int().min(8).max(256).optional(),
+    height: z.number().int().min(8).max(256).optional(),
+  })
+  .strict();
+
+export const PixelExportRequestSchema = z
+  .object({
+    assetId: PixelIdSchema,
+    format: PixelExportFormatSchema,
+    options: z
+      .object({
+        scale: z.number().int().min(1).max(8).optional(),
+        animation: z.string().max(60).optional(),
+        frameIndex: z.number().int().min(0).max(255).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export const PixelAssetFiltersSchema = z
+  .object({
+    projectId: PixelIdSchema.optional(),
+    characterId: PixelIdSchema.optional(),
+    kind: PixelKindSchema.optional(),
+    search: z.string().max(120).optional(),
+  })
+  .strict()
+  .optional();
 
 export interface HandlerContext {
   paths: StudioPaths;

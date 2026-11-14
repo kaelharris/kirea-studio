@@ -27,3 +27,12 @@ desktop.ini
 .env
 .env.*
 !.env.example
+
+# Vendored pixel engines
+# SpriteKiln is GPL-3.0 and inspection-only; its source is never committed or packaged.
+external/pixel-engines/spritekiln/
+# Pixelbolt is MIT; ship only the runtime surface the app imports.
+external/pixel-engines/pixelbolt/*
+!external/pixel-engines/pixelbolt/src/
+!external/pixel-engines/pixelbolt/LICENSE
+!external/pixel-engines/pixelbolt/package.json

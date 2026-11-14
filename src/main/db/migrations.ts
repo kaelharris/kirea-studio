@@ -493,5 +493,102 @@ export const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    version: 6,
+    name: "pixel_studio",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS pixel_projects (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '',
+          width INTEGER NOT NULL DEFAULT 32,
+          height INTEGER NOT NULL DEFAULT 32,
+          palette_json TEXT NOT NULL DEFAULT '[]',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS pixel_characters (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL REFERENCES pixel_projects(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '',
+          seed INTEGER NOT NULL DEFAULT 0,
+          palette_id TEXT NOT NULL DEFAULT 'kirea',
+          reference_asset_id TEXT REFERENCES pixel_assets(id) ON DELETE SET NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pixel_characters_project
+          ON pixel_characters(project_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS pixel_assets (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL REFERENCES pixel_projects(id) ON DELETE CASCADE,
+          character_id TEXT REFERENCES pixel_characters(id) ON DELETE SET NULL,
+          name TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          engine TEXT NOT NULL DEFAULT 'pixelbolt',
+          width INTEGER NOT NULL,
+          height INTEGER NOT NULL,
+          frame_count INTEGER NOT NULL DEFAULT 1,
+          prompt TEXT NOT NULL DEFAULT '',
+          seed INTEGER,
+          palette_id TEXT NOT NULL DEFAULT 'kirea',
+          palette_json TEXT NOT NULL DEFAULT '[]',
+          recipe_json TEXT NOT NULL DEFAULT '{}',
+          preview_path TEXT NOT NULL,
+          sheet_path TEXT,
+          parent_asset_id TEXT REFERENCES pixel_assets(id) ON DELETE SET NULL,
+          version INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pixel_assets_project
+          ON pixel_assets(project_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_pixel_assets_character
+          ON pixel_assets(character_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_pixel_assets_kind
+          ON pixel_assets(kind, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS pixel_asset_versions (
+          id TEXT PRIMARY KEY,
+          asset_id TEXT NOT NULL REFERENCES pixel_assets(id) ON DELETE CASCADE,
+          version INTEGER NOT NULL,
+          recipe_json TEXT NOT NULL DEFAULT '{}',
+          preview_path TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          UNIQUE (asset_id, version)
+        );
+
+        CREATE TABLE IF NOT EXISTS pixel_frames (
+          asset_id TEXT NOT NULL REFERENCES pixel_assets(id) ON DELETE CASCADE,
+          frame_index INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          duration_ms INTEGER NOT NULL DEFAULT 100,
+          file_path TEXT NOT NULL,
+          PRIMARY KEY (asset_id, frame_index)
+        );
+
+        CREATE TABLE IF NOT EXISTS pixel_exports (
+          id TEXT PRIMARY KEY,
+          asset_id TEXT NOT NULL REFERENCES pixel_assets(id) ON DELETE CASCADE,
+          format TEXT NOT NULL,
+          file_path TEXT NOT NULL,
+          width INTEGER NOT NULL,
+          height INTEGER NOT NULL,
+          frame_count INTEGER NOT NULL DEFAULT 1,
+          settings_json TEXT NOT NULL DEFAULT '{}',
+          created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pixel_exports_asset
+          ON pixel_exports(asset_id, created_at DESC);
+      `);
+    },
+  },
 ];
 

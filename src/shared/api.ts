@@ -6,6 +6,23 @@ import type {
   CivitaiSearchResult,
 } from "./civitai";
 import type {
+  PixelAssetDetail,
+  PixelAssetFilters,
+  PixelAssetRecord,
+  PixelAssetVersion,
+  PixelCharacter,
+  PixelCharacterInput,
+  PixelExportFormat,
+  PixelExportOptions,
+  PixelExportResult,
+  PixelFrameInput,
+  PixelGenerateInput,
+  PixelImportInput,
+  PixelProject,
+  PixelProjectInput,
+  SpriteKilnReport,
+} from "./pixel-types";
+import type {
   AppDiagnostics,
   AppSettings,
   CharacterProfile,
@@ -209,6 +226,41 @@ export interface KireaDesktopApi {
     favorite?: boolean;
   }): Promise<PromptRecord>;
   deletePrompt(id: string): Promise<void>;
+
+  // Pixel Studio
+  listPixelProjects(): Promise<PixelProject[]>;
+  savePixelProject(input: PixelProjectInput): Promise<PixelProject>;
+  deletePixelProject(id: string): Promise<boolean>;
+  listPixelCharacters(projectId?: string): Promise<PixelCharacter[]>;
+  savePixelCharacter(input: PixelCharacterInput): Promise<PixelCharacter>;
+  deletePixelCharacter(id: string): Promise<boolean>;
+  generatePixelCharacterViews(
+    characterId: string,
+    seed?: number,
+    width?: number,
+    height?: number
+  ): Promise<PixelAssetDetail[]>;
+  listPixelAssets(filters?: PixelAssetFilters): Promise<PixelAssetRecord[]>;
+  getPixelAsset(id: string): Promise<PixelAssetDetail>;
+  generatePixelAsset(input: PixelGenerateInput): Promise<PixelAssetDetail>;
+  importPixelAsset(input: PixelImportInput): Promise<PixelAssetDetail>;
+  savePixelAssetFrames(
+    assetId: string,
+    frames: PixelFrameInput[],
+    dimensions?: { width: number; height: number }
+  ): Promise<PixelAssetDetail>;
+  listPixelAssetVersions(assetId: string): Promise<PixelAssetVersion[]>;
+  renamePixelAsset(id: string, name: string): Promise<PixelAssetRecord>;
+  duplicatePixelAsset(id: string, name?: string): Promise<PixelAssetDetail>;
+  deletePixelAsset(id: string): Promise<boolean>;
+  exportPixelAsset(
+    id: string,
+    format: PixelExportFormat,
+    options?: PixelExportOptions
+  ): Promise<PixelExportResult>;
+  openPixelExportFolder(assetId: string): Promise<string>;
+  pickPixelReferenceImage(): Promise<string | null>;
+  getSpriteKilnReport(): Promise<SpriteKilnReport>;
 
   // Event listeners (returning unsubscribe function)
   onRuntimeChanged(cb: (state: RuntimeState) => void): () => void;

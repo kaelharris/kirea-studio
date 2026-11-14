@@ -113,6 +113,28 @@ export const IPC_CHANNELS = {
   PROMPTS_SAVE: "prompts:save",
   PROMPTS_DELETE: "prompts:delete",
 
+  // Pixel Studio
+  PIXEL_PROJECTS_LIST: "pixel:listProjects",
+  PIXEL_PROJECTS_SAVE: "pixel:saveProject",
+  PIXEL_PROJECTS_DELETE: "pixel:deleteProject",
+  PIXEL_CHARACTERS_LIST: "pixel:listCharacters",
+  PIXEL_CHARACTERS_SAVE: "pixel:saveCharacter",
+  PIXEL_CHARACTERS_DELETE: "pixel:deleteCharacter",
+  PIXEL_CHARACTERS_GENERATE_VIEWS: "pixel:generateCharacterViews",
+  PIXEL_ASSETS_LIST: "pixel:listAssets",
+  PIXEL_ASSETS_GET: "pixel:getAsset",
+  PIXEL_ASSETS_GENERATE: "pixel:generateAsset",
+  PIXEL_ASSETS_IMPORT: "pixel:importAsset",
+  PIXEL_ASSETS_SAVE_FRAMES: "pixel:saveFrames",
+  PIXEL_ASSETS_VERSIONS: "pixel:listVersions",
+  PIXEL_ASSETS_RENAME: "pixel:renameAsset",
+  PIXEL_ASSETS_DUPLICATE: "pixel:duplicateAsset",
+  PIXEL_ASSETS_DELETE: "pixel:deleteAsset",
+  PIXEL_ASSETS_EXPORT: "pixel:exportAsset",
+  PIXEL_ASSETS_OPEN_EXPORT: "pixel:openExportFolder",
+  PIXEL_ASSETS_PICK_IMAGE: "pixel:pickImage",
+  PIXEL_SPRITEKILN_REPORT: "pixel:spriteKilnReport",
+
   // Main -> Renderer push events
   EVENT_RUNTIME_CHANGED: "event:runtimeChanged",
   EVENT_JOB_UPDATED: "event:jobUpdated",

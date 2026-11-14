@@ -30,6 +30,7 @@ import type { StudioDatabase } from "./database";
 import { CharactersRepository } from "./repos/characters-repo";
 import { GenerationsRepository } from "./repos/generations-repo";
 import { ModelsRepository } from "./repos/models-repo";
+import { PixelRepository } from "./repos/pixel-repo";
 import { StoriesRepository } from "./repos/stories-repo";
 import { safeParseJson } from "./repo-mappers";
 
@@ -38,6 +39,7 @@ export class StudioRepository {
   readonly characters: CharactersRepository;
   readonly stories: StoriesRepository;
   readonly generations: GenerationsRepository;
+  readonly pixel: PixelRepository;
 
   constructor(private readonly studioDb: StudioDatabase) {
     this.models = new ModelsRepository(studioDb);
@@ -46,6 +48,7 @@ export class StudioRepository {
       this.stories.syncStorySceneFromJob(job)
     );
     this.stories = new StoriesRepository(studioDb, this.generations);
+    this.pixel = new PixelRepository(studioDb);
   }
 
   getSettings(defaults: AppSettings): AppSettings {

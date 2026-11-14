@@ -18,6 +18,7 @@ import { ModelsPage } from "./pages/ModelsPage";
 import { QueuePage } from "./pages/QueuePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { StoryStudioPage } from "./pages/StoryStudioPage";
+import { PixelStudioPage } from "./pages/PixelStudioPage";
 import { WorkflowsPage } from "./pages/WorkflowsPage";
 import { SidebarNav } from "./app/SidebarNav";
 import { ToastStack } from "./app/ToastStack";
@@ -391,6 +392,8 @@ export const App: React.FC = () => {
               onToast={pushToast}
             />
           )}
+
+          {activePage === "pixel" && <PixelStudioPage onToast={pushToast} />}
 
           {activePage === "models" && (            <ModelsPage
               models={models}

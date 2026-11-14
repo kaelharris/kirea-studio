@@ -29,7 +29,19 @@ This file documents external open-source packages, runtime boundaries, and archi
 
 ---
 
-## 3. Bundled NPM Dependencies (All Permissive)
+## 3. Pixel Studio Engines
+
+### Pixelbolt 0.17.0 (https://github.com/kaelharris/pixelbolt — vendored under `external/pixel-engines/pixelbolt`)
+- **License:** MIT License
+- **Usage:** Bundled engine for deterministic pixel-art rendering and export encoders (PNG, APNG, GIF, sprite sheets, Godot/Unity/Phaser atlas metadata, ZIP). Loaded dynamically from `resources/pixel-engines/pixelbolt` in packaged builds. Its license and package metadata are copied alongside the source.
+
+### SpriteKiln (vendored under `external/pixel-engines/spritekiln` for inspection only)
+- **License:** GNU General Public License v3.0
+- **Integration Boundary:** Not bundled, not packaged, and not installed into any ComfyUI instance. Kirea Studio reads workflow JSON files to report required custom nodes and model files, and never executes SpriteKiln code or downloads its model tiers automatically.
+
+---
+
+## 4. Bundled NPM Dependencies (All Permissive)
 
 - **Electron** (`^45.3.0`) — MIT
 - **React & React DOM** (`^19.3.1`) — MIT
@@ -44,7 +56,7 @@ This file documents external open-source packages, runtime boundaries, and archi
 
 ---
 
-## 4. Curated Optional Downloadable Model Sources (Opt-In Only)
+## 5. Curated Optional Downloadable Model Sources (Opt-In Only)
 
 Models in Kirea Studio's curated catalog are never bundled in the installer and are only downloaded when explicitly selected by the user:
 - **Stable Diffusion 1.5 (FP16 Pruned EMA):** Comfy-Org / RunwayML — CreativeML Open RAIL-M License

@@ -17,6 +17,13 @@ asarUnpack:
   - node_modules/sharp/**/*
   - node_modules/@img/**/*
   - node_modules/7zip-bin/**/*
+extraResources:
+  - from: external/pixel-engines/pixelbolt/src
+    to: pixel-engines/pixelbolt/src
+  - from: external/pixel-engines/pixelbolt/LICENSE
+    to: pixel-engines/pixelbolt/LICENSE
+  - from: external/pixel-engines/pixelbolt/package.json
+    to: pixel-engines/pixelbolt/package.json
 win:
   target:
     - target: nsis

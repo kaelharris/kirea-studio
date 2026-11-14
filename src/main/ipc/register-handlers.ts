@@ -3,6 +3,7 @@ import { isTrustedIpcSender } from "../security";
 import { registerAppRuntimeHandlers } from "./handlers/app-runtime-handlers";
 import { registerGenerationHandlers } from "./handlers/generation-handlers";
 import { registerModelsHandlers } from "./handlers/models-handlers";
+import { registerPixelHandlers } from "./handlers/pixel-handlers";
 import { registerStoriesHandlers } from "./handlers/stories-handlers";
 import type { HandlerContext, IpcRegistrarHandle } from "./schemas";
 
@@ -33,4 +34,5 @@ export function registerIpcHandlers(ctx: HandlerContext): void {
   registerModelsHandlers(ctx, handle);
   registerStoriesHandlers(ctx, handle);
   registerGenerationHandlers(ctx, handle);
+  registerPixelHandlers(ctx, handle);
 }
