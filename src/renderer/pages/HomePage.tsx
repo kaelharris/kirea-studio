@@ -320,7 +320,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                   key={img.id}
                   type="button"
                   onClick={() => onInspectImage(img)}
-                  className="group relative aspect-square overflow-hidden rounded-lg border border-border bg-surface text-left transition-colors hover:border-accent"
+                  className="group relative aspect-square overflow-hidden rounded-lg border border-border bg-well flex items-center justify-center p-1.5 text-left transition-colors hover:border-accent"
                 >
                   <MediaImage
                     src={toMediaUrl(img.filePath)}

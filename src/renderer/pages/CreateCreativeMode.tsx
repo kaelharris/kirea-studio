@@ -290,7 +290,7 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
                     <img
                       src={toMediaUrl(characterAvatar)}
                       alt=""
-                      className="h-5 w-5 rounded-full object-cover"
+                      className="h-5 w-5 rounded-full object-contain object-center bg-surface-subtle"
                     />
                   ) : (
                     <Users className="ml-1 h-3.5 w-3.5 text-fg-subtle" />
@@ -311,7 +311,7 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
                   <img
                     src={toMediaUrl(draft.inputImagePath)}
                     alt=""
-                    className="h-5 w-5 rounded-full object-cover"
+                    className="h-5 w-5 rounded-full object-contain object-center bg-surface-subtle"
                   />
                   Reference · denoise {draft.denoise.toFixed(2)}
                   <button

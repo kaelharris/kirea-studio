@@ -82,7 +82,7 @@ export const CivitaiDetailsModal: React.FC<CivitaiDetailsModalProps> = ({
           <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
             <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-4">
               <div className="space-y-2">
-                <div className="h-48 rounded-xl overflow-hidden border border-border bg-bg">
+                <div className="h-48 rounded-xl overflow-hidden border border-border bg-well flex items-center justify-center p-1.5">
                   <RemotePreview
                     url={details.primaryPreviewUrl}
                     alt={`${details.name} preview`}
@@ -282,7 +282,7 @@ export const CivitaiDetailsModal: React.FC<CivitaiDetailsModalProps> = ({
                       key={url}
                       type="button"
                       onClick={() => void window.kirea.openExternalUrl(url)}
-                      className="h-24 rounded-lg overflow-hidden border border-border bg-bg cursor-pointer hover:border-border-strong transition-colors"
+                      className="h-24 rounded-lg overflow-hidden border border-border bg-well flex items-center justify-center cursor-pointer hover:border-border-strong transition-colors p-1"
                       title="Open sample image on Civitai"
                     >
                       <RemotePreview

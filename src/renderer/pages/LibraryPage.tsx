@@ -1223,7 +1223,7 @@ const MediaCard: React.FC<{
         <button
           type="button"
           onClick={onOpen}
-          className="relative aspect-square cursor-pointer overflow-hidden bg-well focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="relative aspect-square cursor-pointer overflow-hidden bg-well flex items-center justify-center p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           aria-label={`Inspect ${item.title}`}
         >
           <MediaPreview item={item} onLoadFailure={onLoadFailure} />
@@ -1366,7 +1366,7 @@ const MediaRow: React.FC<{
     <button
       type="button"
       onClick={onOpen}
-      className="relative h-12 w-16 shrink-0 overflow-hidden rounded-md border border-border bg-well"
+      className="relative h-12 w-16 shrink-0 overflow-hidden rounded-md border border-border bg-well flex items-center justify-center p-0.5"
       aria-label={`Inspect ${item.title}`}
     >
       {available ? (
@@ -1439,7 +1439,7 @@ const MediaPreview: React.FC<{
         preload="metadata"
         muted
         playsInline
-        className="pointer-events-none h-full w-full object-cover"
+        className="pointer-events-none h-full w-full object-contain object-center"
         aria-hidden="true"
       />
     );
@@ -1973,12 +1973,12 @@ const InspectorCharacterViewer: React.FC<{
             {character.references.map((ref) => (
               <div
                 key={ref.id}
-                className="group relative aspect-square overflow-hidden rounded-lg border border-border bg-well"
+                className="group relative aspect-square overflow-hidden rounded-lg border border-border bg-well flex items-center justify-center p-1"
               >
                 <MediaImage
                   src={toMediaUrl(ref.filePath)}
                   alt={ref.caption || character.name}
-                  className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                  className="h-full w-full object-contain object-center transition-transform group-hover:scale-105"
                 />
                 <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1 py-0.5 text-[9px] font-medium text-white uppercase">
                   {ref.role}

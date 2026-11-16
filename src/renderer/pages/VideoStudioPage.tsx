@@ -489,7 +489,7 @@ export const VideoStudioPage: React.FC<VideoStudioPageProps> = ({
                     <img
                       src={toMediaUrl(inputImagePath)}
                       alt="Image-to-video source"
-                      className="w-16 h-16 rounded-md object-cover bg-surface-subtle"
+                      className="w-16 h-16 rounded-md object-contain object-center bg-surface-subtle p-0.5"
                     />
                     <div className="min-w-0 flex-1">
                       <div className="text-small font-medium text-fg truncate">
@@ -923,12 +923,12 @@ export const VideoStudioPage: React.FC<VideoStudioPageProps> = ({
                         : "border-border hover:border-border-strong"
                     }`}
                   >
-                    <div className="bg-black" style={{ aspectRatio: `${video.width}/${video.height}` }}>
+                    <div className="bg-black flex items-center justify-center" style={{ aspectRatio: `${video.width}/${video.height}` }}>
                       <video
                         src={`${toMediaUrl(video.filePath)}#t=0.1`}
                         preload="metadata"
                         muted
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain object-center"
                       />
                     </div>
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/35">

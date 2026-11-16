@@ -728,7 +728,7 @@ export class StoriesRepository {
           y,
           width,
           height,
-          input.fit ?? (existing?.fit as StoryCanvas["items"][number]["fit"]) ?? "cover",
+          input.fit ?? (existing?.fit as StoryCanvas["items"][number]["fit"]) ?? "contain",
           input.captionOverride ??
             (existing?.caption_override as string | undefined) ??
             "",
@@ -847,7 +847,7 @@ export class StoriesRepository {
         `INSERT INTO story_canvas_items (
            id, canvas_id, scene_id, image_id, position, fit, caption_override,
            overlays_json
-         ) VALUES (?, ?, ?, ?, ?, 'cover', '', '[]')`
+         ) VALUES (?, ?, ?, ?, ?, 'contain', '', '[]')`
       );
 
       plan.forEach((panel, index) => {

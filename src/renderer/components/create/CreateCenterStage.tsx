@@ -538,7 +538,7 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
                   key={img.id}
                   type="button"
                   onClick={() => onInspectImage(img)}
-                  className="w-12 h-12 rounded-lg overflow-hidden border border-border hover:border-accent shrink-0 cursor-pointer transition-colors"
+                  className="w-12 h-12 rounded-lg overflow-hidden border border-border hover:border-accent shrink-0 cursor-pointer transition-colors flex items-center justify-center bg-surface-subtle p-0.5"
                 >
                   <MediaImage
                     src={toMediaUrl(img.filePath)}

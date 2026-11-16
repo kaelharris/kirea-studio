@@ -38,10 +38,19 @@ export const MediaImage: React.FC<
     );
   }
 
+  // Enforce global aspect-ratio preservation: always contain and center, never crop
+  const normalizedClass = className.includes("object-cover")
+    ? className.replace(/\bobject-cover\b/g, "object-contain object-center")
+    : className.includes("object-contain")
+      ? (!className.includes("object-center") && !className.includes("object-top") && !className.includes("object-bottom") && !className.includes("object-left") && !className.includes("object-right")
+          ? `${className} object-center`
+          : className)
+      : `object-contain object-center ${className}`;
+
   return (
     <img
       alt={alt}
-      className={className}
+      className={normalizedClass}
       onError={() => {
         setFailed(true);
         onLoadFailure?.();

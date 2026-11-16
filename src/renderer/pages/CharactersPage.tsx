@@ -146,7 +146,7 @@ const CharacterCover: React.FC<{
     <img
       src={preview}
       alt={`${character.name} reference`}
-      className={`object-cover bg-surface-subtle ${className}`}
+      className={`w-full h-full object-contain object-center bg-surface-subtle ${className}`}
     />
   );
 };
@@ -157,7 +157,7 @@ const ReferenceThumb: React.FC<{ reference: { filePath: string; caption: string 
   <img
     src={toMediaUrl(reference.filePath)}
     alt={reference.caption || "Character reference"}
-    className="w-14 h-14 rounded-lg object-cover border border-border bg-surface-subtle"
+    className="w-14 h-14 rounded-lg object-contain object-center border border-border bg-surface-subtle p-0.5"
   />
 );
 
@@ -458,7 +458,7 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
               : null;
             return (
               <Card key={character.id} className="overflow-hidden flex flex-col">
-                <div className="relative aspect-[4/3] bg-surface-subtle">
+                <div className="relative aspect-[4/3] bg-surface-subtle flex items-center justify-center overflow-hidden p-1.5">
                   <CharacterCover character={character} className="w-full h-full" />
                   <div className="absolute top-2 left-2 flex gap-1.5">
                     <Badge tone={referenceModeBadgeTone(character.referenceMode)}>

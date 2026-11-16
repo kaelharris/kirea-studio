@@ -132,7 +132,7 @@ export const StoryCanvasWorkspace: React.FC<StoryCanvasWorkspaceProps> = ({
   const [panelForm, setPanelForm] = useState<PanelFormState>({
     sceneId: "",
     imageId: "",
-    fit: "cover",
+    fit: "contain",
     captionOverride: "",
   });
   const [savingPanel, setSavingPanel] = useState(false);

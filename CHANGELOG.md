@@ -9,6 +9,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+#### Global Media Aspect Ratio & Display Consistency
+* **Intrinsic Media Display Preservation**:
+  * Enforced universal `object-contain object-center` presentation standard across all workspaces, cards, previews, inspectors, and media viewers.
+  * Completely eliminated unintended media cropping (`object-cover`) on portrait, landscape, ultrawide, square, and non-standard aspect ratio assets.
+  * Added auto-normalization in `MediaImage` to detect and safely transform accidental `object-cover` into `object-contain object-center`.
+* **Model & Civitai Previews**:
+  * Updated `ModelPreview`, `RemotePreview`, `CivitaiHubView`, and `ModelModals` to center-letterbox models in neutral `bg-well` containers with comfortable padding (`p-1` / `p-1.5`), ensuring checkpoints, LoRA previews, and sample gallery cards display 100% of their original visual frame.
+* **Workflows & Characters**:
+  * Standardized workflow cards and detail modal previews in `WorkflowsPage` with `aspect-video bg-well` letterboxing and containment.
+  * Updated `CharactersPage` character cards, covers, and reference thumbnails to preserve portrait and landscape reference proportions without edge clipping.
+* **Unified Library & Video Studio**:
+  * Updated `LibraryPage` grid cards, list rows, inspector character reference thumbnails, and video previews to maintain intrinsic aspect ratios.
+  * Updated `VideoStudioPage` image-to-video source preview and history playback thumbnails with centered containment.
+* **Pixel Studio & Story Studio**:
+  * Updated pixel import asset previews with crisp `[image-rendering:pixelated]` containment.
+  * Updated Story Studio canvas items and default story database repository to default panel fit to `contain`.
+
 #### Unified Multi-Modal Library
 * **Multi-Select & Batch Actions**:
   * Added selection mode toggle in the library header and selection checkboxes on every `MediaCard` (grid view) and `MediaRow` (list view).

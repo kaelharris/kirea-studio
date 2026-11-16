@@ -205,7 +205,7 @@ export const CivitaiHubView: React.FC<CivitaiHubViewProps> = ({
                   <button
                     type="button"
                     onClick={() => onOpenDetails(model)}
-                    className="relative block w-full h-44 bg-bg overflow-hidden group cursor-pointer"
+                    className="relative flex items-center justify-center w-full h-44 bg-well overflow-hidden group cursor-pointer p-1.5"
                     title="Open model details"
                   >
                     <RemotePreview

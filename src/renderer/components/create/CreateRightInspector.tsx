@@ -403,7 +403,7 @@ export const CreateRightInspector: React.FC<{ ctrl: CreateController }> = ({ ctr
                       key={img.id}
                       type="button"
                       onClick={() => onInspectImage(img)}
-                      className="aspect-square overflow-hidden rounded-md border border-border transition-colors hover:border-accent"
+                      className="aspect-square overflow-hidden rounded-md border border-border transition-colors hover:border-accent flex items-center justify-center bg-surface-subtle p-0.5"
                     >
                       <MediaImage
                         src={toMediaUrl(img.filePath)}

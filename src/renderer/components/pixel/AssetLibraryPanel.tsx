@@ -1109,14 +1109,14 @@ export const AssetLibraryPanel: React.FC<AssetLibraryProps> = ({
                           image.fileName.replace(/\.[a-z0-9]+$/i, "").slice(0, 120),
                       }));
                     }}
-                    className={`rounded-md overflow-hidden border ${
+                    className={`rounded-md overflow-hidden border flex items-center justify-center bg-surface-subtle p-1 ${
                       importImageId === image.id ? "border-accent ring-1 ring-accent" : "border-border"
                     }`}
                   >
                     <img
                       src={toMediaUrl(image.filePath)}
                       alt={image.fileName}
-                      className="aspect-square w-full object-cover"
+                      className="aspect-square w-full object-contain object-center [image-rendering:pixelated]"
                       loading="lazy"
                     />
                   </button>

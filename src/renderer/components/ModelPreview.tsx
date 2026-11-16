@@ -74,13 +74,13 @@ export const ModelPreview: React.FC<ModelPreviewProps> = ({
   return (
     <div
       ref={containerRef}
-      className={`relative w-full overflow-hidden rounded-xl border border-border bg-bg/70 flex items-center justify-center ${className}`}
+      className={`relative w-full overflow-hidden rounded-xl border border-border bg-well flex items-center justify-center p-1.5 ${className}`}
     >
       {src ? (
         <img
           src={src}
           alt={`${model.name} preview`}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain object-center"
           draggable={false}
         />
       ) : loading ? (

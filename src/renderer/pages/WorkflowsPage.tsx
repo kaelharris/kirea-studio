@@ -325,13 +325,13 @@ const WorkflowBrowserCard: React.FC<{
     onClick={onOpen}
     className="text-left bg-surface border border-border rounded-xl overflow-hidden hover:border-border-strong transition-colors flex flex-col"
   >
-    <div className="aspect-video bg-bg border-b border-border overflow-hidden">
+    <div className="aspect-video bg-well border-b border-border overflow-hidden flex items-center justify-center p-1.5">
       {item.primaryPreviewUrl ? (
         <img
           src={item.primaryPreviewUrl}
           alt=""
           loading="lazy"
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain object-center"
         />
       ) : (
         <div className="w-full h-full flex items-center justify-center">
@@ -1305,11 +1305,11 @@ export const WorkflowsPage: React.FC<WorkflowsPageProps> = ({
         {selectedWorkflow && (
           <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
             {selectedWorkflow.primaryPreviewUrl && (
-              <div className="aspect-video bg-bg border border-border rounded-lg overflow-hidden">
+              <div className="aspect-video bg-well border border-border rounded-lg overflow-hidden flex items-center justify-center p-2">
                 <img
                   src={selectedWorkflow.primaryPreviewUrl}
                   alt=""
-                  className="w-full h-full object-contain"
+                  className="w-full h-full object-contain object-center"
                 />
               </div>
             )}

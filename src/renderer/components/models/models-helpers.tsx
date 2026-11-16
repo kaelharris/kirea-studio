@@ -91,7 +91,7 @@ export const RemotePreview: React.FC<{
 
   if (!url || failed) {
     return (
-      <div className={`flex items-center justify-center bg-bg/70 ${className}`}>
+      <div className={`flex items-center justify-center bg-well ${className}`}>
         <div className="flex flex-col items-center gap-1 text-fg-subtle">
           <ImageOff className={iconClass} />
           <span className="text-[11px] uppercase tracking-wider">No preview</span>
@@ -107,7 +107,7 @@ export const RemotePreview: React.FC<{
       loading="lazy"
       draggable={false}
       onError={() => setFailed(true)}
-      className={`object-cover ${className}`}
+      className={`w-full h-full object-contain object-center ${className}`}
     />
   );
 };
