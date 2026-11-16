@@ -778,6 +778,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
               onOpen={() => {
                 if (isSelectMode) {
                   handleToggleSelect(item.id);
+                } else if (item.mediaType === "image" && item.image && onInspectImage) {
+                  onInspectImage(item.image);
                 } else {
                   setSelected(item);
                 }
@@ -807,6 +809,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
               onOpen={() => {
                 if (isSelectMode) {
                   handleToggleSelect(item.id);
+                } else if (item.mediaType === "image" && item.image && onInspectImage) {
+                  onInspectImage(item.image);
                 } else {
                   setSelected(item);
                 }

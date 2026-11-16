@@ -404,13 +404,20 @@ export class GenerationsRepository {
     const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
     const order =
       filters?.sortBy === "oldest"
-        ? "ORDER BY created_at ASC"
+        ? "ORDER BY g.created_at ASC"
         : filters?.sortBy === "name"
-          ? "ORDER BY file_name COLLATE NOCASE ASC"
-          : "ORDER BY created_at DESC";
+          ? "ORDER BY g.file_name COLLATE NOCASE ASC"
+          : "ORDER BY g.created_at DESC";
 
     const rows = this.studioDb.db
-      .prepare(`SELECT * FROM generated_images ${where} ${order} LIMIT 500`)
+      .prepare(`
+        SELECT g.*, json_extract(j.settings_json, '$.inputImagePath') AS source_image_path
+        FROM generated_images g
+        LEFT JOIN generation_jobs j ON g.job_id = j.id
+        ${where.replace(/\b(favorite|collection_id|prompt|checkpoint|tags_json|file_name)\b/g, "g.$1")}
+        ${order}
+        LIMIT 500
+      `)
       .all(...params) as Array<Record<string, unknown>>;
 
     return rows.map((r) => ({
@@ -442,12 +449,18 @@ export class GenerationsRepository {
       loraRecipeId: r.lora_recipe_id ? String(r.lora_recipe_id) : null,
       storyId: r.story_id ? String(r.story_id) : null,
       storySceneId: r.story_scene_id ? String(r.story_scene_id) : null,
+      sourceImagePath: (r.source_image_path ?? r.sourceImagePath) ? String(r.source_image_path ?? r.sourceImagePath) : null,
     }));
   }
 
   getImageById(id: string): GeneratedImageRecord | null {
     const row = this.studioDb.db
-      .prepare("SELECT * FROM generated_images WHERE id = ?")
+      .prepare(`
+        SELECT g.*, json_extract(j.settings_json, '$.inputImagePath') AS source_image_path
+        FROM generated_images g
+        LEFT JOIN generation_jobs j ON g.job_id = j.id
+        WHERE g.id = ?
+      `)
       .get(id) as Record<string, unknown> | undefined;
     if (!row) return null;
     return {
@@ -479,6 +492,7 @@ export class GenerationsRepository {
       loraRecipeId: row.lora_recipe_id ? String(row.lora_recipe_id) : null,
       storyId: row.story_id ? String(row.story_id) : null,
       storySceneId: row.story_scene_id ? String(row.story_scene_id) : null,
+      sourceImagePath: (row.source_image_path ?? row.sourceImagePath) ? String(row.source_image_path ?? row.sourceImagePath) : null,
     };
   }
 

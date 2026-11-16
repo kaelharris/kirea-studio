@@ -759,6 +759,7 @@ export interface GenerationRequest {
   loraRecipeId?: string | null;
   storyId?: string | null;
   storySceneId?: string | null;
+  sourceImagePath?: string | null;
 }
 
 export interface GenerationJob {
@@ -788,6 +789,7 @@ export interface GenerationJob {
   loraRecipeId?: string | null;
   storyId?: string | null;
   storySceneId?: string | null;
+  sourceImagePath?: string | null;
 }
 
 export interface GeneratedImageRecord {
@@ -819,6 +821,7 @@ export interface GeneratedImageRecord {
   loraRecipeId?: string | null;
   storyId?: string | null;
   storySceneId?: string | null;
+  sourceImagePath?: string | null;
 }
 
 export interface GeneratedVideoRecord {

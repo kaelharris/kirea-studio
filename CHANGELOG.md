@@ -9,6 +9,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+#### 1st Full-Screen Lightbox & Seamless Arrow Navigation
+* **1st Full-Screen Visual Dominance**:
+  * Lightbox modal immediately opens into an immersive full-screen visual experience (`fixed inset-0 z-50 bg-black/95 backdrop-blur-md`).
+  * Image utilizes 100vw/100vh maximum available viewport area with centered aspect ratio containment and zero wasted space.
+  * Details and parameter inspector converted into a sleek glassmorphism slide-out drawer that defaults to closed, giving pure dominance to the visual creation.
+* **On-Screen & Keyboard Navigation**:
+  * Added floating glassmorphism previous/next chevron buttons (`<` and `>`) at viewport edges.
+  * Added complete keyboard hotkey bindings: `ArrowLeft` / `ArrowRight` (cycle generations), `Escape` (close), `KeyF` (toggle OS fullscreen), `KeyI` (toggle metadata drawer), `KeyC` (toggle comparison slider).
+  * Direct full-screen image opening from Studio Canvas, Recent strip, and Library grid/list cards.
+
+#### Interactive Before / After Comparison Slider for Upscales
+* **High-Performance Comparison Component (`ComparisonSlider.tsx`)**:
+  * Draggable split slider with smooth cursor dragging, window tracking, touch support, and accessible keyboard nudging.
+  * Multi-mode comparison controls: Draggable Split Slider, 100% Original Only, 100% Upscaled Only, and "Hold to Peek Original".
+  * Integrated directly on both the Studio Center Stage canvas and in the 1st Full-Screen Lightbox.
+* **Image Lineage & Source Tracking**:
+  * Added `sourceImagePath` to `GeneratedImageRecord`, `GenerationRequest`, and `GenerationJob`.
+  * Automatic SQLite JSON extraction of `inputImagePath` from `generation_jobs.settings_json` for seamless lineage without schema breaking changes.
+
+#### Studio Canvas Negative Space Optimization
+* **Dominant Image Presentation**:
+  * Reduced canvas container padding from `p-4` to `p-1 sm:p-2`, expanding generated image size to fill 98% of the stage well.
+  * Increased live ComfyUI sampling preview constraint from `max-h-[340px]` to `max-h-[min(68vh,720px)] w-auto max-w-full`.
+  * Streamlined prompt dock and workspace padding to reclaim screen real estate for the visual canvas.
+  * Added floating canvas navigation arrows and thumbnail selection with active focus rings on the Recent strip.
+
 #### Global Media Aspect Ratio & Display Consistency
 * **Intrinsic Media Display Preservation**:
   * Enforced universal `object-contain object-center` presentation standard across all workspaces, cards, previews, inspectors, and media viewers.

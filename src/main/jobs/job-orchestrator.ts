@@ -806,6 +806,7 @@ export class JobOrchestrator extends EventEmitter {
           tags: [],
           collectionId: null,
           createdAt,
+          sourceImagePath: job.settings.inputImagePath || null,
         });
       }
 

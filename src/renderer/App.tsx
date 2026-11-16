@@ -211,10 +211,10 @@ export const App: React.FC = () => {
         {/* WORKSPACE VIEWPORT */}
         <main className="flex-1 overflow-y-auto">
           <div
-            className={`mx-auto w-full p-6 space-y-6 ${
+            className={`mx-auto w-full ${
               activePage === "create" || activePage === "video"
-                ? "max-w-none"
-                : "max-w-[1600px]"
+                ? "max-w-none p-3.5 sm:p-4 space-y-3"
+                : "max-w-[1600px] p-6 space-y-6"
             }`}
           >
           {showRuntimeBanner && (
@@ -645,6 +645,8 @@ export const App: React.FC = () => {
       {/* GLOBAL IMAGE METADATA LIGHTBOX */}
       <ImagePreviewModal
         image={inspectedImage}
+        images={images}
+        onSelectImage={setInspectedImage}
         collections={collections}
         characters={characters}
         onClose={() => setInspectedImage(null)}

@@ -53,7 +53,7 @@ export const CreatePage: React.FC<CreatePageProps> = (props) => {
   } = ctrl;
 
   return (
-    <div className="flex h-[calc(100vh-9.75rem)] min-h-[560px] flex-col gap-3">
+    <div className="flex h-[calc(100vh-7.5rem)] min-h-[580px] flex-col gap-2.5">
       <div className="flex shrink-0 flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-h1 text-fg">Create</h1>
