@@ -1,5 +1,6 @@
 import {
   BookOpen,
+  Clapperboard,
   Compass,
   FolderKanban,
   Grid3X3,
@@ -30,6 +31,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   externalComfyPath: "",
   comfyHost: "127.0.0.1",
   comfyPort: 8188,
+  pixelBackendHost: "127.0.0.1",
+  pixelBackendPort: 8189,
+  pixelBackendWorkflowRoot: "",
   managedComfyPath: "",
   autoStartRuntime: false,
   outputDirectory: "",
@@ -115,6 +119,7 @@ export const NAV_ITEMS: Array<{
 }> = [
   { id: "home", label: "Home", icon: Home },
   { id: "create", label: "Create", icon: Wand2 },
+  { id: "video", label: "Video Studio", icon: Clapperboard },
   { id: "explore", label: "Explore", icon: Compass },
   { id: "library", label: "Library", icon: FolderKanban },
   { id: "characters", label: "Characters", icon: Users },
@@ -127,7 +132,7 @@ export const NAV_ITEMS: Array<{
 ];
 
 export const NAV_GROUPS: Array<{ label: string; items: NavSection[] }> = [
-  { label: "Workspace", items: ["home", "create", "explore", "library"] },
+  { label: "Workspace", items: ["home", "create", "video", "explore", "library"] },
   { label: "Studio", items: ["characters", "pixel", "stories", "models", "workflows"] },
   { label: "System", items: ["queue", "settings"] },
 ];

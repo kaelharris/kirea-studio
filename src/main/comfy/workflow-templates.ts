@@ -10,7 +10,11 @@ export function isAnimaWorkflow(workflowId: string): boolean {
 }
 
 export function usesDiffusionModelLoader(workflowId: string): boolean {
-  return workflowId === "t2i_z_image_turbo" || isAnimaWorkflow(workflowId);
+  return (
+    workflowId === "t2i_z_image_turbo" ||
+    isAnimaWorkflow(workflowId) ||
+    workflowId === "t2v_wan21_1_3b"
+  );
 }
 
 export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
@@ -326,6 +330,202 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       height: 1024,
     },
     tags: ["Upscale", "Refiner", "Alchemy", "2K", "4K"],
+  },
+  {
+    id: "t2v_wan21_1_3b",
+    version: "1.0.0",
+    name: "Wan 2.1 1.3B Text-to-Video",
+    description:
+      "Native ComfyUI Wan 2.1 1.3B pipeline: UNET + UMT5-XXL text encoder + Wan VAE, 16 fps, CreateVideo/SaveVideo. Fits 16 GB VRAM at 832×480.",
+    mode: "t2v",
+    supportedArchitectures: ["wan_video"],
+    requiredNodes: [
+      "UNETLoader",
+      "CLIPLoader",
+      "VAELoader",
+      "CLIPTextEncode",
+      "ModelSamplingSD3",
+      "EmptyHunyuanLatentVideo",
+      "KSampler",
+      "VAEDecode",
+      "CreateVideo",
+      "SaveVideo",
+    ],
+    outputNodeId: "11",
+    supportsLora: false,
+    maxLoras: 0,
+    minDim: 256,
+    maxDim: 1280,
+    dimStep: 16,
+    video: {
+      family: "wan21_t2v",
+      fps: 16,
+      minFrames: 17,
+      maxFrames: 81,
+      frameStep: 4,
+      defaultFrameCount: 33,
+      formats: ["mp4", "webm"],
+      presets: [
+        { id: "16:9", width: 832, height: 480 },
+        { id: "9:16", width: 480, height: 832 },
+        { id: "1:1", width: 624, height: 624 },
+      ],
+      companionModels: [
+        {
+          category: "text_encoder",
+          fileName: "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+          label: "Wan UMT5-XXL text encoder (fp8)",
+          approxSizeGB: 6.74,
+        },
+        {
+          category: "vae",
+          fileName: "wan_2.1_vae.safetensors",
+          label: "Wan 2.1 VAE",
+          approxSizeGB: 0.25,
+        },
+      ],
+      minVramMB: 8192,
+      recommendedVramMB: 12288,
+      notes:
+        "Validated at 832×480, 480×832 and 624×624. Frame counts stay on the 1 + 4n grid required by the Wan VAE.",
+    },
+    defaults: {
+      steps: 30,
+      cfg: 6.0,
+      sampler: "uni_pc",
+      scheduler: "simple",
+      denoise: 1.0,
+      width: 832,
+      height: 480,
+    },
+    tags: ["Wan 2.1", "1.3B", "Text-to-Video", "16 GB"],
+  },
+  {
+    id: "t2v_ltx_2b",
+    version: "1.0.0",
+    name: "LTX-Video 2B Text-to-Video",
+    description:
+      "Native ComfyUI LTX-Video 2B pipeline: LTXV checkpoint + T5-XXL text encoder, 24 fps, CreateVideo/SaveVideo. Heavier on VRAM than Wan 1.3B.",
+    mode: "t2v",
+    supportedArchitectures: ["ltx_video"],
+    requiredNodes: [
+      "CheckpointLoaderSimple",
+      "CLIPLoader",
+      "CLIPTextEncode",
+      "EmptyLTXVLatentVideo",
+      "LTXVConditioning",
+      "KSampler",
+      "VAEDecode",
+      "CreateVideo",
+      "SaveVideo",
+    ],
+    outputNodeId: "10",
+    supportsLora: false,
+    maxLoras: 0,
+    minDim: 256,
+    maxDim: 1280,
+    dimStep: 32,
+    video: {
+      family: "ltx_video",
+      fps: 24,
+      minFrames: 25,
+      maxFrames: 121,
+      frameStep: 8,
+      defaultFrameCount: 97,
+      formats: ["mp4", "webm"],
+      presets: [
+        { id: "3:2", width: 768, height: 512 },
+        { id: "16:9", width: 1024, height: 576 },
+        { id: "9:16", width: 576, height: 1024 },
+        { id: "1:1", width: 768, height: 768 },
+      ],
+      companionModels: [
+        {
+          category: "text_encoder",
+          fileName: "t5xxl_fp16.safetensors",
+          label: "T5-XXL text encoder (fp16)",
+          approxSizeGB: 9.79,
+        },
+      ],
+      minVramMB: 10240,
+      recommendedVramMB: 16384,
+      notes:
+        "Frame counts follow the 1 + 8n LTXV grid. 768×512 is the lightest validated frame; 1024×576 needs more headroom.",
+    },
+    defaults: {
+      steps: 30,
+      cfg: 3.0,
+      sampler: "euler",
+      scheduler: "normal",
+      denoise: 1.0,
+      width: 768,
+      height: 512,
+    },
+    tags: ["LTX-Video", "2B", "Text-to-Video"],
+  },
+  {
+    id: "i2v_ltx_2b",
+    version: "1.0.0",
+    name: "LTX-Video 2B Image-to-Video",
+    description:
+      "Animates an uploaded still with LTX-Video 2B: LoadImage, Lanczos resize, LTXVImgToVideo conditioning, then CreateVideo/SaveVideo.",
+    mode: "i2v",
+    supportedArchitectures: ["ltx_video"],
+    requiredNodes: [
+      "CheckpointLoaderSimple",
+      "CLIPLoader",
+      "LoadImage",
+      "ImageScale",
+      "CLIPTextEncode",
+      "LTXVImgToVideo",
+      "KSampler",
+      "VAEDecode",
+      "CreateVideo",
+      "SaveVideo",
+    ],
+    outputNodeId: "11",
+    supportsLora: false,
+    maxLoras: 0,
+    minDim: 256,
+    maxDim: 1280,
+    dimStep: 32,
+    video: {
+      family: "ltx_video",
+      fps: 24,
+      minFrames: 25,
+      maxFrames: 121,
+      frameStep: 8,
+      defaultFrameCount: 97,
+      formats: ["mp4", "webm"],
+      presets: [
+        { id: "3:2", width: 768, height: 512 },
+        { id: "16:9", width: 1024, height: 576 },
+        { id: "9:16", width: 576, height: 1024 },
+        { id: "1:1", width: 768, height: 768 },
+      ],
+      companionModels: [
+        {
+          category: "text_encoder",
+          fileName: "t5xxl_fp16.safetensors",
+          label: "T5-XXL text encoder (fp16)",
+          approxSizeGB: 9.79,
+        },
+      ],
+      minVramMB: 10240,
+      recommendedVramMB: 16384,
+      notes:
+        "The input still is resized (crop: center) to the selected frame before LTXVImgToVideo conditioning.",
+    },
+    defaults: {
+      steps: 30,
+      cfg: 3.0,
+      sampler: "euler",
+      scheduler: "normal",
+      denoise: 1.0,
+      width: 768,
+      height: 512,
+    },
+    tags: ["LTX-Video", "2B", "Image-to-Video"],
   },
 ];
 

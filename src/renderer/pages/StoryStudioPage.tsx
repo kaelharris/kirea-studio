@@ -883,7 +883,7 @@ export const StoryStudioPage: React.FC<StoryStudioPageProps> = ({
                                 <img
                                   src={toMediaUrl(selectedImage.filePath)}
                                   alt={`${scene.title} selected result`}
-                                  className="w-20 h-20 rounded-lg object-cover border border-accent/40 group-hover:opacity-90"
+                                  className="w-20 h-20 rounded-lg bg-surface-subtle object-contain border border-accent/40 group-hover:opacity-90"
                                 />
                               </button>
                             ) : (
@@ -924,7 +924,7 @@ export const StoryStudioPage: React.FC<StoryStudioPageProps> = ({
                                       <img
                                         src={toMediaUrl(image.filePath)}
                                         alt={image.fileName}
-                                        className="w-full h-full object-cover"
+                                        className="w-full h-full bg-surface-subtle object-contain"
                                       />
                                       {isChosen && (
                                         <span className="absolute inset-0 bg-accent/30 flex items-center justify-center">

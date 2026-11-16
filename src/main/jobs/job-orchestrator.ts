@@ -4,6 +4,7 @@ import fs from "node:fs";
 import type {
   AppSettings,
   GeneratedImageRecord,
+  GeneratedVideoRecord,
   GenerationJob,
   GenerationRequest,
   JobErrorKind,
@@ -21,6 +22,8 @@ import {
 import type { StudioRepository } from "../db/repositories";
 import { getDiskFreeGBMap } from "../hardware/gpu-detector";
 import { saveGeneratedImage } from "../images/image-exporter";
+import { saveGeneratedVideo } from "../videos/video-exporter";
+import { isVideoMode, resolveVideoFrameCount } from "../../shared/video-utils";
 import type { StudioLogger } from "../logger";
 
 export function classifyComfyError(rawMessage: string): JobErrorKind {
@@ -471,11 +474,15 @@ export class JobOrchestrator extends EventEmitter {
       const api = this.runtime.getApiClient();
       let uploadedInputName: string | undefined;
 
-      if (job.mode === "img2img" || job.mode === "upscale") {
+      if (
+        job.mode === "img2img" ||
+        job.mode === "upscale" ||
+        job.mode === "i2v"
+      ) {
         if (!job.settings.inputImagePath || !fs.existsSync(job.settings.inputImagePath)) {
           failJob(
             "VALIDATION_FAILED",
-            `Input image file does not exist for ${job.mode === "upscale" ? "Upscale" : "Image-to-Image"}.`
+            `Input image file does not exist for ${job.mode === "upscale" ? "Upscale" : job.mode === "i2v" ? "Image-to-Video" : "Image-to-Image"}.`
           );
           return;
         }
@@ -483,6 +490,23 @@ export class JobOrchestrator extends EventEmitter {
         uploadedInputName = uploadRes.subfolder
           ? `${uploadRes.subfolder}/${uploadRes.name}`
           : uploadRes.name;
+      }
+
+      const videoTemplate = getWorkflowById(job.workflowId)?.video;
+      if (videoTemplate) {
+        const requiredNodes =
+          job.mode === "i2v"
+            ? ["CreateVideo", "SaveVideo", "LTXVImgToVideo"]
+            : ["CreateVideo", "SaveVideo"];
+        for (const nodeClass of requiredNodes) {
+          if (!(await api.hasNode(nodeClass))) {
+            failJob(
+              "VALIDATION_FAILED",
+              `ComfyUI does not expose the '${nodeClass}' node required by '${job.workflowId}'. Update ComfyUI to a version with native video nodes (0.3.30+).`
+            );
+            return;
+          }
+        }
       }
 
       const needsUpscaleModel =
@@ -531,7 +555,12 @@ export class JobOrchestrator extends EventEmitter {
       this.commitJob(job);
 
       // Phase 3: QUEUED / RUNNING (WS events + resilient HTTP /history polling)
-      await this.waitForComfyExecution(jobId, submitRes.prompt_id, built.template.outputNodeId);
+      await this.waitForComfyExecution(
+        jobId,
+        submitRes.prompt_id,
+        built.template.outputNodeId,
+        isVideoMode(job.mode) ? 45 * 60 * 1000 : 15 * 60 * 1000
+      );
 
       if (this.cancelledIds.has(jobId)) {
         failJob("CANCELLED", "Cancelled by user.");
@@ -564,22 +593,161 @@ export class JobOrchestrator extends EventEmitter {
         : Object.values(outputsObj).flatMap((nodeOut) => nodeOut?.images ?? []);
 
       const finalOutputImages = allOutputImages.filter((i) => i.type === "output");
-      const targetImages =
+      const targetOutputs =
         finalOutputImages.length > 0
           ? finalOutputImages
           : allOutputImages.filter((i) => i.type === "temp");
 
-      if (targetImages.length === 0) {
-        failJob("MISSING_OUTPUT", "ComfyUI finished without producing any output image files.");
+      if (targetOutputs.length === 0) {
+        failJob(
+          "MISSING_OUTPUT",
+          isVideoMode(job.mode)
+            ? "ComfyUI finished without producing any output video files."
+            : "ComfyUI finished without producing any output image files."
+        );
         return;
       }
 
       const createdAt = new Date().toISOString();
-      const savedRecords: GeneratedImageRecord[] = [];
       const savedPaths: string[] = [];
 
-      for (let idx = 0; idx < targetImages.length; idx++) {
-        const outImg = targetImages[idx]!;
+      const promptSnippet = job.prompt.trim();
+      const titleSnippet =
+        promptSnippet.slice(0, 48) + (promptSnippet.length > 48 ? "…" : "");
+      const promptRecord =
+        job.mode === "upscale" || !promptSnippet
+          ? null
+          : {
+              id: `pr_${crypto.randomUUID().slice(0, 10)}`,
+              title: titleSnippet || "Untitled Prompt",
+              prompt: job.prompt,
+              negativePrompt: job.negativePrompt,
+            };
+
+      if (isVideoMode(job.mode)) {
+        const videoOutputs = targetOutputs.filter((out) =>
+          [".mp4", ".m4v", ".webm"].includes(
+            out.filename.slice(out.filename.lastIndexOf(".")).toLowerCase()
+          )
+        );
+        if (videoOutputs.length === 0) {
+          failJob(
+            "MISSING_OUTPUT",
+            `ComfyUI finished without producing an MP4 or WebM video (got: ${targetOutputs
+              .map((out) => out.filename)
+              .join(", ")}).`
+          );
+          return;
+        }
+
+        const spec = built.template.video;
+        const frames = spec
+          ? resolveVideoFrameCount(
+              job.settings.video?.durationSeconds ?? spec.defaultFrameCount / spec.fps,
+              spec
+            )
+          : null;
+        const fps = spec?.fps ?? job.settings.video?.fps ?? 16;
+        const frameCount = frames?.frameCount ?? job.settings.video?.frameCount ?? 0;
+        const durationSeconds =
+          frames?.durationSeconds ?? job.settings.video?.durationSeconds ?? 0;
+
+        const savedVideos: GeneratedVideoRecord[] = [];
+        for (let idx = 0; idx < videoOutputs.length; idx++) {
+          const outVid = videoOutputs[idx]!;
+          const rawVideo = await api.fetchOutputBuffer(
+            outVid.filename,
+            outVid.subfolder,
+            outVid.type
+          );
+          const saved = await saveGeneratedVideo(
+            rawVideo,
+            outVid.filename,
+            settings.outputDirectory,
+            {
+              app: "Kirea Studio",
+              version: "1.0.0",
+              jobId: job.id,
+              workflowId: built.template.id,
+              workflowVersion: built.template.version,
+              mode: job.mode,
+              prompt: job.prompt,
+              negativePrompt: job.negativePrompt,
+              checkpoint: job.checkpoint,
+              loras: job.settings.loras,
+              seed: built.resolvedSeed,
+              width: job.settings.width,
+              height: job.settings.height,
+              steps: job.settings.steps,
+              cfg: job.settings.cfg,
+              sampler: job.settings.sampler,
+              scheduler: job.settings.scheduler,
+              denoise: job.settings.denoise,
+              durationSeconds,
+              fps,
+              frameCount,
+              createdAt,
+            },
+            idx
+          );
+
+          savedPaths.push(saved.filePath);
+          savedVideos.push({
+            id: `vid_${crypto.randomUUID().slice(0, 12)}`,
+            jobId: job.id,
+            filePath: saved.filePath,
+            fileName: saved.fileName,
+            container: saved.container,
+            width: saved.width,
+            height: saved.height,
+            sizeBytes: saved.sizeBytes,
+            durationSeconds: saved.durationSeconds,
+            fps: saved.fps,
+            frameCount: saved.frameCount,
+            prompt: job.prompt,
+            negativePrompt: job.negativePrompt,
+            seed: built.resolvedSeed,
+            checkpoint: job.checkpoint,
+            loras: job.settings.loras,
+            workflowId: built.template.id,
+            sampler: job.settings.sampler,
+            scheduler: job.settings.scheduler,
+            steps: job.settings.steps,
+            cfg: job.settings.cfg,
+            denoise: job.settings.denoise,
+            mode: job.mode,
+            favorite: false,
+            tags: [],
+            createdAt,
+          });
+        }
+
+        const completedMax = job.settings.steps;
+        const completedJob: GenerationJob = {
+          ...this.jobs.get(jobId)!,
+          status: "COMPLETED",
+          errorKind: "NONE",
+          errorMessage: null,
+          progressStep: completedMax,
+          progressMax: completedMax,
+          currentNode: null,
+          outputPaths: savedPaths,
+          completedAt: createdAt,
+        };
+
+        this.repo.recordCompletedVideoTx(completedJob, savedVideos, promptRecord);
+        this.jobs.set(completedJob.id, completedJob);
+        this.emit("jobUpdated", { ...completedJob });
+        for (const rec of savedVideos) {
+          this.emit("videoCreated", rec);
+        }
+        this.logger.info("jobs", `Job ${jobId} completed (${savedVideos.length} video(s)).`);
+        return;
+      }
+
+      const savedRecords: GeneratedImageRecord[] = [];
+      for (let idx = 0; idx < targetOutputs.length; idx++) {
+        const outImg = targetOutputs[idx]!;
         const rawPng = await api.fetchOutputBuffer(outImg.filename, outImg.subfolder, outImg.type);
         const saved = await saveGeneratedImage(
           rawPng,
@@ -655,22 +823,7 @@ export class JobOrchestrator extends EventEmitter {
         completedAt: createdAt,
       };
 
-      const promptSnippet = job.prompt.trim();
-      const titleSnippet =
-        promptSnippet.slice(0, 48) + (promptSnippet.length > 48 ? "…" : "");
-
-      this.repo.recordCompletedGenerationTx(
-        completedJob,
-        savedRecords,
-        job.mode === "upscale" || !promptSnippet
-          ? null
-          : {
-              id: `pr_${crypto.randomUUID().slice(0, 10)}`,
-              title: titleSnippet || "Untitled Prompt",
-              prompt: job.prompt,
-              negativePrompt: job.negativePrompt,
-            }
-      );
+      this.repo.recordCompletedGenerationTx(completedJob, savedRecords, promptRecord);
 
       this.jobs.set(completedJob.id, completedJob);
       this.emit("jobUpdated", { ...completedJob });
@@ -693,7 +846,8 @@ export class JobOrchestrator extends EventEmitter {
   private async waitForComfyExecution(
     jobId: string,
     promptId: string,
-    _outputNodeId: string
+    _outputNodeId: string,
+    timeoutMs: number
   ): Promise<void> {
     const api = this.runtime.getApiClient();
 
@@ -701,8 +855,9 @@ export class JobOrchestrator extends EventEmitter {
       let settled = false;
       let pollTimer: NodeJS.Timeout | null = null;
       const hardTimeout = setTimeout(() => {
-        finish(new Error("Generation timed out after 15 minutes."));
-      }, 15 * 60 * 1000);
+        const minutes = Math.round(timeoutMs / 60000);
+        finish(new Error(`Generation timed out after ${minutes} minutes.`));
+      }, timeoutMs);
 
       const cleanup = (): void => {
         if (pollTimer) clearInterval(pollTimer);

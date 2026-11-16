@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  calculateDimensionsForAspect,
+  dimensionBoundsFromWorkflow,
   inferModelArchitecture,
+  resolveDimensionsForAspect,
 } from "../../shared/aspect-ratios";
 import {
   getEffectiveArchitecture,
@@ -367,11 +368,6 @@ export function useAppController() {
     const arch = matchingCheckpoint
       ? getEffectiveArchitecture(matchingCheckpoint)
       : "sdxl";
-    const dims = calculateDimensionsForAspect(
-      preset.aspectRatio,
-      arch,
-      settings.performanceProfile
-    );
     const targetWfId =
       preset.mode === "img2img"
         ? arch === "sd15"
@@ -380,6 +376,13 @@ export function useAppController() {
         : arch === "sd15"
           ? "t2i_sd15_base"
           : "t2i_sdxl_base";
+    const targetWf = workflows.find((w) => w.id === targetWfId);
+    const dims = resolveDimensionsForAspect(
+      preset.aspectRatio,
+      arch,
+      settings.performanceProfile,
+      dimensionBoundsFromWorkflow(targetWf)
+    );
 
     setDraft((prev) => ({
       ...prev,

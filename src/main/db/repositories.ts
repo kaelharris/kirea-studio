@@ -7,6 +7,7 @@ import type {
   CollectionRecord,
   DownloadTask,
   GeneratedImageRecord,
+  GeneratedVideoRecord,
   GenerationJob,
   GenerationMode,
   LoraRecipe,
@@ -193,4 +194,16 @@ export class StudioRepository {
   listPrompts = (limit = 50): PromptRecord[] => this.generations.listPrompts(limit);
   savePrompt = (record: PromptRecord): PromptRecord => this.generations.savePrompt(record);
   deletePrompt = (id: string): void => this.generations.deletePrompt(id);
+
+  // Video generations
+  recordCompletedVideoTx: GenerationsRepository["recordCompletedVideoTx"] = (
+    job,
+    videos,
+    promptContext
+  ) => this.generations.recordCompletedVideoTx(job, videos, promptContext);
+  listVideos = (limit = 100): GeneratedVideoRecord[] => this.generations.listVideos(limit);
+  getVideoById = (id: string): GeneratedVideoRecord | null => this.generations.getVideoById(id);
+  toggleVideoFavorite = (id: string): GeneratedVideoRecord | null =>
+    this.generations.toggleVideoFavorite(id);
+  deleteVideo = (id: string): void => this.generations.deleteVideo(id);
 }

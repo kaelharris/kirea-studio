@@ -1,15 +1,20 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  ArrowUpRight,
+  Boxes,
   Copy,
   Download,
   FolderOpen,
   History,
   ImagePlus,
+  Info,
   Pencil,
   PencilLine,
   Play,
+  RotateCcw,
   Search,
   Trash2,
+  Users,
 } from "lucide-react";
 import type { GeneratedImageRecord } from "../../../shared/types";
 import type {
@@ -43,6 +48,7 @@ import {
   formatPixelDate,
 } from "./pixel-ui";
 import { SpriteKilnPanel } from "./SpriteKilnPanel";
+import { PackageExportDialog, type PackageExportTarget } from "./PackageExportDialog";
 
 const KIND_OPTIONS: PixelKind[] = [
   "character",
@@ -73,8 +79,10 @@ interface AssetLibraryProps {
   selectedAssetId: string;
   onSelectAsset: (id: string) => void;
   onAssetsChanged: () => Promise<void> | void;
+  onAssetRestored?: (detail: PixelAssetDetail) => void;
   onImported: (detail: PixelAssetDetail) => void;
   onInspect: (id: string, target: "animation" | "editor") => void;
+  onOpenCharacter?: (characterId: string) => void;
   onToast: (message: string, tone?: "info" | "error") => void;
 }
 
@@ -85,8 +93,10 @@ export const AssetLibraryPanel: React.FC<AssetLibraryProps> = ({
   selectedAssetId,
   onSelectAsset,
   onAssetsChanged,
+  onAssetRestored,
   onImported,
   onInspect,
+  onOpenCharacter,
   onToast,
 }) => {
   const [search, setSearch] = useState("");
@@ -105,10 +115,20 @@ export const AssetLibraryPanel: React.FC<AssetLibraryProps> = ({
   const [exportFrame, setExportFrame] = useState(0);
   const [exportResult, setExportResult] = useState<PixelExportResult | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [packageTarget, setPackageTarget] = useState<PackageExportTarget | null>(null);
 
   const [versionsTarget, setVersionsTarget] = useState<PixelAssetRecord | null>(null);
   const [versions, setVersions] = useState<PixelAssetVersion[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
+  const [compareTarget, setCompareTarget] = useState<PixelAssetVersion | null>(null);
+  const [compareDetail, setCompareDetail] = useState<PixelAssetDetail | null>(null);
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [restoreTarget, setRestoreTarget] = useState<PixelAssetVersion | null>(null);
+  const [restoring, setRestoring] = useState(false);
+
+  const [generationTarget, setGenerationTarget] = useState<PixelAssetRecord | null>(null);
+  const [generationDetail, setGenerationDetail] = useState<PixelAssetDetail | null>(null);
+  const [generationLoading, setGenerationLoading] = useState(false);
 
   const [importOpen, setImportOpen] = useState(false);
   const [libraryImages, setLibraryImages] = useState<GeneratedImageRecord[]>([]);
@@ -225,6 +245,8 @@ export const AssetLibraryPanel: React.FC<AssetLibraryProps> = ({
   const openVersions = async (asset: PixelAssetRecord): Promise<void> => {
     setVersionsTarget(asset);
     setVersions([]);
+    setCompareTarget(null);
+    setCompareDetail(null);
     setVersionsLoading(true);
     try {
       setVersions(await window.kirea.listPixelAssetVersions(asset.id));
@@ -232,6 +254,59 @@ export const AssetLibraryPanel: React.FC<AssetLibraryProps> = ({
       onToast(error instanceof Error ? error.message : "Could not load version history.", "error");
     } finally {
       setVersionsLoading(false);
+    }
+  };
+
+  const openVersionCompare = async (version: PixelAssetVersion): Promise<void> => {
+    if (!versionsTarget) return;
+    setCompareTarget(version);
+    setCompareDetail(null);
+    setCompareLoading(true);
+    try {
+      setCompareDetail(await window.kirea.getPixelAssetVersion(versionsTarget.id, version.version));
+    } catch (error) {
+      onToast(error instanceof Error ? error.message : "Could not load that version.", "error");
+      setCompareTarget(null);
+    } finally {
+      setCompareLoading(false);
+    }
+  };
+
+  const restoreVersion = async (): Promise<void> => {
+    if (!versionsTarget || !restoreTarget) return;
+    setRestoring(true);
+    try {
+      const updated = await window.kirea.restorePixelAssetVersion(
+        versionsTarget.id,
+        restoreTarget.version
+      );
+      setVersions(await window.kirea.listPixelAssetVersions(versionsTarget.id));
+      setRestoreTarget(null);
+      setCompareTarget(null);
+      setCompareDetail(null);
+      await onAssetsChanged();
+      onAssetRestored?.(updated);
+      onToast(
+        `Restored v${restoreTarget.version} of ${updated.name} as v${updated.version}. Older and newer versions remain available.`,
+        "info"
+      );
+    } catch (error) {
+      onToast(error instanceof Error ? error.message : "Could not restore that version.", "error");
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  const openGeneration = async (asset: PixelAssetRecord): Promise<void> => {
+    setGenerationTarget(asset);
+    setGenerationDetail(null);
+    setGenerationLoading(true);
+    try {
+      setGenerationDetail(await window.kirea.getPixelAsset(asset.id));
+    } catch (error) {
+      onToast(error instanceof Error ? error.message : "Could not load generation information.", "error");
+    } finally {
+      setGenerationLoading(false);
     }
   };
 
@@ -406,7 +481,7 @@ export const AssetLibraryPanel: React.FC<AssetLibraryProps> = ({
                   </p>
                   <div className="flex flex-wrap gap-1 pt-1">
                     <Button size="sm" variant="utility" onClick={() => onInspect(asset.id, "editor")}>
-                      <Pencil className="w-3 h-3" /> Edit
+                      <Pencil className="w-3 h-3" /> Open editor
                     </Button>
                     <Button
                       size="sm"
@@ -414,6 +489,15 @@ export const AssetLibraryPanel: React.FC<AssetLibraryProps> = ({
                       onClick={() => onInspect(asset.id, "animation")}
                     >
                       <Play className="w-3 h-3" /> Animate
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="utility"
+                      onClick={() => void openGeneration(asset)}
+                      aria-label={`Generation information for ${asset.name}`}
+                      title="Generation information"
+                    >
+                      <Info className="w-3 h-3" />
                     </Button>
                     <Button
                       size="sm"
@@ -426,11 +510,49 @@ export const AssetLibraryPanel: React.FC<AssetLibraryProps> = ({
                     <Button
                       size="sm"
                       variant="utility"
+                      onClick={() =>
+                        setPackageTarget({
+                          scope: "asset",
+                          assetId: asset.id,
+                          projectId: asset.projectId,
+                          label: asset.name,
+                        })
+                      }
+                      aria-label={`Export ${asset.name} as a game-ready package`}
+                      title="Game-ready package"
+                    >
+                      <Boxes className="w-3 h-3" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="utility"
                       onClick={() => void openVersions(asset)}
                       aria-label={`Version history for ${asset.name}`}
                     >
                       <History className="w-3 h-3" />
                     </Button>
+                    {asset.characterId && onOpenCharacter ? (
+                      <Button
+                        size="sm"
+                        variant="utility"
+                        onClick={() => onOpenCharacter(asset.characterId!)}
+                        aria-label={`Open parent character for ${asset.name}`}
+                        title="Open parent character"
+                      >
+                        <Users className="w-3 h-3" />
+                      </Button>
+                    ) : null}
+                    {asset.parentAssetId ? (
+                      <Button
+                        size="sm"
+                        variant="utility"
+                        onClick={() => onInspect(asset.parentAssetId!, "editor")}
+                        aria-label={`Open parent asset for ${asset.name}`}
+                        title="Open parent asset"
+                      >
+                        <ArrowUpRight className="w-3 h-3" />
+                      </Button>
+                    ) : null}
                     <Button
                       size="sm"
                       variant="utility"
@@ -618,9 +740,13 @@ export const AssetLibraryPanel: React.FC<AssetLibraryProps> = ({
 
       <Modal
         open={!!versionsTarget}
-        onClose={() => setVersionsTarget(null)}
+        onClose={() => {
+          setVersionsTarget(null);
+          setCompareTarget(null);
+          setCompareDetail(null);
+        }}
         title={`Version history · ${versionsTarget?.name ?? ""}`}
-        maxWidthClass="max-w-2xl"
+        maxWidthClass="max-w-3xl"
       >
         {versionsLoading ? (
           <p className="text-small text-fg-muted">Loading versions…</p>
@@ -629,23 +755,327 @@ export const AssetLibraryPanel: React.FC<AssetLibraryProps> = ({
             No versions recorded yet. Saving frames creates the next version.
           </p>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-h-[420px] overflow-y-auto">
-            {versions.map((version) => (
-              <div key={version.id} className="border border-border rounded-lg overflow-hidden">
-                <PixelImage
-                  src={version.previewDataUrl}
-                  alt={`Version ${version.version}`}
-                  className="aspect-square w-full"
-                />
-                <div className="p-2">
-                  <p className="font-mono text-[11px] text-fg">v{version.version}</p>
-                  <p className="font-mono text-[10px] text-fg-faint">
-                    {formatPixelDate(version.createdAt)}
-                  </p>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-h-[320px] overflow-y-auto">
+              {versions.map((version) => {
+                const active = compareTarget?.version === version.version;
+                return (
+                  <div
+                    key={version.id}
+                    className={`border rounded-lg overflow-hidden ${
+                      active ? "border-accent ring-1 ring-accent" : "border-border"
+                    }`}
+                  >
+                    <PixelImage
+                      src={version.previewDataUrl}
+                      alt={`Version ${version.version}`}
+                      className="aspect-square w-full"
+                    />
+                    <div className="p-2 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <p className="font-mono text-[11px] text-fg">v{version.version}</p>
+                        {version.version === versionsTarget?.version ? (
+                          <Badge tone="success">current</Badge>
+                        ) : null}
+                      </div>
+                      <p className="font-mono text-[10px] text-fg-faint">
+                        {formatPixelDate(version.createdAt)}
+                      </p>
+                      <div className="flex gap-1">
+                        <Button
+                          size="sm"
+                          variant="utility"
+                          className="flex-1"
+                          onClick={() => void openVersionCompare(version)}
+                        >
+                          Compare
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="flex-1"
+                          disabled={version.version === versionsTarget?.version}
+                          onClick={() => setRestoreTarget(version)}
+                        >
+                          Restore
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {compareTarget ? (
+              <div className="border-t border-border pt-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="label-mono text-fg-muted">
+                    Compare current v{versionsTarget?.version} with v{compareTarget.version}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={compareTarget.version === versionsTarget?.version}
+                    onClick={() => setRestoreTarget(compareTarget)}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" /> Restore v{compareTarget.version}
+                  </Button>
                 </div>
+                {compareLoading ? (
+                  <p className="text-small text-fg-muted">Loading version…</p>
+                ) : compareDetail ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-fg-faint">
+                          Current · v{versionsTarget?.version}
+                        </span>
+                        <div className="rounded border border-border overflow-hidden">
+                          <PixelImage
+                            src={versionsTarget?.previewDataUrl ?? ""}
+                            alt="Current version"
+                            className="aspect-square w-full"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-fg-faint">
+                          Selected · v{compareTarget.version}
+                        </span>
+                        <div className="rounded border border-accent/60 overflow-hidden">
+                          <PixelImage
+                            src={compareDetail.previewDataUrl}
+                            alt={`Version ${compareTarget.version}`}
+                            className="aspect-square w-full"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                      <div>
+                        <span className="text-fg-muted">Size</span>
+                        <p className="font-mono text-fg">
+                          {compareDetail.width}×{compareDetail.height}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-fg-muted">Frames</span>
+                        <p className="font-mono text-fg">{compareDetail.frames.length}</p>
+                      </div>
+                      <div>
+                        <span className="text-fg-muted">Palette</span>
+                        <p className="font-mono text-fg">{compareDetail.palette.length}</p>
+                      </div>
+                      <div>
+                        <span className="text-fg-muted">Animations</span>
+                        <p className="font-mono text-fg">
+                          {Object.keys(compareDetail.animations).length}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-fg-faint">
+                      Restoring writes the selected frames and metadata as a new version. No
+                      existing version is deleted.
+                    </p>
+                  </>
+                ) : null}
               </div>
-            ))}
+            ) : null}
           </div>
+        )}
+      </Modal>
+
+      <PackageExportDialog
+        open={!!packageTarget}
+        onClose={() => setPackageTarget(null)}
+        target={packageTarget}
+        onToast={onToast}
+      />
+
+      <ConfirmDialog
+        open={!!restoreTarget}
+        onClose={() => setRestoreTarget(null)}
+        onConfirm={() => void restoreVersion()}
+        title={`Restore v${restoreTarget?.version ?? ""}`}
+        description={`Restore ${
+          versionsTarget?.name ?? "this asset"
+        } from v${restoreTarget?.version ?? ""}? The current state is kept as a recoverable version.`}
+        confirmLabel={restoring ? "Restoring…" : "Restore as new version"}
+      />
+
+      <Modal
+        open={!!generationTarget}
+        onClose={() => setGenerationTarget(null)}
+        title={`Generation information · ${generationTarget?.name ?? ""}`}
+        maxWidthClass="max-w-2xl"
+      >
+        {generationLoading ? (
+          <p className="text-small text-fg-muted">Loading metadata…</p>
+        ) : generationDetail ? (
+          <div className="space-y-3 text-[11px]">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div>
+                <span className="text-fg-muted">Engine</span>
+                <p className="font-mono text-fg">{generationDetail.engine}</p>
+              </div>
+              <div>
+                <span className="text-fg-muted">Seed</span>
+                <p className="font-mono text-fg">{generationDetail.seed ?? "—"}</p>
+              </div>
+              <div>
+                <span className="text-fg-muted">Version</span>
+                <p className="font-mono text-fg">
+                  v{generationDetail.version} · {generationDetail.frameCount} frames
+                </p>
+              </div>
+              <div>
+                <span className="text-fg-muted">Palette</span>
+                <p className="font-mono text-fg">
+                  {generationDetail.paletteId} · {generationDetail.palette.length} colours
+                </p>
+              </div>
+              <div>
+                <span className="text-fg-muted">Size</span>
+                <p className="font-mono text-fg">
+                  {generationDetail.width}×{generationDetail.height}
+                </p>
+              </div>
+              <div>
+                <span className="text-fg-muted">Created</span>
+                <p className="font-mono text-fg">{formatPixelDate(generationDetail.createdAt)}</p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {generationDetail.characterId && onOpenCharacter ? (
+                <Button
+                  size="sm"
+                  variant="utility"
+                  onClick={() => {
+                    onOpenCharacter(generationDetail.characterId!);
+                    setGenerationTarget(null);
+                  }}
+                >
+                  <Users className="w-3.5 h-3.5" /> Open parent character
+                </Button>
+              ) : null}
+              {generationDetail.parentAssetId ? (
+                <Button
+                  size="sm"
+                  variant="utility"
+                  onClick={() => {
+                    onInspect(generationDetail.parentAssetId!, "editor");
+                    setGenerationTarget(null);
+                  }}
+                >
+                  <ArrowUpRight className="w-3.5 h-3.5" /> Open parent asset
+                </Button>
+              ) : null}
+              <Button
+                size="sm"
+                variant="utility"
+                onClick={() => {
+                  onInspect(generationDetail.id, "animation");
+                  setGenerationTarget(null);
+                }}
+              >
+                <Play className="w-3.5 h-3.5" /> Open animation
+              </Button>
+              <Button
+                size="sm"
+                variant="utility"
+                onClick={() => {
+                  onInspect(generationDetail.id, "editor");
+                  setGenerationTarget(null);
+                }}
+              >
+                <Pencil className="w-3.5 h-3.5" /> Open in editor
+              </Button>
+            </div>
+
+            <PixelField label="Prompt">
+              <p className="rounded border border-border bg-surface-subtle p-2 text-fg leading-relaxed whitespace-pre-wrap">
+                {generationDetail.prompt || "No prompt stored."}
+              </p>
+            </PixelField>
+
+            {generationDetail.generation ? (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-fg-muted">Workflow</span>
+                    <p className="font-mono text-fg break-all">
+                      {generationDetail.generation.workflowId} ·{" "}
+                      {generationDetail.generation.workflowFile}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-fg-muted">Model</span>
+                    <p className="font-mono text-fg break-all">
+                      {generationDetail.generation.model}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-fg-muted">Backend</span>
+                    <p className="font-mono text-fg">
+                      {generationDetail.generation.backend} ·{" "}
+                      {generationDetail.generation.backendVersion ?? "unknown version"}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-fg-muted">SpriteKiln prompt id</span>
+                    <p className="font-mono text-fg break-all">
+                      {generationDetail.generation.promptId}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-fg-muted">Generated</span>
+                    <p className="font-mono text-fg">
+                      {formatPixelDate(generationDetail.generation.timestamp)}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-fg-muted">Style</span>
+                    <p className="font-mono text-fg">
+                      {generationDetail.generation.style ?? "default"}
+                    </p>
+                  </div>
+                </div>
+                {generationDetail.generation.reference ? (
+                  <div>
+                    <span className="text-fg-muted">Reference</span>
+                    <p className="text-fg">
+                      {generationDetail.generation.reference.subject.label}
+                      {generationDetail.generation.reference.style
+                        ? ` · style: ${generationDetail.generation.reference.style.label}`
+                        : ""}
+                    </p>
+                  </div>
+                ) : null}
+                <PixelField label="Settings">
+                  <pre className="rounded border border-border bg-surface-subtle p-2 text-[10px] text-fg-muted overflow-auto max-h-40">
+                    {JSON.stringify(generationDetail.generation.settings, null, 2)}
+                  </pre>
+                </PixelField>
+                {generationDetail.generation.notes.length ? (
+                  <PixelField label="Notes">
+                    <ul className="list-disc pl-4 text-fg-muted space-y-1">
+                      {generationDetail.generation.notes.map((note, index) => (
+                        <li key={index}>{note}</li>
+                      ))}
+                    </ul>
+                  </PixelField>
+                ) : null}
+              </>
+            ) : (
+              <p className="text-fg-faint">
+                No SpriteKiln generation sidecar is stored for this asset. Procedural or imported
+                assets still keep their recipe and version provenance.
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="text-small text-fg-muted">No generation information available.</p>
         )}
       </Modal>
 

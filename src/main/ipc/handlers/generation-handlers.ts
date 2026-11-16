@@ -6,10 +6,17 @@ import { z } from "zod";
 import { IPC_CHANNELS } from "../../../shared/ipc-channels";
 import { WORKFLOW_TEMPLATES } from "../../comfy/workflow-registry";
 import { exportImageToDestination } from "../../images/image-exporter";
+import { exportVideoToDestination } from "../../videos/video-exporter";
 import { isPathInsideAnyRoot } from "../../security";
+import { UnifiedLibraryService } from "../../library/library-service";
 import {
   GenerationRequestSchema,
+  LibraryBatchDeleteSchema,
+  LibraryBatchExportSchema,
+  LibraryBatchFavoriteSchema,
+  LibraryBatchSetCollectionSchema,
   LibraryFiltersSchema,
+  LibraryMediaQuerySchema,
   OutputFormatSchema,
   type HandlerContext,
   type IpcRegistrarHandle,
@@ -19,6 +26,8 @@ export function registerGenerationHandlers(
   ctx: HandlerContext,
   handle: IpcRegistrarHandle
 ): void {
+  const library = new UnifiedLibraryService(ctx.repo, ctx.paths);
+
   // --- Workflows & Jobs ---
   handle(IPC_CHANNELS.WORKFLOWS_LIST, () => WORKFLOW_TEMPLATES);
 
@@ -66,6 +75,11 @@ export function registerGenerationHandlers(
   );
 
   // --- Library, Collections & Prompts ---
+  handle(IPC_CHANNELS.LIBRARY_LIST_MEDIA, (_event, queryRaw?: unknown) => {
+    const query = LibraryMediaQuerySchema.parse(queryRaw);
+    return library.list(query ?? {});
+  });
+
   handle(IPC_CHANNELS.LIBRARY_LIST, (_event, filtersRaw?: unknown) => {
     const filters = LibraryFiltersSchema.parse(filtersRaw);
     return ctx.repo.listImages(filters);
@@ -126,6 +140,76 @@ export function registerGenerationHandlers(
       return await exportImageToDestination(img.filePath, saveRes.filePath, format, stripMeta);
     }
   );
+
+  handle(IPC_CHANNELS.LIBRARY_BATCH_DELETE, async (_event, idsRaw: unknown) => {
+    const ids = LibraryBatchDeleteSchema.parse(idsRaw);
+    const s = ctx.getSettings();
+    return library.batchDelete(ids, [s.outputDirectory, ctx.paths.defaultOutputDir]);
+  });
+
+  handle(IPC_CHANNELS.LIBRARY_BATCH_EXPORT, async (_event, reqRaw: unknown) => {
+    const req = LibraryBatchExportSchema.parse(reqRaw);
+    return library.batchExport(req.ids, req.destinationDir);
+  });
+
+  handle(IPC_CHANNELS.LIBRARY_BATCH_SET_COLLECTION, (_event, reqRaw: unknown) => {
+    const req = LibraryBatchSetCollectionSchema.parse(reqRaw);
+    return library.batchSetCollection(req.ids, req.collectionId);
+  });
+
+  handle(IPC_CHANNELS.LIBRARY_BATCH_FAVORITE, async (_event, reqRaw: unknown) => {
+    const req = LibraryBatchFavoriteSchema.parse(reqRaw);
+    return library.batchSetFavorite(req.ids, req.favorite);
+  });
+
+  // --- Video library ---
+  handle(IPC_CHANNELS.VIDEO_LIST, () => ctx.repo.listVideos(500));
+
+  handle(IPC_CHANNELS.VIDEO_TOGGLE_FAVORITE, (_event, idRaw: string) =>
+    ctx.repo.toggleVideoFavorite(z.string().min(1).max(100).parse(idRaw))
+  );
+
+  handle(IPC_CHANNELS.VIDEO_DELETE, async (_event, idRaw: string) => {
+    const id = z.string().min(1).max(100).parse(idRaw);
+    const video = ctx.repo.getVideoById(id);
+    if (video) {
+      const s = ctx.getSettings();
+      if (
+        isPathInsideAnyRoot(video.filePath, [s.outputDirectory, ctx.paths.defaultOutputDir]) &&
+        fs.existsSync(video.filePath)
+      ) {
+        await fs.promises.rm(video.filePath, { force: true }).catch(() => undefined);
+        await fs.promises
+          .rm(`${video.filePath}.json`, { force: true })
+          .catch(() => undefined);
+      }
+      ctx.repo.deleteVideo(id);
+    }
+  });
+
+  handle(IPC_CHANNELS.VIDEO_EXPORT, async (_event, idRaw: string) => {
+    const id = z.string().min(1).max(100).parse(idRaw);
+    const video = ctx.repo.getVideoById(id);
+    if (!video || !fs.existsSync(video.filePath)) {
+      throw new Error("Source video file was not found on disk.");
+    }
+
+    const stem = path.basename(video.fileName, path.extname(video.fileName));
+    const win = ctx.getMainWindow();
+    const saveRes = await dialog.showSaveDialog(win ?? undefined!, {
+      title: "Export Generated Video",
+      defaultPath: path.join(app.getPath("videos"), `${stem}.${video.container}`),
+      filters: [
+        {
+          name: video.container === "webm" ? "WebM Video" : "MP4 Video",
+          extensions: [video.container],
+        },
+      ],
+    });
+    if (saveRes.canceled || !saveRes.filePath) return null;
+
+    return await exportVideoToDestination(video.filePath, saveRes.filePath);
+  });
 
   handle(IPC_CHANNELS.COLLECTIONS_LIST, () => ctx.repo.listCollections());
 

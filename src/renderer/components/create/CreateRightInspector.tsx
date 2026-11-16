@@ -410,7 +410,7 @@ export const CreateRightInspector: React.FC<{ ctrl: CreateController }> = ({ ctr
                         alt={img.prompt}
                         loading="lazy"
                         compact
-                        className="h-full w-full object-cover"
+                        className="h-full w-full bg-surface-subtle object-contain"
                       />
                     </button>
                   ))}

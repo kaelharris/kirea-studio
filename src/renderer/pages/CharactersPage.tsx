@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ImagePlus,
   Pencil,
@@ -69,6 +69,8 @@ interface CharactersPageProps {
   ) => Promise<CharacterProfile | null>;
   onUseCharacter: (character: CharacterProfile) => void;
   onToast: (message: string, tone?: "info" | "error") => void;
+  initialCharacterId?: string;
+  onFocusApplied?: () => void;
 }
 
 const REFERENCE_ROLES: CharacterReferenceRole[] = [
@@ -206,6 +208,8 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
   onRemoveReference,
   onUseCharacter,
   onToast,
+  initialCharacterId,
+  onFocusApplied,
 }) => {
   const [search, setSearch] = useState("");
   const [editorOpen, setEditorOpen] = useState(false);
@@ -274,6 +278,21 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
     setReferenceRole("secondary");
     setEditorOpen(true);
   };
+
+  const appliedFocusRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialCharacterId) {
+      appliedFocusRef.current = null;
+      return;
+    }
+    if (appliedFocusRef.current === initialCharacterId) return;
+    const target = characters.find((c) => c.id === initialCharacterId);
+    if (!target) return;
+    appliedFocusRef.current = initialCharacterId;
+    openEdit(target);
+    onFocusApplied?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCharacterId, characters, onFocusApplied]);
 
   const updateForm = <K extends keyof EditorFormState>(
     key: K,

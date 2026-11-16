@@ -37,8 +37,10 @@ export interface CivitaiVersion {
   name: string;
   baseModel: string;
   architecture: ModelArchitecture;
+  availability: string | null;
   fileName: string;
   downloadUrl: string;
+  downloadable: boolean;
   sizeBytes: number;
   sha256: string | null;
   trainedWords: string[];

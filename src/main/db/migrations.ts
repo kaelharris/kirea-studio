@@ -590,5 +590,91 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 7,
+    name: "pixel_frame_ids",
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE pixel_frames ADD COLUMN frame_id TEXT;
+        UPDATE pixel_frames SET frame_id =
+          lower(hex(randomblob(4))) || '-' ||
+          lower(hex(randomblob(2))) || '-' ||
+          '4' || substr(lower(hex(randomblob(2))), 2) || '-' ||
+          substr('89ab', 1 + (abs(random()) % 4), 1) ||
+          substr(lower(hex(randomblob(2))), 2) || '-' ||
+          lower(hex(randomblob(6)))
+          WHERE frame_id IS NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_pixel_frames_asset_frame_id
+          ON pixel_frames(asset_id, frame_id);
+      `);
+    },
+  },
+  {
+    version: 8,
+    name: "pixel_palette_library",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS pixel_palettes (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          colors_json TEXT NOT NULL DEFAULT '[]',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pixel_palettes_name
+          ON pixel_palettes(name COLLATE NOCASE);
+      `);
+    },
+  },
+  {
+    version: 9,
+    name: "pixel_version_palette",
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE pixel_asset_versions
+          ADD COLUMN palette_json TEXT NOT NULL DEFAULT '[]';
+      `);
+    },
+  },
+  {
+    version: 10,
+    name: "generated_videos",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS generated_videos (
+          id TEXT PRIMARY KEY,
+          job_id TEXT NOT NULL,
+          file_path TEXT NOT NULL UNIQUE,
+          file_name TEXT NOT NULL,
+          container TEXT NOT NULL,
+          width INTEGER NOT NULL,
+          height INTEGER NOT NULL,
+          size_bytes INTEGER NOT NULL,
+          duration_seconds REAL NOT NULL,
+          fps REAL NOT NULL,
+          frame_count INTEGER NOT NULL,
+          prompt TEXT NOT NULL,
+          negative_prompt TEXT NOT NULL DEFAULT '',
+          seed INTEGER NOT NULL,
+          checkpoint TEXT NOT NULL,
+          loras_json TEXT NOT NULL DEFAULT '[]',
+          workflow_id TEXT NOT NULL,
+          sampler TEXT NOT NULL,
+          scheduler TEXT NOT NULL,
+          steps INTEGER NOT NULL,
+          cfg REAL NOT NULL,
+          denoise REAL NOT NULL DEFAULT 1.0,
+          mode TEXT NOT NULL,
+          favorite INTEGER NOT NULL DEFAULT 0,
+          tags_json TEXT NOT NULL DEFAULT '[]',
+          created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_videos_created
+          ON generated_videos(created_at DESC);
+      `);
+    },
+  },
 ];
 

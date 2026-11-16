@@ -220,6 +220,13 @@ export const CivitaiHubView: React.FC<CivitaiHubViewProps> = ({
                           {ARCHITECTURE_LABELS[version.architecture]}
                         </Badge>
                       )}
+                      {version?.availability && version.availability !== "Public" && (
+                        <Badge tone="warning">
+                          {version.availability === "EarlyAccess"
+                            ? "Early access"
+                            : version.availability}
+                        </Badge>
+                      )}
                       {model.nsfw && <Badge tone="danger">NSFW</Badge>}
                     </div>
                     {installed && (
@@ -333,6 +340,10 @@ export const CivitaiHubView: React.FC<CivitaiHubViewProps> = ({
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         Downloading {downloadPercent(activeTask)}% — View Queue
                       </Button>
+                    ) : version && !version.downloadable ? (
+                      <Badge tone="danger" className="justify-center py-1.5">
+                        No downloadable file
+                      </Badge>
                     ) : (
                       <Button
                         size="sm"

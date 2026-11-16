@@ -24,6 +24,7 @@ import {
   resolveRefinerCheckpoint,
   resolveRequestedVae,
 } from "./workflow-validation";
+import { buildVideoPromptGraph } from "./video-graph-builder";
 
 export interface BuildWorkflowParams {
   request: GenerationRequest;
@@ -181,6 +182,20 @@ export function buildComfyPromptGraph(params: BuildWorkflowParams): {
   const resolvedSeed = request.randomSeed
     ? Math.floor(Math.random() * 2_147_483_647)
     : Math.max(0, Math.floor(request.seed));
+
+  if (template.video) {
+    const graph = buildVideoPromptGraph({
+      template,
+      request,
+      uploadedInputFilename,
+      availableModels,
+      filenamePrefix,
+      resolvedSeed,
+      width,
+      height,
+    });
+    return { template, resolvedSeed, graph };
+  }
 
   if (template.mode === "upscale") {
     if (!uploadedInputFilename) {

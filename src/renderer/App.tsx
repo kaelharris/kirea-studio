@@ -1,6 +1,9 @@
 import React from "react";
 import { Cpu, Play, Wand2 } from "lucide-react";
-import { calculateDimensionsForAspect } from "../shared/aspect-ratios";
+import {
+  dimensionBoundsFromWorkflow,
+  resolveDimensionsForAspect,
+} from "../shared/aspect-ratios";
 import {
   getEffectiveArchitecture,
   getEffectiveModelInfo,
@@ -18,6 +21,7 @@ import { ModelsPage } from "./pages/ModelsPage";
 import { QueuePage } from "./pages/QueuePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { StoryStudioPage } from "./pages/StoryStudioPage";
+import { VideoStudioPage } from "./pages/VideoStudioPage";
 import { PixelStudioPage } from "./pages/PixelStudioPage";
 import { WorkflowsPage } from "./pages/WorkflowsPage";
 import { SidebarNav } from "./app/SidebarNav";
@@ -103,12 +107,21 @@ export const App: React.FC = () => {
     handleOpenCanvasExportFolder,
   } = useAppController();
 
+  const [libraryFocus, setLibraryFocus] = React.useState<{
+    videoId?: string;
+    pixelAssetId?: string;
+    pixelAssetTab?: "editor" | "animation";
+    characterId?: string;
+  } | null>(null);
+  const clearLibraryFocus = React.useCallback(() => setLibraryFocus(null), []);
+
   // The setup banner carries its own Start Engine action, so the header copy
   // is only shown on pages where the banner is not rendered.
   const showRuntimeBanner =
     runtime.status !== "connected" &&
     (activePage === "home" ||
       activePage === "create" ||
+      activePage === "video" ||
       activePage === "workflows");
 
   return (
@@ -199,7 +212,9 @@ export const App: React.FC = () => {
         <main className="flex-1 overflow-y-auto">
           <div
             className={`mx-auto w-full p-6 space-y-6 ${
-              activePage === "create" ? "max-w-none" : "max-w-[1600px]"
+              activePage === "create" || activePage === "video"
+                ? "max-w-none"
+                : "max-w-[1600px]"
             }`}
           >
           {showRuntimeBanner && (
@@ -300,6 +315,20 @@ export const App: React.FC = () => {
             />
           )}
 
+          {activePage === "video" && (
+            <VideoStudioPage
+              workflows={workflows}
+              models={models}
+              settings={settings}
+              runtime={runtime}
+              hardware={hardware}
+              jobs={jobs}
+              initialVideoId={libraryFocus?.videoId}
+              onFocusApplied={clearLibraryFocus}
+              onToast={pushToast}
+            />
+          )}
+
           {activePage === "library" && (
             <LibraryPage
               images={images}
@@ -308,7 +337,10 @@ export const App: React.FC = () => {
               onInspectImage={setInspectedImage}
               onReuseSettings={handleReuseImageSettings}
               onToggleFavorite={handleToggleFavorite}
+              onDeleteImage={handleDeleteImage}
               onRemoveMissing={handleRemoveMissingImages}
+              onDeleteCharacter={handleDeleteCharacter}
+              onSaveCharacter={handleSaveCharacter}
               onCreateCollection={async (name, desc) => {
                 const col = await window.kirea.createCollection(name, desc);
                 setCollections((prev) => [...prev, col]);
@@ -320,7 +352,20 @@ export const App: React.FC = () => {
                 setImages(await window.kirea.listImages());
                 pushToast("Deleted collection.");
               }}
+              onOpenVideo={(videoId) => {
+                setLibraryFocus({ videoId });
+                setActivePage("video");
+              }}
+              onOpenPixelAsset={(pixelAssetId, pixelAssetTab) => {
+                setLibraryFocus({ pixelAssetId, pixelAssetTab });
+                setActivePage("pixel");
+              }}
+              onOpenCharacter={(characterId) => {
+                setLibraryFocus({ characterId });
+                setActivePage("characters");
+              }}
               onNavigate={setActivePage}
+              onToast={pushToast}
             />
           )}
 
@@ -329,6 +374,8 @@ export const App: React.FC = () => {
               characters={characters}
               models={models}
               recipes={recipes}
+              initialCharacterId={libraryFocus?.characterId}
+              onFocusApplied={clearLibraryFocus}
               onSaveCharacter={handleSaveCharacter}
               onDeleteCharacter={handleDeleteCharacter}
               onPickReference={async (characterId, role) => {
@@ -393,7 +440,14 @@ export const App: React.FC = () => {
             />
           )}
 
-          {activePage === "pixel" && <PixelStudioPage onToast={pushToast} />}
+          {activePage === "pixel" && (
+            <PixelStudioPage
+              initialAssetId={libraryFocus?.pixelAssetId}
+              initialAssetTab={libraryFocus?.pixelAssetTab}
+              onFocusApplied={clearLibraryFocus}
+              onToast={pushToast}
+            />
+          )}
 
           {activePage === "models" && (            <ModelsPage
               models={models}
@@ -480,11 +534,6 @@ export const App: React.FC = () => {
                 }
 
                 const arch = getEffectiveArchitecture(model);
-                const dims = calculateDimensionsForAspect(
-                  draft.aspectRatio,
-                  arch,
-                  settings.performanceProfile
-                );
                 const wfId =
                   arch === "z_image"
                     ? "t2i_z_image_turbo"
@@ -492,6 +541,12 @@ export const App: React.FC = () => {
                       ? "t2i_sd15_base"
                       : "t2i_sdxl_base";
                 const wf = workflows.find((w) => w.id === wfId);
+                const dims = resolveDimensionsForAspect(
+                  draft.aspectRatio,
+                  arch,
+                  settings.performanceProfile,
+                  dimensionBoundsFromWorkflow(wf)
+                );
                 setDraft((p) => ({
                   ...p,
                   mode: "txt2img",
@@ -525,6 +580,7 @@ export const App: React.FC = () => {
               workflows={workflows}
               models={models}
               runtime={runtime}
+              onToast={pushToast}
               onUseWorkflow={(wf) => {
                 const installedUpscaler =
                   models.find((m) => m.installed && m.category === "upscale")

@@ -182,6 +182,13 @@ export const CivitaiDetailsModal: React.FC<CivitaiDetailsModalProps> = ({
                         {version.baseModel && (
                           <Badge tone="neutral">{version.baseModel}</Badge>
                         )}
+                        {version.availability && version.availability !== "Public" && (
+                          <Badge tone="warning">
+                            {version.availability === "EarlyAccess"
+                              ? "Early access"
+                              : version.availability}
+                          </Badge>
+                        )}
                         {installed && (
                           <Badge tone="success">
                             <CheckCircle2 className="w-3 h-3" />
@@ -248,6 +255,8 @@ export const CivitaiDetailsModal: React.FC<CivitaiDetailsModalProps> = ({
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           Downloading {downloadPercent(activeTask)}%
                         </Button>
+                      ) : !version.downloadable ? (
+                        <Badge tone="danger">No downloadable file</Badge>
                       ) : (
                         <Button
                           size="sm"

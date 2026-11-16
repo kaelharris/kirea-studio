@@ -15,6 +15,7 @@ export const ARCHITECTURE_LABELS: Record<ModelArchitecture, string> = {
   anima: "Anima",
   krea2: "Krea 2",
   ltx_video: "LTX Video",
+  wan_video: "Wan Video",
   unknown: "Unknown",
 };
 
@@ -29,14 +30,16 @@ export const ARCHITECTURE_HINTS: Record<ModelArchitecture, string> = {
     "Split DiT (UNET + Qwen3 text encoder + qwen_image_vae). 1024 px, ~30 steps, CFG 4, euler/simple.",
   krea2: "Krea 2 diffusion model. Label and preview only; generation workflow is not shipped yet.",
   ltx_video: "Video checkpoint. Not usable in the image generation studio.",
+  wan_video: "Wan video diffusion model. Not usable in the image generation studio.",
   unknown: "Architecture could not be inferred from the filename, metadata, or tensor header.",
 };
 
-/** Architectures that are labeled but cannot yet be rendered by shipped workflows. */
+/** Architectures that are labeled but cannot yet be rendered by shipped image workflows. */
 export const UNSUPPORTED_GENERATION_ARCHITECTURES: ModelArchitecture[] = [
   "flux",
   "krea2",
   "ltx_video",
+  "wan_video",
 ];
 
 const ARCHITECTURE_FAMILY: Record<ModelArchitecture, string> = {
@@ -49,6 +52,7 @@ const ARCHITECTURE_FAMILY: Record<ModelArchitecture, string> = {
   anima: "anima",
   krea2: "krea2",
   ltx_video: "ltx_video",
+  wan_video: "wan_video",
   unknown: "unknown",
 };
 
@@ -163,6 +167,7 @@ export function architectureBadgeTone(
     case "krea2":
       return "warning";
     case "ltx_video":
+    case "wan_video":
       return "danger";
     default:
       return "neutral";

@@ -27,6 +27,8 @@ export interface PixelAtlas {
       string,
       {
         frame: { x: number; y: number; w: number; h: number };
+        spriteSourceSize: { x: number; y: number; w: number; h: number };
+        sourceSize: { w: number; h: number };
         duration: number;
       }
     >;
@@ -35,10 +37,38 @@ export interface PixelAtlas {
   };
 }
 
-interface PixelboltModule {
+export interface SpriteFramesAtlas {
+  frames: Record<
+    string,
+    {
+      frame: { x: number; y: number; w: number; h: number };
+      spriteSourceSize: { x: number; y: number; w: number; h: number };
+      sourceSize: { w: number; h: number };
+      duration: number;
+    }
+  >;
+  animations: Record<string, { frames: string[]; loop: boolean }>;
+  meta: { image: string };
+}
+
+export interface PixelboltModule {
   renderProject(spec: unknown): RenderedProject;
   buildAtlas(project: RenderedProject): PixelAtlas;
   encodePNG(data: Uint8ClampedArray, width: number, height: number): Buffer;
+  encodeGIF(
+    frames: Array<{ data: Uint8ClampedArray; duration: number }>,
+    width: number,
+    height: number,
+    options?: { loop?: boolean; scale?: number; background?: [number, number, number] | null }
+  ): {
+    data: Uint8Array;
+    width: number;
+    height: number;
+    colors: number;
+    transparent: boolean;
+    delays: number[];
+    partialAlpha: number;
+  };
   encodeAPNG(
     frames: Array<{ data: Uint8ClampedArray; duration: number }>,
     width: number,
@@ -60,7 +90,8 @@ interface PixelboltModule {
     notes: string[];
   };
   createZip(files: Map<string, Uint8Array>): Buffer;
-  spriteFrames(atlas: PixelAtlas["metadata"], options?: { image?: string }): {
+  godotTiming(durations: number[]): { speed: number; durations: number[]; exact: boolean };
+  spriteFrames(atlas: SpriteFramesAtlas, options?: { image?: string }): {
     text: string;
     approximate: string[];
   };
@@ -148,18 +179,37 @@ export async function writeRenderFiles(
   const framePaths: string[] = [];
   for (const [index, frame] of render.frames.entries()) {
     const filePath = path.join(directory, `frame_${String(index).padStart(3, "0")}.png`);
-    await fs.writeFile(filePath, engine.encodePNG(frame.data, render.width, render.height));
+    await writePngDurable(engine, filePath, frame.data, render.width, render.height);
     framePaths.push(filePath);
   }
   const previewPath = path.join(directory, "preview.png");
-  await fs.writeFile(
+  await writePngDurable(
+    engine,
     previewPath,
-    engine.encodePNG(render.frames[0]!.data, render.width, render.height)
+    render.frames[0]!.data,
+    render.width,
+    render.height
   );
   const sheetPath = path.join(directory, `${slug}-sheet.png`);
   const atlas = engine.buildAtlas(render);
-  await fs.writeFile(sheetPath, engine.encodePNG(atlas.data, atlas.width, atlas.height));
+  await writePngDurable(engine, sheetPath, atlas.data, atlas.width, atlas.height);
   return { framePaths, previewPath, sheetPath };
+}
+
+async function writePngDurable(
+  engine: PixelboltModule,
+  filePath: string,
+  data: Uint8ClampedArray,
+  width: number,
+  height: number
+): Promise<void> {
+  await fs.writeFile(filePath, engine.encodePNG(data, width, height), { flush: true });
+  const decoded = engine.decodePNG(await fs.readFile(filePath));
+  if (decoded.width !== width || decoded.height !== height) {
+    throw new Error(
+      `Wrote ${decoded.width}×${decoded.height} to ${path.basename(filePath)}; expected ${width}×${height}.`
+    );
+  }
 }
 
 export async function writePreviewFile(

@@ -26,6 +26,8 @@ import {
   isAnimaWorkflow,
   usesDiffusionModelLoader,
 } from "./workflow-templates";
+import { resolveVideoFrames, resolveVideoModels } from "./video-graph-builder";
+import { isVideoMode } from "../../shared/video-utils";
 
 const REFINER_CREATIVITY_MIN = 0.2;
 const REFINER_CREATIVITY_MAX = 0.5;
@@ -121,6 +123,154 @@ function collectLoraIssues(
   return issues;
 }
 
+function validateVideoRequest(
+  req: GenerationRequest,
+  wf: WorkflowTemplate,
+  installedModels: ModelRecord[],
+  vramTotalMB: number
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const spec = wf.video;
+  if (!spec) {
+    issues.push({
+      field: "workflowId",
+      severity: "error",
+      message: `Workflow '${wf.name}' is not a video workflow.`,
+    });
+    return issues;
+  }
+
+  if (!req.prompt || req.prompt.trim().length === 0) {
+    issues.push({ field: "prompt", severity: "error", message: "Prompt cannot be empty." });
+  }
+
+  if (!req.checkpoint || req.checkpoint.trim().length === 0) {
+    issues.push({
+      field: "checkpoint",
+      severity: "error",
+      message: `Select a ${wf.supportedArchitectures.map((a) => ARCHITECTURE_LABELS[a]).join(" or ")} model before generating video.`,
+    });
+  } else {
+    const record = installedModels.find(
+      (m) => m.relativePath === req.checkpoint || m.name === req.checkpoint
+    );
+    const arch = record?.architecture ?? inferModelArchitecture(req.checkpoint);
+    if (arch !== "unknown" && !wf.supportedArchitectures.includes(arch)) {
+      issues.push({
+        field: "checkpoint",
+        severity: "error",
+        message: `'${req.checkpoint}' (${ARCHITECTURE_LABELS[arch]}) cannot run '${wf.name}'.`,
+      });
+    }
+    if (record && spec.family === "wan21_t2v" && record.category !== "diffusion_model") {
+      issues.push({
+        field: "checkpoint",
+        severity: "error",
+        message: `Wan workflows load the video model with UNETLoader; '${req.checkpoint}' is registered as a ${record.category}.`,
+      });
+    }
+    if (record && spec.family === "ltx_video" && record.category !== "checkpoint") {
+      issues.push({
+        field: "checkpoint",
+        severity: "error",
+        message: `LTX-Video workflows load an all-in-one checkpoint; '${req.checkpoint}' is registered as a ${record.category}.`,
+      });
+    }
+  }
+
+  if (installedModels.length > 0) {
+    const resolved = resolveVideoModels(wf, installedModels);
+    for (const missing of resolved.missing) {
+      const folder = missing.category === "text_encoder" ? "text_encoders" : missing.category;
+      issues.push({
+        field: "checkpoint",
+        severity: "error",
+        message: `Video workflow requires '${missing.fileName}' (${missing.label}, ~${missing.approxSizeGB} GB) in ComfyUI's ${folder} folder.`,
+      });
+    }
+  }
+
+  if (req.mode === "i2v" && (!req.inputImagePath || req.inputImagePath.trim().length === 0)) {
+    issues.push({
+      field: "inputImagePath",
+      severity: "error",
+      message: "Image-to-Video mode requires an uploaded or selected input image.",
+    });
+  }
+
+  if (
+    req.width < wf.minDim ||
+    req.width > wf.maxDim ||
+    req.height < wf.minDim ||
+    req.height > wf.maxDim
+  ) {
+    issues.push({
+      field: "dimensions",
+      severity: "error",
+      message: `Video dimensions must be between ${wf.minDim}px and ${wf.maxDim}px for this workflow.`,
+    });
+  }
+  if (req.width % wf.dimStep !== 0 || req.height % wf.dimStep !== 0) {
+    issues.push({
+      field: "dimensions",
+      severity: "warning",
+      message: `Video dimensions snap to ${wf.dimStep}px multiples for this workflow.`,
+    });
+  }
+
+  if (req.video) {
+    if (req.video.fps !== spec.fps) {
+      issues.push({
+        field: "video",
+        severity: "warning",
+        message: `This workflow runs at ${spec.fps} fps; the requested ${req.video.fps} fps is ignored.`,
+      });
+    }
+    if (!spec.formats.includes(req.video.format)) {
+      issues.push({
+        field: "video",
+        severity: "error",
+        message: `This workflow can only write ${spec.formats.join(" or ")} files.`,
+      });
+    }
+  }
+
+  const frames = resolveVideoFrames(req, spec);
+  const minDuration = spec.minFrames / spec.fps;
+  const maxDuration = spec.maxFrames / spec.fps;
+  if (frames.clamped) {
+    issues.push({
+      field: "video",
+      severity: "warning",
+      message: `Requested duration is outside this model's ${minDuration.toFixed(1)}–${maxDuration.toFixed(1)}s range; using ${frames.durationSeconds.toFixed(1)}s.`,
+    });
+  } else if (frames.snapped) {
+    issues.push({
+      field: "video",
+      severity: "warning",
+      message: `Duration snaps to the ${spec.frameStep}-frame grid; using ${frames.frameCount} frames (${frames.durationSeconds.toFixed(1)}s at ${spec.fps} fps).`,
+    });
+  }
+
+  if (vramTotalMB > 0) {
+    if (vramTotalMB < spec.minVramMB) {
+      issues.push({
+        field: "video",
+        severity: "error",
+        message: `This workflow needs at least ${(spec.minVramMB / 1024).toFixed(0)} GB VRAM; the detected GPU has ${(vramTotalMB / 1024).toFixed(1)} GB.`,
+      });
+    } else if (vramTotalMB < spec.recommendedVramMB) {
+      issues.push({
+        field: "video",
+        severity: "warning",
+        message: `This workflow recommends ${(spec.recommendedVramMB / 1024).toFixed(0)} GB VRAM; ${(vramTotalMB / 1024).toFixed(1)} GB may need ComfyUI model offloading and slower generation.`,
+      });
+    }
+  }
+
+  return issues;
+}
+
 export function validateGenerationRequest(
   req: GenerationRequest,
   installedModels: ModelRecord[],
@@ -145,6 +295,18 @@ export function validateGenerationRequest(
       severity: "error",
       message: `Workflow '${wf.name}' only supports ${wf.mode}, not ${req.mode}.`,
     });
+  }
+
+  if (wf.video) {
+    return validateVideoRequest(req, wf, installedModels, vramTotalMB);
+  }
+  if (isVideoMode(req.mode)) {
+    issues.push({
+      field: "mode",
+      severity: "error",
+      message: `${req.mode} requires a video workflow template.`,
+    });
+    return issues;
   }
 
   if (req.mode === "upscale") {

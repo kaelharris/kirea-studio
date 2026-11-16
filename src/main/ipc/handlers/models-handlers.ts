@@ -305,6 +305,11 @@ export function registerModelsHandlers(
         `Civitai version ${versionId} is not available for model ${modelId}.`
       );
     }
+    if (!version.downloadable) {
+      throw new Error(
+        `Civitai version ${versionId} has no downloadable file; it may be unavailable or restricted.`
+      );
+    }
     return ctx.civitaiDownloadManager.start({
       model,
       version,

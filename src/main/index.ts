@@ -59,6 +59,9 @@ function buildDefaultSettings(paths: StudioPaths, firstDetectedComfyPath: string
     externalComfyPath: firstDetectedComfyPath,
     comfyHost: "127.0.0.1",
     comfyPort: 8188,
+    pixelBackendHost: "127.0.0.1",
+    pixelBackendPort: 8189,
+    pixelBackendWorkflowRoot: "",
     managedComfyPath: paths.defaultManagedRuntimeDir,
     autoStartRuntime: false,
     outputDirectory: paths.defaultOutputDir,
@@ -326,6 +329,7 @@ async function bootstrapApplication(): Promise<void> {
           paths.inputUploadCacheDir,
           paths.cacheDir,
           paths.charactersDir,
+          paths.pixelAssetsDir,
         ]);
 
       if (!allowed) {
@@ -333,7 +337,18 @@ async function bootstrapApplication(): Promise<void> {
       }
 
       const ext = path.extname(resolved).toLowerCase();
-      if (ext !== ".png" && ext !== ".jpg" && ext !== ".jpeg" && ext !== ".webp") {
+      const allowedExt = [
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        ".mp4",
+        ".m4v",
+        ".webm",
+        ".mkv",
+        ".mov",
+      ];
+      if (!allowedExt.includes(ext)) {
         return new Response("Unsupported extension", { status: 400 });
       }
 
@@ -394,6 +409,9 @@ async function bootstrapApplication(): Promise<void> {
   });
   jobOrchestrator.on("imageCreated", (img) => {
     pushToRenderer(IPC_CHANNELS.EVENT_IMAGE_CREATED, img);
+  });
+  jobOrchestrator.on("videoCreated", (video) => {
+    pushToRenderer(IPC_CHANNELS.EVENT_VIDEO_CREATED, video);
   });
   downloadManager.on("updated", (task) => {
     pushToRenderer(IPC_CHANNELS.EVENT_DOWNLOAD_UPDATED, task);

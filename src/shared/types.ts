@@ -2,6 +2,7 @@ export type NavSection =
   | "home"
   | "explore"
   | "create"
+  | "video"
   | "characters"
   | "stories"
   | "pixel"
@@ -21,7 +22,8 @@ export type RuntimeStatus =
   | "installing";
 
 export type OutputFormat = "png" | "jpeg" | "webp";
-export type GenerationMode = "txt2img" | "img2img" | "upscale";
+export type GenerationMode = "txt2img" | "img2img" | "upscale" | "t2v" | "i2v";
+export type VideoContainerFormat = "mp4" | "webm";
 
 export type ModelCategory =
   | "checkpoint"
@@ -43,6 +45,7 @@ export type ModelArchitecture =
   | "anima"
   | "krea2"
   | "ltx_video"
+  | "wan_video"
   | "unknown";
 
 export type ModelPreviewMode = "auto" | "custom" | "none";
@@ -77,6 +80,11 @@ export interface AppSettings {
   externalComfyPath: string;
   comfyHost: string;
   comfyPort: number;
+  /** Dedicated ComfyUI host for Pixel Studio AI generation; kept separate from the main runtime. */
+  pixelBackendHost: string;
+  pixelBackendPort: number;
+  /** Optional path to an external SpriteKiln checkout containing workflows/api. */
+  pixelBackendWorkflowRoot: string;
   managedComfyPath: string;
   autoStartRuntime: boolean;
   outputDirectory: string;
@@ -224,6 +232,45 @@ export interface CuratedModelCatalogItem {
   targetSubdir: string;
 }
 
+export interface VideoAspectPreset {
+  id: string;
+  width: number;
+  height: number;
+}
+
+/** A companion checkpoint a video workflow must load alongside the selected video model. */
+export interface VideoModelRequirement {
+  category: ModelCategory;
+  fileName: string;
+  label: string;
+  approxSizeGB: number;
+}
+
+export interface VideoWorkflowSpec {
+  family: "wan21_t2v" | "ltx_video";
+  /** Fixed frame rate the workflow is authored for; not a free-form control. */
+  fps: number;
+  /** Valid frame counts are minFrames + n * frameStep. */
+  minFrames: number;
+  maxFrames: number;
+  frameStep: number;
+  defaultFrameCount: number;
+  formats: VideoContainerFormat[];
+  /** Model-validated aspect presets. Other ratios are fitted and flagged. */
+  presets: VideoAspectPreset[];
+  companionModels: VideoModelRequirement[];
+  minVramMB: number;
+  recommendedVramMB: number;
+  notes: string;
+}
+
+export interface VideoGenerationSettings {
+  fps: number;
+  frameCount: number;
+  durationSeconds: number;
+  format: VideoContainerFormat;
+}
+
 export interface WorkflowTemplate {
   id: string;
   version: string;
@@ -238,6 +285,8 @@ export interface WorkflowTemplate {
   minDim: number;
   maxDim: number;
   dimStep: number;
+  /** Present only for video workflows; image workflows leave it undefined. */
+  video?: VideoWorkflowSpec;
   defaults: {
     steps: number;
     cfg: number;
@@ -703,6 +752,7 @@ export interface GenerationRequest {
   outputFormat: OutputFormat;
   inputImagePath: string | null;
   denoise: number;
+  video?: VideoGenerationSettings;
   hiresFix?: HiresFixConfig;
   upscale?: UpscaleConfig;
   characterId?: string | null;
@@ -769,6 +819,35 @@ export interface GeneratedImageRecord {
   loraRecipeId?: string | null;
   storyId?: string | null;
   storySceneId?: string | null;
+}
+
+export interface GeneratedVideoRecord {
+  id: string;
+  jobId: string;
+  filePath: string;
+  fileName: string;
+  container: VideoContainerFormat;
+  width: number;
+  height: number;
+  sizeBytes: number;
+  durationSeconds: number;
+  fps: number;
+  frameCount: number;
+  prompt: string;
+  negativePrompt: string;
+  seed: number;
+  checkpoint: string;
+  loras: LoraSelection[];
+  workflowId: string;
+  sampler: string;
+  scheduler: string;
+  steps: number;
+  cfg: number;
+  denoise: number;
+  mode: GenerationMode;
+  favorite: boolean;
+  tags: string[];
+  createdAt: string;
 }
 
 export interface CollectionRecord {

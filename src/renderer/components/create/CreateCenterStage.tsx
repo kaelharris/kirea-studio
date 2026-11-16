@@ -544,7 +544,7 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
                     src={toMediaUrl(img.filePath)}
                     alt={img.fileName}
                     compact
-                    className="w-full h-full object-cover"
+                    className="w-full h-full bg-surface-subtle object-contain"
                   />
                 </button>
               ))}

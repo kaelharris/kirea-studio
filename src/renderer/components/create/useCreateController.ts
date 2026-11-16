@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  calculateDimensionsForAspect,
+  ASPECT_RATIOS,
+  CUSTOM_ASPECT_ID,
   calculateHiresDimensions,
+  dimensionBoundsFromWorkflow,
   IMAGE_UPSCALER_LANCZOS,
   inferModelArchitecture,
   LATENT_UPSCALER_BICUBIC,
   LATENT_UPSCALER_BISLERP,
+  resolveCustomDimensions,
+  resolveDimensionsForAspect,
   snapDimension,
 } from "../../../shared/aspect-ratios";
 import {
@@ -182,6 +186,16 @@ export function useCreateController(props: CreatePageProps) {
     [workflows, compatibleWorkflows, draft.workflowId]
   );
 
+  const dimensionBounds = useMemo(
+    () => dimensionBoundsFromWorkflow(activeWorkflow),
+    [activeWorkflow]
+  );
+
+  const dimensionInfo = useMemo(
+    () => resolveCustomDimensions(draft.width, draft.height, dimensionBounds),
+    [draft.width, draft.height, dimensionBounds]
+  );
+
   const activeJob = useMemo(
     () =>
       jobs.find(
@@ -340,11 +354,6 @@ export function useCreateController(props: CreatePageProps) {
         : characterNegative;
     }
 
-    const dims = calculateDimensionsForAspect(
-      prev.aspectRatio,
-      arch,
-      settings.performanceProfile
-    );
     const plan = resolveCharacterReferencePlan(next, arch);
 
     let mode: GenerationMode = prev.mode;
@@ -390,6 +399,12 @@ export function useCreateController(props: CreatePageProps) {
       : prev.loras;
 
     const wf = workflows.find((w) => w.id === workflowId);
+    const dims = resolveDimensionsForAspect(
+      prev.aspectRatio,
+      arch,
+      settings.performanceProfile,
+      dimensionBoundsFromWorkflow(wf)
+    );
     const zImageOverrides =
       supported && arch === "z_image" && mode === "txt2img" && wf
         ? {
@@ -470,10 +485,11 @@ export function useCreateController(props: CreatePageProps) {
 
       const nextDims =
         prev.mode === "upscale"
-          ? calculateDimensionsForAspect(
+          ? resolveDimensionsForAspect(
               prev.aspectRatio,
               currentArch,
-              settings.performanceProfile
+              settings.performanceProfile,
+              dimensionBoundsFromWorkflow(targetWf)
             )
           : { width: prev.width, height: prev.height };
 
@@ -491,17 +507,24 @@ export function useCreateController(props: CreatePageProps) {
   const handleWorkflowChange = (wfId: string): void => {
     const wf = workflows.find((w) => w.id === wfId);
     if (!wf) return;
+    const width = snapDimension(wf.defaults.width, wf.dimStep, wf.minDim, wf.maxDim);
+    const height = snapDimension(wf.defaults.height, wf.dimStep, wf.minDim, wf.maxDim);
+    const ratio = width / height;
+    const matchingPreset = ASPECT_RATIOS.find(
+      (preset) => Math.abs(preset.ratioW / preset.ratioH - ratio) / ratio < 0.02
+    );
     setDraft((prev) => ({
       ...prev,
       workflowId: wf.id,
       mode: wf.mode,
+      aspectRatio: matchingPreset?.id ?? CUSTOM_ASPECT_ID,
       steps: wf.defaults.steps,
       cfg: wf.defaults.cfg,
       sampler: wf.defaults.sampler,
       scheduler: wf.defaults.scheduler,
       denoise: wf.defaults.denoise,
-      width: snapDimension(wf.defaults.width, wf.dimStep, wf.minDim, wf.maxDim),
-      height: snapDimension(wf.defaults.height, wf.dimStep, wf.minDim, wf.maxDim),
+      width,
+      height,
     }));
   };
 
@@ -510,11 +533,6 @@ export function useCreateController(props: CreatePageProps) {
     const arch = matched
       ? getEffectiveArchitecture(matched)
       : inferModelArchitecture(relPath);
-    const dims = calculateDimensionsForAspect(
-      draft.aspectRatio,
-      arch,
-      settings.performanceProfile
-    );
 
     // Choose appropriate default workflow for model architecture
     let nextWfId = draft.workflowId;
@@ -565,6 +583,14 @@ export function useCreateController(props: CreatePageProps) {
       ).compatible;
     });
 
+    const nextWf = workflows.find((w) => w.id === nextWfId);
+    const dims = resolveDimensionsForAspect(
+      draft.aspectRatio,
+      arch,
+      settings.performanceProfile,
+      dimensionBoundsFromWorkflow(nextWf)
+    );
+
     setDraft((prev) => ({
       ...prev,
       checkpoint: relPath,
@@ -587,10 +613,15 @@ export function useCreateController(props: CreatePageProps) {
   };
 
   const handleAspectChange = (ratioId: string): void => {
-    const dims = calculateDimensionsForAspect(
+    if (ratioId === CUSTOM_ASPECT_ID) {
+      setDraft((prev) => ({ ...prev, aspectRatio: CUSTOM_ASPECT_ID }));
+      return;
+    }
+    const dims = resolveDimensionsForAspect(
       ratioId,
       currentArch,
-      settings.performanceProfile
+      settings.performanceProfile,
+      dimensionBounds
     );
     setDraft((prev) => ({
       ...prev,
@@ -600,12 +631,33 @@ export function useCreateController(props: CreatePageProps) {
     }));
   };
 
+  const handleDimensionChange = (
+    axis: "width" | "height",
+    value: number
+  ): void => {
+    setDraft((prev) => {
+      const resolved = resolveCustomDimensions(
+        axis === "width" ? value : prev.width,
+        axis === "height" ? value : prev.height,
+        dimensionBounds
+      );
+      return {
+        ...prev,
+        aspectRatio: CUSTOM_ASPECT_ID,
+        width: resolved.width,
+        height: resolved.height,
+      };
+    });
+  };
+
   const handleProfileChange = async (profile: PerformanceProfile): Promise<void> => {
     await onChangeProfile(profile);
-    const dims = calculateDimensionsForAspect(
+    if (draft.aspectRatio === CUSTOM_ASPECT_ID) return;
+    const dims = resolveDimensionsForAspect(
       draft.aspectRatio,
       currentArch,
-      profile
+      profile,
+      dimensionBounds
     );
     setDraft((prev) => ({
       ...prev,
@@ -1009,6 +1061,8 @@ export function useCreateController(props: CreatePageProps) {
     upscaleConfig,
     compatibleWorkflows,
     activeWorkflow,
+    dimensionBounds,
+    dimensionInfo,
     activeJob,
     latestImage,
     currentCheckpointInfo,
@@ -1020,6 +1074,7 @@ export function useCreateController(props: CreatePageProps) {
     handleWorkflowChange,
     handleCheckpointChange,
     handleAspectChange,
+    handleDimensionChange,
     handleProfileChange,
     handleAddLora,
     updateLora,

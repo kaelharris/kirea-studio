@@ -12,7 +12,11 @@ import type {
   StorySceneStatus,
   WorkflowTemplate,
 } from "./types";
-import { calculateDimensionsForAspect, inferModelArchitecture } from "./aspect-ratios";
+import {
+  dimensionBoundsFromWorkflow,
+  inferModelArchitecture,
+  resolveDimensionsForAspect,
+} from "./aspect-ratios";
 import {
   ARCHITECTURE_LABELS,
   evaluateLoraCompatibility,
@@ -219,10 +223,11 @@ export function buildStoryScenePlan(input: StoryScenePlanInput): StoryScenePlan 
   let width = scene.width ?? recipeSettings.width ?? null;
   let height = scene.height ?? recipeSettings.height ?? null;
   if (!width || !height) {
-    const computed = calculateDimensionsForAspect(
+    const computed = resolveDimensionsForAspect(
       aspectRatio,
       architecture === "unknown" ? "sdxl" : architecture,
-      defaults.performanceProfile
+      defaults.performanceProfile,
+      dimensionBoundsFromWorkflow(workflow)
     );
     width = width ?? computed.width;
     height = height ?? computed.height;

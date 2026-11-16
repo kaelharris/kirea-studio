@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  Boxes,
   Copy,
   FolderOpen,
   Grid3X3,
@@ -9,10 +10,12 @@ import {
   Pause,
   Pencil,
   Play,
+  Plus,
   Repeat,
   Trash2,
 } from "lucide-react";
 import type {
+  PixelAnimationInput,
   PixelAssetDetail,
   PixelAssetRecord,
   PixelFrameInput,
@@ -26,6 +29,7 @@ import {
   Select,
 } from "../ui/Primitives";
 import { PixelImage, checkerStyle } from "./pixel-ui";
+import { PackageExportDialog, type PackageExportTarget } from "./PackageExportDialog";
 
 interface AnimationStudioProps {
   assets: PixelAssetRecord[];
@@ -33,6 +37,7 @@ interface AnimationStudioProps {
   selectedAssetId: string;
   onSelectAsset: (id: string) => void;
   onSaveFrames: (assetId: string, frames: PixelFrameInput[]) => Promise<void>;
+  onSaveAnimations: (assetId: string, animations: PixelAnimationInput[]) => Promise<void>;
   onOpenEditor: (assetId: string, frameIndex: number) => void;
   onToast: (message: string, tone?: "info" | "error") => void;
 }
@@ -40,12 +45,15 @@ interface AnimationStudioProps {
 const ALL = "__all__";
 const SPEEDS = [0.5, 1, 1.5, 2];
 
+const newFrameId = (): string => crypto.randomUUID();
+
 export const AnimationStudioPanel: React.FC<AnimationStudioProps> = ({
   assets,
   detail,
   selectedAssetId,
   onSelectAsset,
   onSaveFrames,
+  onSaveAnimations,
   onOpenEditor,
   onToast,
 }) => {
@@ -57,9 +65,14 @@ export const AnimationStudioPanel: React.FC<AnimationStudioProps> = ({
   const [onion, setOnion] = useState(false);
   const [zoom, setZoom] = useState(4);
   const [saving, setSaving] = useState(false);
+  const [clipSaving, setClipSaving] = useState(false);
+  const [clipNameDraft, setClipNameDraft] = useState("");
+  const [packageTarget, setPackageTarget] = useState<PackageExportTarget | null>(null);
+  const [fpsDraft, setFpsDraft] = useState("10");
   const [durationDraft, setDurationDraft] = useState<Record<number, number>>({});
   const [nameDraft, setNameDraft] = useState<Record<number, string>>({});
   const clipRef = useRef<HTMLDivElement | null>(null);
+  const busyRef = useRef(false);
 
   const frameCount = detail?.frames.length ?? 0;
 
@@ -84,6 +97,7 @@ export const AnimationStudioPanel: React.FC<AnimationStudioProps> = ({
   }, [detail?.id]);
 
   useEffect(() => {
+    if (busyRef.current) return;
     if (animation !== ALL && !detail?.animations[animation]) setAnimation(ALL);
   }, [animation, detail]);
 
@@ -102,6 +116,64 @@ export const AnimationStudioPanel: React.FC<AnimationStudioProps> = ({
     durationDraft[index] ?? detail?.frames[index]?.durationMs ?? 100;
   const nameFor = (index: number): string =>
     nameDraft[index] ?? detail?.frames[index]?.name ?? `frame_${index + 1}`;
+
+  const animationNames = useMemo(
+    () => (detail ? Object.keys(detail.animations) : []),
+    [detail]
+  );
+  const activeClip = animation !== ALL ? detail?.animations[animation] ?? null : null;
+
+  const clipNames = (record: { frames: number[] }): string[] => {
+    if (!detail) return [];
+    return record.frames
+      .map((frameIndex) => detail.frames.findIndex((frame) => frame.index === frameIndex))
+      .filter((position) => position >= 0)
+      .map((position) => detail.frames[position]!.name);
+  };
+
+  const clipInputs = (): PixelAnimationInput[] => {
+    if (!detail) return [];
+    return Object.entries(detail.animations)
+      .map(([name, record]) => ({
+        name,
+        frames: clipNames(record),
+        loop: record.loop,
+      }))
+      .filter((clip) => clip.frames.length > 0);
+  };
+
+  const clipDurations = activeClip
+    ? activeClip.frames
+        .map((frameIndex) => detail?.frames.findIndex((frame) => frame.index === frameIndex) ?? -1)
+        .filter((position) => position >= 0)
+        .map((position) => durationFor(position))
+    : [];
+  const uniformFps =
+    clipDurations.length && clipDurations.every((entry) => entry === clipDurations[0])
+      ? Math.max(1, Math.round(1000 / clipDurations[0]!))
+      : null;
+
+  useEffect(() => {
+    if (animation === ALL) {
+      setClipNameDraft("");
+      return;
+    }
+    const record = detail?.animations[animation];
+    if (!record) return;
+    setClipNameDraft(animation);
+    const durations = record.frames
+      .map((frameIndex) => detail?.frames.findIndex((frame) => frame.index === frameIndex) ?? -1)
+      .filter((position) => position >= 0)
+      .map((position) => detail!.frames[position]!.durationMs);
+    if (
+      durations.length &&
+      durations.every((entry) => entry === durations[0])
+    ) {
+      setFpsDraft(String(Math.max(1, Math.round(1000 / durations[0]!))));
+    } else {
+      setFpsDraft("");
+    }
+  }, [animation, detail]);
 
   useEffect(() => {
     if (!playing || !detail || sequence.length === 0 || !currentFrame) return;
@@ -129,6 +201,7 @@ export const AnimationStudioPanel: React.FC<AnimationStudioProps> = ({
 
   const buildFrames = (): PixelFrameInput[] =>
     (detail?.frames ?? []).map((frame, index) => ({
+      id: frame.id,
       index,
       name: (nameDraft[index] ?? frame.name).trim() || `frame_${index + 1}`,
       durationMs: Math.max(1, Math.round(durationDraft[index] ?? frame.durationMs)),
@@ -136,7 +209,8 @@ export const AnimationStudioPanel: React.FC<AnimationStudioProps> = ({
     }));
 
   const persist = async (frames: PixelFrameInput[], message: string): Promise<void> => {
-    if (!detail) return;
+    if (!detail || busyRef.current) return;
+    busyRef.current = true;
     setSaving(true);
     try {
       await onSaveFrames(detail.id, frames);
@@ -146,8 +220,160 @@ export const AnimationStudioPanel: React.FC<AnimationStudioProps> = ({
     } catch (error) {
       onToast(error instanceof Error ? error.message : "Could not save the animation.", "error");
     } finally {
+      busyRef.current = false;
       setSaving(false);
     }
+  };
+
+  const saveClips = async (
+    next: PixelAnimationInput[],
+    message: string,
+    select?: string
+  ): Promise<void> => {
+    if (!detail || busyRef.current) return;
+    const previous = animation;
+    busyRef.current = true;
+    setClipSaving(true);
+    if (select) setAnimation(select);
+    try {
+      await onSaveAnimations(detail.id, next);
+      onToast(message, "info");
+    } catch (error) {
+      if (select) setAnimation(previous);
+      onToast(
+        error instanceof Error ? error.message : "Could not save the animation clips.",
+        "error"
+      );
+    } finally {
+      busyRef.current = false;
+      setClipSaving(false);
+    }
+  };
+
+  const addClip = async (): Promise<void> => {
+    if (!detail) return;
+    const used = new Set(animationNames.map((name) => name.toLowerCase()));
+    let name = "custom";
+    let suffix = 2;
+    while (used.has(name)) {
+      name = `custom_${suffix}`;
+      suffix += 1;
+    }
+    const source = activeClip ? clipNames(activeClip) : detail.frames.map((frame) => frame.name);
+    const next = [...clipInputs(), { name, frames: source, loop: true }];
+    await saveClips(next, `Created clip "${name}".`, name);
+  };
+
+  const duplicateClip = async (): Promise<void> => {
+    if (!detail || !activeClip) return;
+    const used = new Set(animationNames.map((name) => name.toLowerCase()));
+    let name = `${animation}_copy`;
+    let suffix = 2;
+    while (used.has(name.toLowerCase())) {
+      name = `${animation}_copy_${suffix}`;
+      suffix += 1;
+    }
+    const next = [
+      ...clipInputs(),
+      { name, frames: clipNames(activeClip), loop: activeClip.loop },
+    ];
+    await saveClips(next, `Duplicated "${animation}" as "${name}".`, name);
+  };
+
+  const deleteClip = async (): Promise<void> => {
+    if (!detail || !activeClip) return;
+    const remaining = clipInputs().filter((clip) => clip.name !== animation);
+    if (!remaining.length) {
+      onToast("Keep at least one animation clip.", "error");
+      return;
+    }
+    await saveClips(remaining, `Deleted clip "${animation}".`, remaining[0]!.name);
+  };
+
+  const moveClip = async (delta: number): Promise<void> => {
+    if (!detail || !activeClip) return;
+    const inputs = clipInputs();
+    const position = inputs.findIndex((clip) => clip.name === animation);
+    const target = position + delta;
+    if (position < 0 || target < 0 || target >= inputs.length) return;
+    const [moved] = inputs.splice(position, 1);
+    if (!moved) return;
+    inputs.splice(target, 0, moved);
+    await saveClips(inputs, `Moved clip "${animation}".`, animation);
+  };
+
+  const commitClipName = async (): Promise<void> => {
+    if (!detail || !activeClip) return;
+    const nextName = clipNameDraft.trim().slice(0, 60);
+    if (!nextName || nextName === animation) {
+      setClipNameDraft(animation);
+      return;
+    }
+    const next = clipInputs().map((clip) =>
+      clip.name === animation ? { ...clip, name: nextName } : clip
+    );
+    await saveClips(next, `Renamed clip to "${nextName}".`, nextName);
+  };
+
+  const toggleClipLoop = async (): Promise<void> => {
+    if (!detail || !activeClip) return;
+    const next = clipInputs().map((clip) =>
+      clip.name === animation ? { ...clip, loop: !activeClip.loop } : clip
+    );
+    await saveClips(
+      next,
+      activeClip.loop
+        ? `Clip "${animation}" now plays once.`
+        : `Clip "${animation}" now loops.`,
+      animation
+    );
+  };
+
+  const toggleMembership = async (position: number): Promise<void> => {
+    if (!detail || !activeClip) return;
+    const frame = detail.frames[position];
+    if (!frame) return;
+    const member = activeClip.frames.includes(frame.index);
+    const current = clipNames(activeClip);
+    if (member && current.length <= 1) {
+      onToast("A clip needs at least one frame.", "error");
+      return;
+    }
+    const nextFrames = member
+      ? current.filter((name) => name !== frame.name)
+      : [...current, frame.name];
+    const next = clipInputs().map((clip) =>
+      clip.name === animation ? { ...clip, frames: nextFrames } : clip
+    );
+    await saveClips(
+      next,
+      member
+        ? `Removed ${frame.name} from "${animation}".`
+        : `Added ${frame.name} to "${animation}".`,
+      animation
+    );
+  };
+
+  const applyClipFps = async (): Promise<void> => {
+    if (!detail || !activeClip) return;
+    const fps = Number(fpsDraft);
+    if (!Number.isFinite(fps) || fps < 1 || fps > 60) {
+      onToast("FPS must be between 1 and 60.", "error");
+      return;
+    }
+    const positions = new Set(
+      activeClip.frames
+        .map((frameIndex) => detail.frames.findIndex((frame) => frame.index === frameIndex))
+        .filter((position) => position >= 0)
+    );
+    const durationMs = Math.max(1, Math.round(1000 / fps));
+    const frames = buildFrames().map((frame, position) =>
+      positions.has(position) ? { ...frame, durationMs } : frame
+    );
+    await persist(
+      frames,
+      `Set "${animation}" to ${fps} FPS (${durationMs} ms per frame).`
+    );
   };
 
   const moveFrame = async (index: number, delta: number): Promise<void> => {
@@ -169,10 +395,18 @@ export const AnimationStudioPanel: React.FC<AnimationStudioProps> = ({
     const copies = frames.map((frame) =>
       frame.index >= index ? { ...frame, index: frame.index + 1 } : frame
     );
+    const usedNames = new Set(frames.map((frame) => frame.name.toLowerCase()));
+    let copyName = `${source.name}_copy`;
+    let suffix = 2;
+    while (usedNames.has(copyName.toLowerCase())) {
+      copyName = `${source.name}_copy_${suffix}`;
+      suffix += 1;
+    }
     copies.splice(index + 1, 0, {
       ...source,
+      id: newFrameId(),
       index: index + 1,
-      name: `${source.name}_copy`.slice(0, 60),
+      name: copyName.slice(0, 60),
     });
     await persist(
       copies.map((frame, position) => ({ ...frame, index: position })),
@@ -277,6 +511,22 @@ export const AnimationStudioPanel: React.FC<AnimationStudioProps> = ({
             </Button>
             <Button size="sm" variant="utility" onClick={() => void exportNow("gif")}>
               <Repeat className="w-3 h-3" /> GIF
+            </Button>
+            <Button
+              size="sm"
+              variant="utility"
+              onClick={() =>
+                setPackageTarget({
+                  scope: animation !== ALL ? "animation" : "asset",
+                  assetId: detail.id,
+                  projectId: detail.projectId,
+                  ...(animation !== ALL ? { animation } : {}),
+                  label:
+                    animation !== ALL ? `${detail.name} · ${animation}` : detail.name,
+                })
+              }
+            >
+              <Boxes className="w-3 h-3" /> Package
             </Button>
             <Button
               size="sm"
@@ -454,6 +704,143 @@ export const AnimationStudioPanel: React.FC<AnimationStudioProps> = ({
         </Card>
       </div>
 
+      <Card className="p-3 space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+          <span className="label-mono text-fg-muted">
+            Animation clips · {animationNames.length}
+          </span>
+          <Button
+            size="sm"
+            variant="utility"
+            onClick={() => void addClip()}
+            disabled={saving || clipSaving}
+          >
+            <Plus className="w-3 h-3" /> New clip
+          </Button>
+        </div>
+        <div className="flex flex-wrap gap-1.5 px-1">
+          {animationNames.map((name) => (
+            <Button
+              key={name}
+              size="sm"
+              variant="utility"
+              aria-pressed={animation === name}
+              className={animation === name ? "border-accent text-fg" : ""}
+              onClick={() => {
+                setAnimation(name);
+                setPlayPos(0);
+                setPlaying(false);
+              }}
+            >
+              {name} · {detail.animations[name]!.frames.length}f
+            </Button>
+          ))}
+        </div>
+        {activeClip ? (
+          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-2">
+            <label className="flex items-center gap-1 text-[11px] text-fg-muted">
+              Name
+              <Input
+                value={clipNameDraft}
+                onChange={(event) => setClipNameDraft(event.target.value)}
+                onBlur={() => void commitClipName()}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                }}
+                aria-label="Clip name"
+                className="h-7 text-[11px] font-mono"
+                style={{ width: 160 }}
+                maxLength={60}
+              />
+            </label>
+            <Button
+              size="sm"
+              variant="utility"
+              aria-pressed={activeClip.loop}
+              className={activeClip.loop ? "border-accent text-fg" : ""}
+              onClick={() => void toggleClipLoop()}
+              disabled={saving || clipSaving}
+            >
+              <Repeat className="w-3 h-3" /> Loop clip
+            </Button>
+            <label className="flex items-center gap-1 text-[11px] text-fg-muted">
+              FPS
+              <Input
+                type="number"
+                min={1}
+                max={60}
+                value={fpsDraft}
+                onChange={(event) => setFpsDraft(event.target.value)}
+                aria-label="Clip FPS"
+                className="w-16 h-7 text-[11px] font-mono"
+              />
+            </label>
+            <Button
+              size="sm"
+              variant="utility"
+              onClick={() => void applyClipFps()}
+              disabled={saving || clipSaving}
+            >
+              Apply FPS
+            </Button>
+            <span className="font-mono text-[10px] text-fg-faint">
+              ~{uniformFps ?? "mixed"} fps · {clipDurations.reduce((sum, entry) => sum + entry, 0)} ms
+            </span>
+            <span className="ml-auto flex items-center gap-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label="Move clip left"
+                disabled={
+                  saving ||
+                  clipSaving ||
+                  animationNames.indexOf(animation) <= 0
+                }
+                onClick={() => void moveClip(-1)}
+              >
+                <ArrowLeft className="w-3 h-3" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label="Move clip right"
+                disabled={
+                  saving ||
+                  clipSaving ||
+                  animationNames.indexOf(animation) === animationNames.length - 1
+                }
+                onClick={() => void moveClip(1)}
+              >
+                <ArrowRight className="w-3 h-3" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label="Duplicate clip"
+                disabled={saving || clipSaving}
+                onClick={() => void duplicateClip()}
+              >
+                <Copy className="w-3 h-3" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label="Delete clip"
+                disabled={saving || clipSaving || animationNames.length <= 1}
+                onClick={() => void deleteClip()}
+              >
+                <Trash2 className="w-3 h-3" />
+              </Button>
+            </span>
+          </div>
+        ) : (
+          <p className="px-1 text-[11px] text-fg-faint">
+            Pick a clip to rename it, change looping or FPS, edit its frame membership, or
+            duplicate and delete it.
+          </p>
+        )}
+      </Card>
+
       <Card className="p-3">
         <div className="flex items-center justify-between mb-2 px-1">
           <span className="label-mono text-fg-muted">
@@ -473,7 +860,7 @@ export const AnimationStudioPanel: React.FC<AnimationStudioProps> = ({
               );
             return (
               <div
-                key={`${frame.index}-${index}`}
+                key={frame.id}
                 className={`w-36 shrink-0 rounded-lg border overflow-hidden ${
                   active ? "border-accent" : "border-border"
                 } ${inAnimation ? "" : "opacity-45"}`}
@@ -554,6 +941,18 @@ export const AnimationStudioPanel: React.FC<AnimationStudioProps> = ({
                       <Trash2 className="w-3 h-3" />
                     </Button>
                   </div>
+                  {animation !== ALL && (
+                    <Button
+                      size="sm"
+                      variant="utility"
+                      aria-pressed={inAnimation}
+                      className={`w-full text-[9px] ${inAnimation ? "border-accent text-fg" : ""}`}
+                      disabled={saving || clipSaving}
+                      onClick={() => void toggleMembership(index)}
+                    >
+                      {inAnimation ? "In clip" : "Add to clip"}
+                    </Button>
+                  )}
                 </div>
               </div>
             );
@@ -563,8 +962,19 @@ export const AnimationStudioPanel: React.FC<AnimationStudioProps> = ({
 
       <div className="flex items-center gap-2 text-[11px] text-fg-faint">
         <FolderOpen className="w-3 h-3" />
-        {saving ? "Writing frames, preview and sheet…" : "All frame data is stored on disk."}
+        {saving
+          ? "Writing frames, preview and sheet…"
+          : clipSaving
+            ? "Writing animation clips…"
+            : "All frame and clip data is stored on disk."}
       </div>
+
+      <PackageExportDialog
+        open={!!packageTarget}
+        onClose={() => setPackageTarget(null)}
+        target={packageTarget}
+        onToast={onToast}
+      />
     </div>
   );
 };

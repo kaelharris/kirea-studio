@@ -158,6 +158,7 @@ export interface PixelAssetRecord {
 }
 
 export interface PixelFrameRecord {
+  id: string;
   index: number;
   name: string;
   durationMs: number;
@@ -173,6 +174,7 @@ export interface PixelAnimationRecord {
 export interface PixelAssetDetail extends PixelAssetRecord {
   frames: PixelFrameRecord[];
   animations: Record<string, PixelAnimationRecord>;
+  generation: import("./pixel-ai-types").PixelAiGenerationMetadata | null;
 }
 
 export interface PixelAssetVersion {
@@ -183,11 +185,32 @@ export interface PixelAssetVersion {
   createdAt: string;
 }
 
+export interface PixelSavedPalette {
+  id: string;
+  name: string;
+  colors: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PixelSavedPaletteInput {
+  id?: string;
+  name: string;
+  colors: string[];
+}
+
 export interface PixelFrameInput {
+  id?: string;
   index: number;
   name: string;
   durationMs: number;
   dataUrl: string;
+}
+
+export interface PixelAnimationInput {
+  name: string;
+  frames: string[];
+  loop: boolean;
 }
 
 export interface PixelGenerateInput {

@@ -313,7 +313,7 @@ export const useDialogFocus = (
 export const Modal: React.FC<{
   open: boolean;
   onClose: () => void;
-  title: string;
+  title: string | React.ReactNode;
   maxWidthClass?: string;
   children: React.ReactNode;
 }> = ({ open, onClose, title, maxWidthClass = "max-w-lg", children }) => {
@@ -327,7 +327,7 @@ export const Modal: React.FC<{
       className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-[var(--scrim)] animate-[kirea-overlay-in_140ms_ease-out]"
       role="dialog"
       aria-modal="true"
-      aria-label={title}
+      aria-label={typeof title === "string" ? title : "Dialog"}
       onClick={onClose}
     >
       <div
@@ -337,7 +337,7 @@ export const Modal: React.FC<{
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-3 border-b border-border bg-surface-elevated">
-          <h2 className="text-h2 text-fg">{title}</h2>
+          {typeof title === "string" ? <h2 className="text-h2 text-fg">{title}</h2> : title}
           <button
             type="button"
             onClick={onClose}

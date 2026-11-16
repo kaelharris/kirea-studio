@@ -165,12 +165,18 @@ export function parseComfyExtraModelPathsYaml(
 }
 
 function getCompatibleWorkflowIds(category: ModelCategory, arch: ModelArchitecture): string[] {
-  if (arch === "ltx_video") return [];
+  if (arch === "ltx_video") {
+    return category === "checkpoint" ? ["t2v_ltx_2b", "i2v_ltx_2b"] : [];
+  }
+  if (arch === "wan_video") {
+    return category === "diffusion_model" ? ["t2v_wan21_1_3b"] : [];
+  }
 
   if (category === "checkpoint") {
     return WORKFLOW_TEMPLATES.filter(
       (wf) =>
         wf.mode !== "upscale" &&
+        !wf.video &&
         wf.id !== "t2i_z_image_turbo" &&
         wf.id !== "t2i_anima_base" &&
         wf.id !== "i2i_anima_base" &&
@@ -198,6 +204,7 @@ function getCompatibleWorkflowIds(category: ModelCategory, arch: ModelArchitectu
     return WORKFLOW_TEMPLATES.filter(
       (wf) =>
         wf.mode !== "upscale" &&
+        !wf.video &&
         (category === "vae" || wf.supportsLora) &&
         (arch === "unknown" ? true : wf.supportedArchitectures.includes(arch))
     ).map((wf) => wf.id);

@@ -17,6 +17,7 @@ export interface StudioPaths {
   charactersDir: string;
   pixelAssetsDir: string;
   pixelExportsDir: string;
+  pixelAiTempDir: string;
 }
 
 export function resolveStudioPaths(): StudioPaths {
@@ -38,6 +39,7 @@ export function resolveStudioPaths(): StudioPaths {
     charactersDir: path.join(userDataDir, "characters"),
     pixelAssetsDir: path.join(userDataDir, "pixel-assets"),
     pixelExportsDir: path.join(userDataDir, "pixel-exports"),
+    pixelAiTempDir: path.join(userDataDir, "temp", "pixel-ai"),
   };
 
   for (const dir of [
@@ -53,6 +55,7 @@ export function resolveStudioPaths(): StudioPaths {
     paths.charactersDir,
     paths.pixelAssetsDir,
     paths.pixelExportsDir,
+    paths.pixelAiTempDir,
   ]) {
     fs.mkdirSync(dir, { recursive: true });
   }

@@ -7,6 +7,16 @@ import type {
   CivitaiSearchResult,
   CivitaiVersion,
 } from "../../shared/civitai";
+import {
+  CIVITAI_WORKFLOW_CATEGORIES,
+  type CivitaiWorkflowCategory,
+  type CivitaiWorkflowFile,
+  type CivitaiWorkflowFileKind,
+  type CivitaiWorkflowSearchQuery,
+  type CivitaiWorkflowSearchResult,
+  type CivitaiWorkflowSummary,
+  type CivitaiWorkflowVersion,
+} from "../../shared/civitai-workflows";
 import type { ModelArchitecture, ModelRecord } from "../../shared/types";
 import type { StudioLogger } from "../logger";
 
@@ -21,6 +31,9 @@ interface RawCivitaiFile {
   downloadUrl?: string | null;
   sizeKB?: number | null;
   hashes?: Record<string, string | null> | null;
+  type?: string | null;
+  primary?: boolean | null;
+  metadata?: Record<string, unknown> | null;
 }
 
 interface RawCivitaiImage {
@@ -31,11 +44,17 @@ interface RawCivitaiVersion {
   id: number;
   name?: string | null;
   baseModel?: string | null;
+  availability?: string | null;
   description?: string | null;
   publishedAt?: string | null;
   trainedWords?: string[] | null;
   files?: RawCivitaiFile[] | null;
   images?: RawCivitaiImage[] | null;
+  stats?: {
+    downloadCount?: number | null;
+    thumbsUpCount?: number | null;
+    thumbsDownCount?: number | null;
+  } | null;
 }
 
 export interface RawCivitaiModel {
@@ -46,6 +65,7 @@ export interface RawCivitaiModel {
   description?: string | null;
   tags?: string[] | null;
   creator?: { username?: string | null; name?: string | null } | null;
+  baseModels?: string[] | null;
   stats?: {
     downloadCount?: number | null;
     thumbsUpCount?: number | null;
@@ -155,13 +175,23 @@ export function stripCivitaiHtml(raw: string | null | undefined): string | null 
   return stripped.length > 0 ? stripped : null;
 }
 
+function isPrimaryModelFile(file: RawCivitaiFile): boolean {
+  const type = (file.type ?? "").trim().toLowerCase();
+  if (!type) return true;
+  return !["vae", "config", "text encoder", "clip", "training data", "archive"].includes(
+    type
+  );
+}
+
 function pickFile(files: RawCivitaiFile[] | null | undefined): RawCivitaiFile | null {
   if (!Array.isArray(files)) return null;
-  const usable = files.filter((file): file is RawCivitaiFile => Boolean(file));
+  const usable = files.filter(
+    (file): file is RawCivitaiFile =>
+      Boolean(file) && /\.(safetensors|ckpt|pt|pth|bin|gguf)$/i.test(file.name ?? "")
+  );
   return (
-    usable.find((file) =>
-      /\.(safetensors|ckpt|pt|pth|bin|gguf)$/i.test(file.name ?? "")
-    ) ??
+    usable.find((file) => file.primary === true && isPrimaryModelFile(file)) ??
+    usable.find(isPrimaryModelFile) ??
     usable[0] ??
     null
   );
@@ -175,8 +205,9 @@ function mapVersion(
   const file = pickFile(raw.files);
   const fileName =
     (file?.name ?? "").trim() || `civitai-model-v${raw.id}.safetensors`;
-  const downloadUrl =
-    (file?.downloadUrl ?? "").trim() || `${CIVITAI_DOWNLOAD_BASE}/${raw.id}`;
+  const downloadUrl = file
+    ? (file.downloadUrl ?? "").trim() || `${CIVITAI_DOWNLOAD_BASE}/${raw.id}`
+    : "";
   const baseModel = (raw.baseModel ?? "").trim();
   const images = Array.isArray(raw.images) ? raw.images : [];
   const imageUrls = images
@@ -189,8 +220,10 @@ function mapVersion(
     name: (raw.name ?? "").trim() || `Version ${raw.id}`,
     baseModel,
     architecture: normalizeCivitaiBaseModel(baseModel),
+    availability: (raw.availability ?? "").trim() || null,
     fileName,
     downloadUrl,
+    downloadable: Boolean(file) && downloadUrl.length > 0,
     sizeBytes: sizeKB > 0 ? Math.round(sizeKB * 1024) : 0,
     sha256:
       (file?.hashes?.SHA256 ?? file?.hashes?.sha256 ?? null)?.toLowerCase() ?? null,
@@ -244,6 +277,192 @@ export function mapCivitaiModel(
   };
 }
 
+const WORKFLOW_CATEGORY_RULES: Array<{
+  id: Exclude<CivitaiWorkflowCategory, "other">;
+  pattern: RegExp;
+}> = [
+  {
+    id: "inpainting",
+    pattern: /\b(inpaint|inpainting|outpaint|outpainting)\b/,
+  },
+  {
+    id: "upscaling",
+    pattern: /\b(upscale|upscaler|upscaling|highres|hi-res|hires|supir|seedvr|esrgan|4x)\b/,
+  },
+  {
+    id: "video-generation",
+    pattern:
+      /\b(video|t2v|i2v|img2vid|img2video|image2video|text2video|wan|hunyuan|ltx|ltxv|minimax|mochi|cogvideo|svd|framepack|veo|kling|runway)\b/,
+  },
+  {
+    id: "animation",
+    pattern:
+      /\b(animatediff|animation|animated|sprite|sprites|sprite sheet|gif|flf2v|svi|interpolation|motion)\b/,
+  },
+  {
+    id: "image-editing",
+    pattern:
+      /\b(img2img|i2i|image2image|editing|edit|kontext|redux|ipadapter|controlnet|refiner|detailer|adetailer|faceswap|relight)\b/,
+  },
+  {
+    id: "image-generation",
+    pattern:
+      /\b(text2image|txt2img|t2i|generation|sdxl|pony|illustrious|noobai|flux|zimage|krea|anima|checkpoint|lora)\b/,
+  },
+];
+
+export function detectWorkflowCategories(input: {
+  name: string;
+  tags?: string[];
+  baseModel?: string | null;
+  versionName?: string | null;
+  fileNames?: string[];
+}): CivitaiWorkflowCategory[] {
+  const haystack = [
+    input.name,
+    input.versionName ?? "",
+    input.baseModel ?? "",
+    ...(input.tags ?? []),
+    ...(input.fileNames ?? []),
+  ]
+    .join(" ")
+    .toLowerCase();
+  const matched = new Set<CivitaiWorkflowCategory>();
+  for (const rule of WORKFLOW_CATEGORY_RULES) {
+    if (rule.pattern.test(haystack)) matched.add(rule.id);
+  }
+  if (matched.size === 0) return ["other"];
+  return CIVITAI_WORKFLOW_CATEGORIES.map((category) => category.id).filter((id) =>
+    matched.has(id)
+  );
+}
+
+function workflowFileKind(fileName: string): CivitaiWorkflowFileKind {
+  if (/\.json$/i.test(fileName)) return "json";
+  if (/\.zip$/i.test(fileName)) return "zip";
+  return "unsupported";
+}
+
+function mapWorkflowFile(
+  raw: RawCivitaiFile,
+  versionId: number
+): CivitaiWorkflowFile | null {
+  const fileName = (raw.name ?? "").trim();
+  if (!fileName) return null;
+  const kind = workflowFileKind(fileName);
+  const downloadUrl =
+    kind === "unsupported"
+      ? (raw.downloadUrl ?? "").trim()
+      : (raw.downloadUrl ?? "").trim() || `${CIVITAI_DOWNLOAD_BASE}/${versionId}`;
+  const sizeKB = typeof raw.sizeKB === "number" ? raw.sizeKB : 0;
+  return {
+    id: typeof raw.id === "number" ? raw.id : null,
+    fileName,
+    fileType: (raw.type ?? "").trim() || null,
+    kind,
+    sizeBytes: sizeKB > 0 ? Math.round(sizeKB * 1024) : 0,
+    downloadUrl,
+    sha256:
+      (raw.hashes?.SHA256 ?? raw.hashes?.sha256 ?? null)?.toLowerCase() ?? null,
+    primary: raw.primary === true,
+  };
+}
+
+function mapWorkflowVersion(
+  raw: RawCivitaiVersion,
+  model: Pick<RawCivitaiModel, "name" | "tags">
+): CivitaiWorkflowVersion | null {
+  if (!raw || typeof raw.id !== "number") return null;
+  const files = (Array.isArray(raw.files) ? raw.files : [])
+    .map((file) => mapWorkflowFile(file, raw.id))
+    .filter((file): file is CivitaiWorkflowFile => file !== null);
+  if (files.length === 0) return null;
+  const primaryFile =
+    files.find((file) => file.kind === "json") ??
+    files.find((file) => file.kind === "zip") ??
+    null;
+  const images = Array.isArray(raw.images) ? raw.images : [];
+  const previewImageUrls = images
+    .map((image) => (image?.url ?? "").trim())
+    .filter((url) => url.startsWith("http"))
+    .slice(0, 8);
+  const baseModel = (raw.baseModel ?? "").trim();
+  const categories = detectWorkflowCategories({
+    name: (model.name ?? "").trim(),
+    tags: Array.isArray(model.tags) ? model.tags : [],
+    baseModel,
+    versionName: raw.name,
+    fileNames: files.map((file) => file.fileName),
+  });
+  return {
+    id: raw.id,
+    name: (raw.name ?? "").trim() || `Version ${raw.id}`,
+    baseModel,
+    publishedAt: raw.publishedAt ?? null,
+    description: stripCivitaiHtml(raw.description),
+    previewImageUrls,
+    files,
+    primaryFile,
+    categories,
+    stats: {
+      downloads: Math.max(0, Number(raw.stats?.downloadCount ?? 0) || 0),
+      thumbsUp: Math.max(0, Number(raw.stats?.thumbsUpCount ?? 0) || 0),
+      thumbsDown: Math.max(0, Number(raw.stats?.thumbsDownCount ?? 0) || 0),
+    },
+    installed: false,
+    installedFileName: null,
+  };
+}
+
+export function mapCivitaiWorkflow(
+  raw: RawCivitaiModel
+): CivitaiWorkflowSummary | null {
+  if (!raw || typeof raw.id !== "number") return null;
+  if (raw.type && !/^workflows?$/i.test(raw.type.trim())) return null;
+  const versions = (Array.isArray(raw.modelVersions) ? raw.modelVersions : [])
+    .map((version) => mapWorkflowVersion(version, raw))
+    .filter((version): version is CivitaiWorkflowVersion => version !== null)
+    .slice(0, 20);
+  if (versions.length === 0) return null;
+
+  const tags = Array.isArray(raw.tags)
+    ? raw.tags.filter((tag): tag is string => typeof tag === "string").slice(0, 20)
+    : [];
+  const categories = detectWorkflowCategories({
+    name: (raw.name ?? "").trim(),
+    tags,
+    baseModel: versions[0]?.baseModel ?? null,
+    fileNames: versions[0]?.files.map((file) => file.fileName) ?? [],
+  });
+  const primaryPreviewUrl =
+    versions.find((version) => version.previewImageUrls.length > 0)
+      ?.previewImageUrls[0] ?? null;
+
+  return {
+    id: raw.id,
+    name: (raw.name ?? "").trim() || `Civitai workflow ${raw.id}`,
+    creator: raw.creator?.username?.trim() || raw.creator?.name?.trim() || null,
+    description: stripCivitaiHtml(raw.description),
+    tags,
+    baseModels: Array.isArray(raw.baseModels)
+      ? raw.baseModels.filter(
+          (model): model is string => typeof model === "string" && model.trim().length > 0
+        )
+      : [],
+    categories,
+    nsfw: raw.nsfw === true,
+    stats: {
+      downloads: Math.max(0, Number(raw.stats?.downloadCount ?? 0) || 0),
+      thumbsUp: Math.max(0, Number(raw.stats?.thumbsUpCount ?? 0) || 0),
+      rating: Math.max(0, Number(raw.stats?.rating ?? 0) || 0),
+    },
+    primaryPreviewUrl,
+    versions,
+    installed: false,
+    importedAt: null,
+  };
+}
+
 export class CivitaiClient {
   constructor(private readonly options: CivitaiClientOptions) {}
 
@@ -283,6 +502,9 @@ export class CivitaiClient {
     }
     if (response.status === 429) {
       throw new Error("Civitai rate limit reached. Wait a moment before searching again.");
+    }
+    if (response.status === 404) {
+      throw new Error(`Civitai could not find the requested ${context} (HTTP 404).`);
     }
     if (!response.ok) {
       throw new Error(`Civitai request failed (HTTP ${response.status} ${response.statusText}).`);
@@ -330,6 +552,70 @@ export class CivitaiClient {
     const mapped = mapCivitaiModel(payload, buildLocalModelIndex(localModels));
     if (!mapped) {
       throw new Error(`Civitai model ${modelId} has no downloadable Checkpoint, LoRA, VAE, or Upscaler versions.`);
+    }
+    return mapped;
+  }
+
+  async searchWorkflows(
+    query: CivitaiWorkflowSearchQuery
+  ): Promise<CivitaiWorkflowSearchResult> {
+    const limit = Math.min(Math.max(query.limit ?? 24, 1), 50);
+    const category = query.category ?? null;
+    const collected: CivitaiWorkflowSummary[] = [];
+    let cursor = query.cursor?.trim() || null;
+    let nextCursor: string | null = null;
+    let pages = 0;
+
+    do {
+      const params = new URLSearchParams();
+      params.set("limit", String(limit));
+      params.set("sort", query.sort ?? "Most Downloaded");
+      params.set("nsfw", String(query.nsfw === true));
+      params.set("types", "Workflows");
+      if (query.query?.trim()) params.set("query", query.query.trim());
+      if (cursor) params.set("cursor", cursor);
+
+      const payload = await this.requestJson<RawSearchResponse>(
+        `${CIVITAI_API_BASE}/models?${params.toString()}`,
+        "searching workflows"
+      );
+      const batch = (Array.isArray(payload.items) ? payload.items : [])
+        .map((item) => mapCivitaiWorkflow(item))
+        .filter((item): item is CivitaiWorkflowSummary => item !== null);
+      collected.push(
+        ...batch.filter(
+          (item) => !category || item.categories.includes(category)
+        )
+      );
+      nextCursor = payload.metadata?.nextCursor ?? null;
+      cursor = nextCursor;
+      pages += 1;
+    } while (category && collected.length < limit && cursor && pages < 4);
+
+    const seen = new Set<number>();
+    const items = collected
+      .filter((item) => {
+        if (seen.has(item.id)) return false;
+        seen.add(item.id);
+        return true;
+      })
+      .slice(0, limit);
+
+    return {
+      items,
+      nextCursor,
+      categoryFiltered: Boolean(category),
+    };
+  }
+
+  async getWorkflowDetails(modelId: number): Promise<CivitaiWorkflowSummary> {
+    const payload = await this.requestJson<RawCivitaiModel>(
+      `${CIVITAI_API_BASE}/models/${modelId}`,
+      "loading workflow details"
+    );
+    const mapped = mapCivitaiWorkflow(payload);
+    if (!mapped) {
+      throw new Error(`Civitai workflow ${modelId} has no downloadable versions.`);
     }
     return mapped;
   }

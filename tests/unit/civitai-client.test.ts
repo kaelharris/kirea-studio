@@ -199,6 +199,97 @@ describe("Local model index and installed badges", () => {
     expect(version.releaseNotes).toContain("Release notes");
   });
 
+  it("prefers Civitai's primary model file over unrelated or non-primary files", () => {
+    const mapped = mapCivitaiModel(
+      {
+        ...RAW_MODEL,
+        modelVersions: [
+          {
+            id: 9100,
+            name: "multi-file",
+            baseModel: "Flux.1 D",
+            files: [
+              {
+                name: "flux-dev-full.safetensors",
+                downloadUrl: "https://civitai.com/api/download/models/9100?fileId=1",
+                sizeKB: 23_000_000,
+                type: "Model",
+              },
+              {
+                name: "flux-dev-primary.safetensors",
+                downloadUrl: "https://civitai.com/api/download/models/9100?fileId=2",
+                sizeKB: 17_000_000,
+                type: "Model",
+                primary: true,
+              },
+              {
+                name: "diffusion_pytorch_model.safetensors",
+                downloadUrl: "https://civitai.com/api/download/models/9100?type=VAE",
+                sizeKB: 160,
+                type: "VAE",
+                primary: true,
+              },
+            ],
+          },
+        ],
+      },
+      buildLocalModelIndex([])
+    );
+
+    expect(mapped?.versions[0]?.fileName).toBe("flux-dev-primary.safetensors");
+    expect(mapped?.versions[0]?.downloadUrl).toContain("fileId=2");
+  });
+
+  it("selects the primary model even when the VAE file is listed first", () => {
+    const mapped = mapCivitaiModel(
+      {
+        ...RAW_MODEL,
+        type: "Checkpoint",
+        modelVersions: [
+          {
+            id: 9200,
+            name: "vae-first",
+            baseModel: "Illustrious",
+            files: [
+              {
+                name: "vae.safetensors",
+                downloadUrl: "https://civitai.com/api/download/models/9200?type=VAE",
+                sizeKB: 160,
+                type: "VAE",
+                primary: true,
+              },
+              {
+                name: "checkpoint.safetensors",
+                downloadUrl: "https://civitai.com/api/download/models/9200",
+                sizeKB: 2_000_000,
+                type: "Model",
+              },
+            ],
+          },
+        ],
+      },
+      buildLocalModelIndex([])
+    );
+
+    expect(mapped?.versions[0]?.fileName).toBe("checkpoint.safetensors");
+  });
+
+  it("marks versions with no downloadable model file as unavailable", () => {
+    const mapped = mapCivitaiModel(
+      {
+        ...RAW_MODEL,
+        modelVersions: [
+          { id: 9300, name: "Pro (no file)", baseModel: "Flux.1 D", files: [] },
+        ],
+      },
+      buildLocalModelIndex([])
+    );
+
+    const version = mapped?.versions[0];
+    expect(version?.downloadable).toBe(false);
+    expect(version?.downloadUrl).toBe("");
+  });
+
   it("drops models with unsupported types or no usable versions", () => {
     expect(
       mapCivitaiModel(

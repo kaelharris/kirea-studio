@@ -6,8 +6,15 @@ import type {
   CivitaiSearchResult,
 } from "./civitai";
 import type {
+  PixelAiBackendStatus,
+  PixelAiConnectionTest,
+  PixelAiGenerateInput,
+  PixelAiJob,
+} from "./pixel-ai-types";
+import type {
   PixelAssetDetail,
   PixelAssetFilters,
+  PixelAnimationInput,
   PixelAssetRecord,
   PixelAssetVersion,
   PixelCharacter,
@@ -20,8 +27,16 @@ import type {
   PixelImportInput,
   PixelProject,
   PixelProjectInput,
+  PixelSavedPalette,
+  PixelSavedPaletteInput,
   SpriteKilnReport,
 } from "./pixel-types";
+import type {
+  PixelPackagePlan,
+  PixelPackageProgress,
+  PixelPackageRequest,
+  PixelPackageResult,
+} from "./pixel-package-types";
 import type {
   AppDiagnostics,
   AppSettings,
@@ -32,6 +47,7 @@ import type {
   CuratedModelCatalogItem,
   DownloadTask,
   GeneratedImageRecord,
+  GeneratedVideoRecord,
   GenerationJob,
   GenerationRequest,
   GpuStats,
@@ -57,6 +73,29 @@ import type {
   ValidationIssue,
   WorkflowTemplate,
 } from "./types";
+import type {
+  InstalledWorkflowFile,
+  WorkflowArchivePreview,
+  WorkflowFileAnalysisResult,
+  WorkflowImportReport,
+  WorkflowInstallResult,
+  WorkflowRevalidationResult,
+} from "./workflow-import";
+import type {
+  CivitaiWorkflowImportPreview,
+  CivitaiWorkflowImportRequest,
+  CivitaiWorkflowSearchQuery,
+  CivitaiWorkflowSearchResult,
+  CivitaiWorkflowSummary,
+} from "./civitai-workflows";
+import type {
+  LibraryBatchCollectionResult,
+  LibraryBatchDeleteResult,
+  LibraryBatchExportResult,
+  LibraryBatchFavoriteResult,
+  LibraryMediaQuery,
+  LibraryMediaResult,
+} from "./library";
 
 export interface RuntimeReleaseInfo {
   tagName: string;
@@ -194,10 +233,26 @@ export interface KireaDesktopApi {
   listCivitaiDownloads(): Promise<CivitaiDownloadTask[]>;
   setCivitaiApiKey(apiKey: string): Promise<{ hasApiKey: boolean }>;
   testCivitaiConnection(): Promise<CivitaiConnectionTest>;
+  searchCivitaiWorkflows(
+    query: CivitaiWorkflowSearchQuery
+  ): Promise<CivitaiWorkflowSearchResult>;
+  getCivitaiWorkflowDetails(modelId: number): Promise<CivitaiWorkflowSummary>;
+  prepareCivitaiWorkflowImport(
+    request: CivitaiWorkflowImportRequest
+  ): Promise<CivitaiWorkflowImportPreview>;
 
   // Workflows & generation
   listWorkflows(): Promise<WorkflowTemplate[]>;
   getSamplersAndSchedulers(): Promise<{ samplers: string[]; schedulers: string[] }>;
+  analyzeWorkflowUrl(url: string): Promise<WorkflowImportReport>;
+  analyzeWorkflowFile(): Promise<WorkflowFileAnalysisResult | null>;
+  analyzeWorkflowArchiveFile(): Promise<WorkflowArchivePreview | null>;
+  installWorkflowImport(previewId: string): Promise<WorkflowInstallResult>;
+  listInstalledWorkflows(): Promise<InstalledWorkflowFile[]>;
+  revealInstalledWorkflow(filePath: string): Promise<void>;
+  removeInstalledWorkflow(filePath: string): Promise<boolean>;
+  revalidateInstalledWorkflow(filePath: string): Promise<WorkflowRevalidationResult>;
+  reimportInstalledWorkflow(filePath: string): Promise<WorkflowImportReport>;
   validateJob(req: GenerationRequest): Promise<ValidationIssue[]>;
   submitJob(req: GenerationRequest): Promise<GenerationJob[]>;
   listJobs(): Promise<GenerationJob[]>;
@@ -205,6 +260,7 @@ export interface KireaDesktopApi {
   retryJob(jobId: string): Promise<GenerationJob[]>;
 
   // Library, collections & prompts
+  listLibraryMedia(query?: LibraryMediaQuery): Promise<LibraryMediaResult>;
   listImages(filters?: LibraryFilters): Promise<GeneratedImageRecord[]>;
   toggleImageFavorite(id: string): Promise<GeneratedImageRecord | null>;
   updateImageMeta(
@@ -213,6 +269,14 @@ export interface KireaDesktopApi {
   ): Promise<void>;
   deleteImage(id: string): Promise<void>;
   exportImage(id: string, format: OutputFormat, stripMetadata: boolean): Promise<string | null>;
+  batchDeleteLibraryMedia(ids: string[]): Promise<LibraryBatchDeleteResult>;
+  batchExportLibraryMedia(ids: string[], destinationDir: string): Promise<LibraryBatchExportResult>;
+  batchSetLibraryCollection(ids: string[], collectionId: string | null): Promise<LibraryBatchCollectionResult>;
+  batchSetLibraryFavorite(ids: string[], favorite: boolean): Promise<LibraryBatchFavoriteResult>;
+  listVideos(): Promise<GeneratedVideoRecord[]>;
+  toggleVideoFavorite(id: string): Promise<GeneratedVideoRecord | null>;
+  deleteVideo(id: string): Promise<void>;
+  exportVideo(id: string): Promise<string | null>;
   listCollections(): Promise<CollectionRecord[]>;
   createCollection(name: string, description?: string): Promise<CollectionRecord>;
   deleteCollection(id: string): Promise<void>;
@@ -247,9 +311,20 @@ export interface KireaDesktopApi {
   savePixelAssetFrames(
     assetId: string,
     frames: PixelFrameInput[],
-    dimensions?: { width: number; height: number }
+    dimensions?: { width: number; height: number },
+    palette?: string[]
   ): Promise<PixelAssetDetail>;
+  savePixelAssetAnimations(
+    assetId: string,
+    animations: PixelAnimationInput[]
+  ): Promise<PixelAssetDetail>;
+  savePixelAssetPalette(assetId: string, palette: string[]): Promise<PixelAssetDetail>;
   listPixelAssetVersions(assetId: string): Promise<PixelAssetVersion[]>;
+  getPixelAssetVersion(assetId: string, version: number): Promise<PixelAssetDetail>;
+  restorePixelAssetVersion(assetId: string, version: number): Promise<PixelAssetDetail>;
+  listPixelPalettes(): Promise<PixelSavedPalette[]>;
+  savePixelPalette(input: PixelSavedPaletteInput): Promise<PixelSavedPalette>;
+  deletePixelPalette(id: string): Promise<boolean>;
   renamePixelAsset(id: string, name: string): Promise<PixelAssetRecord>;
   duplicatePixelAsset(id: string, name?: string): Promise<PixelAssetDetail>;
   deletePixelAsset(id: string): Promise<boolean>;
@@ -260,7 +335,18 @@ export interface KireaDesktopApi {
   ): Promise<PixelExportResult>;
   openPixelExportFolder(assetId: string): Promise<string>;
   pickPixelReferenceImage(): Promise<string | null>;
+  planPixelPackage(request: PixelPackageRequest): Promise<PixelPackagePlan>;
+  exportPixelPackage(request: PixelPackageRequest): Promise<PixelPackageResult>;
+  cancelPixelPackage(jobId: string): Promise<boolean>;
+  pickPixelPackageDestination(): Promise<string | null>;
+  revealPixelPackage(targetPath: string): Promise<void>;
   getSpriteKilnReport(): Promise<SpriteKilnReport>;
+  getPixelAiStatus(): Promise<PixelAiBackendStatus>;
+  testPixelAiConnection(): Promise<PixelAiConnectionTest>;
+  generatePixelAi(input: PixelAiGenerateInput): Promise<PixelAiJob>;
+  cancelPixelAiJob(jobId: string): Promise<boolean>;
+  getPixelAiJob(jobId: string): Promise<PixelAiJob>;
+  listPixelAiJobs(): Promise<PixelAiJob[]>;
 
   // Event listeners (returning unsubscribe function)
   onRuntimeChanged(cb: (state: RuntimeState) => void): () => void;
@@ -268,6 +354,9 @@ export interface KireaDesktopApi {
   onDownloadUpdated(cb: (task: DownloadTask) => void): () => void;
   onCivitaiDownloadProgress(cb: (task: CivitaiDownloadTask) => void): () => void;
   onImageCreated(cb: (image: GeneratedImageRecord) => void): () => void;
+  onVideoCreated(cb: (video: GeneratedVideoRecord) => void): () => void;
+  onPixelAiJobUpdated(cb: (job: PixelAiJob) => void): () => void;
+  onPixelPackageProgress(cb: (progress: PixelPackageProgress) => void): () => void;
 }
 
 declare global {

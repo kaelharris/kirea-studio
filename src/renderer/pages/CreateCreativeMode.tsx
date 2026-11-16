@@ -12,7 +12,11 @@ import {
   Wand2,
   X,
 } from "lucide-react";
-import { ASPECT_RATIOS } from "../../shared/aspect-ratios";
+import {
+  ASPECT_RATIOS,
+  CUSTOM_ASPECT_ID,
+  formatAspectRatio,
+} from "../../shared/aspect-ratios";
 import { PROMPT_SNIPPETS, STUDIO_PRESETS } from "../../shared/presets";
 import type {
   CharacterProfile,
@@ -151,7 +155,7 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
                   <img
                     src={activeJob.previewDataUrl}
                     alt="Live inference preview"
-                    className="h-24 w-24 rounded-lg border border-border object-cover"
+                    className="h-24 w-24 rounded-lg border border-border bg-surface-subtle object-contain"
                   />
                 ) : null}
                 <p className="min-w-0 flex-1 truncate text-caption font-normal text-fg-subtle">
@@ -200,7 +204,7 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
                       src={toMediaUrl(img.filePath)}
                       alt={img.prompt}
                       loading="lazy"
-                      className="h-full w-full object-cover"
+                      className="h-full w-full bg-surface-subtle object-contain"
                     />
                   </button>
 
@@ -392,9 +396,13 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
                     {ratio.id} · {ratio.label.split(" ")[1] ?? ""}
                   </option>
                 ))}
+                {draft.aspectRatio === CUSTOM_ASPECT_ID && (
+                  <option value={CUSTOM_ASPECT_ID}>Custom</option>
+                )}
               </select>
 
               <span className="font-mono text-tech tabular-nums text-fg-subtle">
+                {formatAspectRatio(draft.width, draft.height)} ·{" "}
                 {draft.width}×{draft.height}
               </span>
 

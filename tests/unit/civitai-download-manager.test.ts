@@ -27,6 +27,9 @@ function makeSettings(): AppSettings {
     externalComfyPath: "",
     comfyHost: "127.0.0.1",
     comfyPort: 8188,
+    pixelBackendHost: "127.0.0.1",
+    pixelBackendPort: 8189,
+    pixelBackendWorkflowRoot: "",
     managedComfyPath: "",
     autoStartRuntime: false,
     outputDirectory: "",
@@ -77,8 +80,10 @@ function makeVersion(
     name: "v1.0",
     baseModel: "SDXL 1.0",
     architecture: "sdxl",
+    availability: "Public",
     fileName: "test-lora.safetensors",
     downloadUrl,
+    downloadable: true,
     sizeBytes: 0,
     sha256: null,
     trainedWords: ["test trigger"],
@@ -430,6 +435,116 @@ describe("CivitaiDownloadManager transfers", () => {
       const finished = await manager.waitForTask(first.id);
       expect(finished?.status).toBe("cancelled");
       expect(manager.listDownloads()).toHaveLength(1);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("detects an already-installed file and refuses to overwrite a mismatched one", async () => {
+    const tempDir = makeTempDir();
+    const modelsRoot = path.join(tempDir, "models");
+    const payload = Buffer.alloc(4096, 3);
+    let requests = 0;
+    const { baseUrl, server } = await listen((_req, res) => {
+      requests += 1;
+      res.writeHead(200, {
+        "content-type": "application/octet-stream",
+        "content-length": payload.length,
+      });
+      res.end(payload);
+    });
+
+    try {
+      const manager = new CivitaiDownloadManager({
+        allowLoopbackHttpForTests: true,
+      });
+      const first = manager.start({
+        model: makeModel(),
+        version: makeVersion(`${baseUrl}/file`),
+        apiKey: null,
+        settings: makeSettings(),
+        managedModelsDir: modelsRoot,
+      });
+      await manager.waitForTask(first.id);
+      expect(requests).toBe(1);
+
+      const duplicate = manager.start({
+        model: makeModel(),
+        version: makeVersion(`${baseUrl}/file`),
+        apiKey: null,
+        settings: makeSettings(),
+        managedModelsDir: modelsRoot,
+      });
+      expect(duplicate.status).toBe("completed");
+      expect(duplicate.downloadedBytes).toBe(payload.length);
+      expect(requests).toBe(1);
+
+      const targetPath = path.join(
+        modelsRoot,
+        "loras",
+        "sdxl",
+        "test-lora.safetensors"
+      );
+      fs.writeFileSync(targetPath, Buffer.alloc(1024, 9));
+      expect(() =>
+        manager.start({
+          model: makeModel(),
+          version: makeVersion(`${baseUrl}/file`, {
+            id: 202,
+            sizeBytes: 1024 * 1024,
+          }),
+          apiKey: null,
+          settings: makeSettings(),
+          managedModelsDir: modelsRoot,
+        })
+      ).toThrow(/different file already exists/i);
+      expect(fs.readFileSync(targetPath).length).toBe(1024);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("reports gated, restricted, and unavailable responses clearly", async () => {
+    const tempDir = makeTempDir();
+    const modelsRoot = path.join(tempDir, "models");
+    const { baseUrl, server } = await listen((req, res) => {
+      if (req.url?.includes("/gated")) {
+        res.writeHead(403, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({ message: "You must accept this model's license on Civitai." })
+        );
+        return;
+      }
+      if (req.url?.includes("/missing")) {
+        res.writeHead(404, { "content-type": "application/json" });
+        res.end(JSON.stringify({ message: "Model version not found." }));
+        return;
+      }
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ message: "Invalid authentication token." }));
+    });
+
+    try {
+      const manager = new CivitaiDownloadManager({
+        allowLoopbackHttpForTests: true,
+      });
+      const run = async (pathName: string, id: number): Promise<string> => {
+        const started = manager.start({
+          model: makeModel(),
+          version: makeVersion(`${baseUrl}${pathName}`, { id }),
+          apiKey: "bad-key",
+          settings: makeSettings(),
+          managedModelsDir: modelsRoot,
+        });
+        const finished = await manager.waitForTask(started.id);
+        expect(finished?.status).toBe("failed");
+        return finished?.error ?? "";
+      };
+
+      expect(await run("/gated", 301)).toMatch(/HTTP 403.*license/i);
+      expect(await run("/gated", 302)).toMatch(/gated.*early access.*restricted/i);
+      expect(await run("/missing", 303)).toMatch(/unavailable \(HTTP 404\).*not found/i);
+      expect(await run("/auth", 304)).toMatch(/HTTP 401.*Invalid authentication token/i);
     } finally {
       await closeServer(server);
     }

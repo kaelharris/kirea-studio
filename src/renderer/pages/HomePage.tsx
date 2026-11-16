@@ -326,7 +326,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                     src={toMediaUrl(img.filePath)}
                     alt={img.prompt}
                     loading="lazy"
-                    className={`h-full w-full object-cover transition-[filter,transform] duration-200 ${
+                    className={`h-full w-full bg-surface-subtle object-contain transition-[filter,transform] duration-200 ${
                       blurThumbs
                         ? "scale-110 blur-xl group-hover:scale-100 group-hover:blur-none group-focus-visible:scale-100 group-focus-visible:blur-none"
                         : ""

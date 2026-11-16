@@ -43,6 +43,7 @@ describe("Live ComfyUI Hardware E2E Verification (Isolated Read-Only TES)", () =
         charactersDir: path.join(tmp, "characters"),
         pixelAssetsDir: path.join(tmp, "pixel-assets"),
         pixelExportsDir: path.join(tmp, "pixel-exports"),
+        pixelAiTempDir: path.join(tmp, "pixel-ai-temp"),
       };
       fs.mkdirSync(paths.logsDir, { recursive: true });
       fs.mkdirSync(paths.defaultOutputDir, { recursive: true });
@@ -54,6 +55,9 @@ describe("Live ComfyUI Hardware E2E Verification (Isolated Read-Only TES)", () =
         externalComfyPath: TES_COMFY_PATH,
         comfyHost: "127.0.0.1",
         comfyPort: 18190,
+        pixelBackendHost: "127.0.0.1",
+        pixelBackendPort: 18191,
+        pixelBackendWorkflowRoot: "",
         managedComfyPath: paths.defaultManagedRuntimeDir,
         autoStartRuntime: false,
         outputDirectory: paths.defaultOutputDir,

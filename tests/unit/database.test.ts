@@ -33,6 +33,9 @@ const TEST_DEFAULT_SETTINGS: AppSettings = {
   externalComfyPath: "",
   comfyHost: "127.0.0.1",
   comfyPort: 8188,
+  pixelBackendHost: "127.0.0.1",
+  pixelBackendPort: 8189,
+  pixelBackendWorkflowRoot: "",
   managedComfyPath: "",
   autoStartRuntime: false,
   outputDirectory: "C:\\temp\\out",
@@ -81,13 +84,13 @@ function makeModelRecord(overrides: Partial<ModelRecord> = {}): ModelRecord {
 }
 
 describe("StudioDatabase & StudioRepository", () => {
-  it("initializes schema v6 and persists settings, images, collections, and prompts across restarts", () => {
+  it("initializes schema v7 and persists settings, images, collections, and prompts across restarts", () => {
     const dir = makeTempDir();
     const dbPath = path.join(dir, "studio.db");
 
     const db1 = new StudioDatabase(dbPath);
     expect(db1.recoveredFromCorruption).toBe(false);
-    expect(db1.getSchemaVersion()).toBe(6);
+    expect(db1.getSchemaVersion()).toBe(10);
 
     const repo1 = new StudioRepository(db1);
     repo1.upsertWorkflowMetadata(WORKFLOW_TEMPLATES);
@@ -201,6 +204,104 @@ describe("StudioDatabase & StudioRepository", () => {
     db2.close();
   });
 
+  it("persists generated videos and supports favorite toggling and deletion", () => {
+    const dir = makeTempDir();
+    const db = new StudioDatabase(path.join(dir, "studio.db"));
+    const repo = new StudioRepository(db);
+
+    const job: GenerationJob = {
+      id: "job_video_1",
+      promptId: "prompt_video_1",
+      status: "COMPLETED",
+      errorKind: "NONE",
+      errorMessage: null,
+      prompt: "slow dolly through a greenhouse",
+      negativePrompt: "flicker",
+      checkpoint: "wan2.1_t2v_1.3B_fp16.safetensors",
+      workflowId: "t2v_wan21_1_3b",
+      workflowVersion: "1.0.0",
+      mode: "t2v",
+      settings: {
+        workflowId: "t2v_wan21_1_3b",
+        mode: "t2v",
+        prompt: "slow dolly through a greenhouse",
+        negativePrompt: "flicker",
+        checkpoint: "wan2.1_t2v_1.3B_fp16.safetensors",
+        vae: null,
+        loras: [],
+        aspectRatio: "16:9",
+        width: 832,
+        height: 480,
+        steps: 30,
+        cfg: 6,
+        sampler: "uni_pc",
+        scheduler: "simple",
+        seed: 4242,
+        randomSeed: false,
+        batchCount: 1,
+        batchSize: 1,
+        outputFormat: "png",
+        inputImagePath: null,
+        denoise: 1,
+        video: { fps: 16, frameCount: 33, durationSeconds: 2.06, format: "mp4" },
+      },
+      progressStep: 30,
+      progressMax: 30,
+      currentNode: null,
+      previewDataUrl: null,
+      outputPaths: ["C:\\temp\\out\\video1.mp4"],
+      submittedAt: "2026-11-11T10:00:00.000Z",
+      startedAt: "2026-11-11T10:00:01.000Z",
+      completedAt: "2026-11-11T10:05:00.000Z",
+      batchIndex: 1,
+      batchTotal: 1,
+    };
+
+    repo.recordCompletedVideoTx(
+      job,
+      [
+        {
+          id: "vid_1",
+          jobId: job.id,
+          filePath: "C:\\temp\\out\\video1.mp4",
+          fileName: "video1.mp4",
+          container: "mp4",
+          width: 832,
+          height: 480,
+          sizeBytes: 2048000,
+          durationSeconds: 2.06,
+          fps: 16,
+          frameCount: 33,
+          prompt: job.prompt,
+          negativePrompt: job.negativePrompt,
+          seed: 4242,
+          checkpoint: job.checkpoint,
+          loras: [],
+          workflowId: job.workflowId,
+          sampler: "uni_pc",
+          scheduler: "simple",
+          steps: 30,
+          cfg: 6,
+          denoise: 1,
+          mode: "t2v",
+          favorite: false,
+          tags: ["video"],
+          createdAt: "2026-11-11T10:05:00.000Z",
+        },
+      ],
+      { id: "pr_video_1", title: "Greenhouse", prompt: job.prompt, negativePrompt: job.negativePrompt }
+    );
+
+    const [video] = repo.listVideos();
+    expect(video?.frameCount).toBe(33);
+    expect(video?.fps).toBe(16);
+    expect(video?.container).toBe("mp4");
+    expect(repo.toggleVideoFavorite("vid_1")?.favorite).toBe(true);
+    repo.deleteVideo("vid_1");
+    expect(repo.listVideos()).toHaveLength(0);
+    db.close();
+  });
+
   it("recovers gracefully when the SQLite file on disk is corrupted", () => {
     const dir = makeTempDir();
     const dbPath = path.join(dir, "studio.db");
@@ -208,14 +309,14 @@ describe("StudioDatabase & StudioRepository", () => {
 
     const db = new StudioDatabase(dbPath);
     expect(db.recoveredFromCorruption).toBe(true);
-    expect(db.getSchemaVersion()).toBe(6);
+    expect(db.getSchemaVersion()).toBe(10);
     db.close();
 
     const files = fs.readdirSync(dir);
     expect(files.some((f) => f.includes(".corrupt."))).toBe(true);
   });
 
-  it("upgrades an existing v1 database to v6 without losing v1 data", () => {
+  it("upgrades an existing v1 database to v10 without losing v1 data", () => {
     const dir = makeTempDir();
     const dbPath = path.join(dir, "studio.db");
 
@@ -243,7 +344,7 @@ describe("StudioDatabase & StudioRepository", () => {
     raw.close();
 
     const db = new StudioDatabase(dbPath);
-    expect(db.getSchemaVersion()).toBe(6);
+    expect(db.getSchemaVersion()).toBe(10);
 
     const tableNames = (
       db.db
@@ -264,6 +365,7 @@ describe("StudioDatabase & StudioRepository", () => {
       "story_canvases",
       "story_canvas_items",
       "story_exports",
+      "pixel_palettes",
     ]) {
       expect(tableNames).toContain(table);
     }
@@ -299,6 +401,85 @@ describe("StudioDatabase & StudioRepository", () => {
       .prepare("SELECT value_json FROM settings WHERE key = 'theme'")
       .get() as { value_json: string };
     expect(JSON.parse(theme.value_json)).toBe("light");
+    db.close();
+  });
+
+  it("upgrades a v6 pixel database with stable frame ids without touching frame data", () => {
+    const dir = makeTempDir();
+    const dbPath = path.join(dir, "studio.db");
+    const assetId = "11111111-1111-4111-8111-111111111111";
+
+    const raw = new Database(dbPath);
+    raw.pragma("foreign_keys = OFF");
+    raw.exec(`
+      CREATE TABLE schema_migrations (
+        version INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        applied_at TEXT NOT NULL
+      );
+    `);
+    const now = new Date().toISOString();
+    for (const migration of MIGRATIONS.filter((entry) => entry.version <= 6)) {
+      migration.up(raw);
+      raw
+        .prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)")
+        .run(migration.version, migration.name, now);
+    }
+    raw
+      .prepare(
+        "INSERT INTO pixel_projects (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)"
+      )
+      .run("project-legacy", "Legacy", now, now);
+    raw
+      .prepare(
+        `INSERT INTO pixel_assets
+          (id, project_id, name, kind, width, height, preview_path, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(assetId, "project-legacy", "Legacy Hero", "character", 32, 32, "legacy/preview.png", now, now);
+    const insertFrame = raw.prepare(
+      `INSERT INTO pixel_frames (asset_id, frame_index, name, duration_ms, file_path)
+       VALUES (?, ?, ?, ?, ?)`
+    );
+    insertFrame.run(assetId, 0, "idle", 120, "legacy/frame_000.png");
+    insertFrame.run(assetId, 1, "walk", 90, "legacy/frame_001.png");
+    raw.close();
+
+    const db = new StudioDatabase(dbPath);
+    expect(db.getSchemaVersion()).toBe(10);
+    const rows = db.db
+      .prepare(
+        "SELECT frame_index, name, duration_ms, frame_id FROM pixel_frames WHERE asset_id = ? ORDER BY frame_index"
+      )
+      .all(assetId) as Array<{
+      frame_index: number;
+      name: string;
+      duration_ms: number;
+      frame_id: string;
+    }>;
+    expect(rows.map((row) => [row.frame_index, row.name, row.duration_ms])).toEqual([
+      [0, "idle", 120],
+      [1, "walk", 90],
+    ]);
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    for (const row of rows) expect(row.frame_id).toMatch(uuidPattern);
+    expect(new Set(rows.map((row) => row.frame_id)).size).toBe(rows.length);
+
+    const indexes = db.db.prepare("PRAGMA index_list(pixel_frames)").all() as Array<{
+      name: string;
+      unique: number;
+    }>;
+    expect(indexes).toContainEqual(
+      expect.objectContaining({ name: "idx_pixel_frames_asset_frame_id", unique: 1 })
+    );
+    expect(() =>
+      db.db
+        .prepare(
+          `INSERT INTO pixel_frames (asset_id, frame_id, frame_index, name, duration_ms, file_path)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        )
+        .run(assetId, rows[0]!.frame_id, 2, "duplicate", 100, "legacy/frame_002.png")
+    ).toThrow();
     db.close();
   });
 

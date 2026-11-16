@@ -5,6 +5,7 @@ import { registerGenerationHandlers } from "./handlers/generation-handlers";
 import { registerModelsHandlers } from "./handlers/models-handlers";
 import { registerPixelHandlers } from "./handlers/pixel-handlers";
 import { registerStoriesHandlers } from "./handlers/stories-handlers";
+import { registerWorkflowsHandlers } from "./handlers/workflows-handlers";
 import type { HandlerContext, IpcRegistrarHandle } from "./schemas";
 
 export type { HandlerContext } from "./schemas";
@@ -31,6 +32,7 @@ export function registerIpcHandlers(ctx: HandlerContext): void {
   };
 
   registerAppRuntimeHandlers(ctx, handle);
+  registerWorkflowsHandlers(ctx, handle);
   registerModelsHandlers(ctx, handle);
   registerStoriesHandlers(ctx, handle);
   registerGenerationHandlers(ctx, handle);

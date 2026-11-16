@@ -2,30 +2,54 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ArrowLeft,
   ArrowRight,
+  Circle,
+  Copy,
   Crop,
+  Download,
   Eraser,
   Grid3X3,
+  Hand,
   Layers,
   Maximize2,
+  Minus,
   MousePointer2,
   PaintBucket,
   Pencil,
   Pipette,
+  Plus,
   Redo2,
+  RotateCcw,
   Save,
+  Square,
   Undo2,
+  Upload,
+  X,
 } from "lucide-react";
 import type {
   PixelAssetDetail,
   PixelAssetRecord,
+  PixelCharacter,
   PixelFrameInput,
+  PixelSavedPalette,
 } from "../../../shared/pixel-types";
 import { Badge, Button, Card, EmptyState, Input, Select } from "../ui/Primitives";
 import { PixelField, checkerStyle } from "./pixel-ui";
 
-type EditorTool = "pencil" | "eraser" | "picker" | "fill" | "select" | "move" | "crop";
+type EditorTool =
+  | "pencil"
+  | "eraser"
+  | "picker"
+  | "fill"
+  | "line"
+  | "rect"
+  | "ellipse"
+  | "select"
+  | "move"
+  | "crop"
+  | "pan";
 
 interface EditorFrameState {
+  id: string;
   name: string;
   durationMs: number;
   data: ImageData;
@@ -47,6 +71,7 @@ interface SelectionRect {
 
 interface PixelEditorProps {
   assets: PixelAssetRecord[];
+  characters: PixelCharacter[];
   detail: PixelAssetDetail | null;
   selectedAssetId: string;
   initialFrameIndex: number;
@@ -54,8 +79,11 @@ interface PixelEditorProps {
   onSaveFrames: (
     assetId: string,
     frames: PixelFrameInput[],
-    dimensions?: { width: number; height: number }
+    dimensions?: { width: number; height: number },
+    palette?: string[]
   ) => Promise<void>;
+  onSavePalette: (assetId: string, palette: string[]) => Promise<void>;
+  onOpenCharacter?: (characterId: string) => void;
   onToast: (message: string, tone?: "info" | "error") => void;
 }
 
@@ -64,9 +92,13 @@ const TOOLS: Array<{ id: EditorTool; label: string; icon: React.ReactNode; short
   { id: "eraser", label: "Eraser", icon: <Eraser className="w-3.5 h-3.5" />, shortcut: "E" },
   { id: "picker", label: "Picker", icon: <Pipette className="w-3.5 h-3.5" />, shortcut: "I" },
   { id: "fill", label: "Fill", icon: <PaintBucket className="w-3.5 h-3.5" />, shortcut: "G" },
+  { id: "line", label: "Line", icon: <Minus className="w-3.5 h-3.5" />, shortcut: "L" },
+  { id: "rect", label: "Rectangle", icon: <Square className="w-3.5 h-3.5" />, shortcut: "R" },
+  { id: "ellipse", label: "Ellipse", icon: <Circle className="w-3.5 h-3.5" />, shortcut: "O" },
   { id: "select", label: "Select", icon: <MousePointer2 className="w-3.5 h-3.5" />, shortcut: "M" },
   { id: "move", label: "Move", icon: <Maximize2 className="w-3.5 h-3.5" />, shortcut: "V" },
   { id: "crop", label: "Crop", icon: <Crop className="w-3.5 h-3.5" />, shortcut: "C" },
+  { id: "pan", label: "Pan", icon: <Hand className="w-3.5 h-3.5" />, shortcut: "H" },
 ];
 
 const SHORTCUT_TOOL: Record<string, EditorTool> = {
@@ -74,10 +106,16 @@ const SHORTCUT_TOOL: Record<string, EditorTool> = {
   e: "eraser",
   i: "picker",
   g: "fill",
+  l: "line",
+  r: "rect",
+  o: "ellipse",
   m: "select",
   v: "move",
   c: "crop",
+  h: "pan",
 };
+
+const DEFAULT_PALETTE = ["#191920", "#4F7BFC", "#e8c9ae", "#d9c9a8", "#f2dc93", "#f7f3e8"];
 
 function cloneImageData(data: ImageData): ImageData {
   return new ImageData(new Uint8ClampedArray(data.data), data.width, data.height);
@@ -233,8 +271,110 @@ function floodFill(data: ImageData, x: number, y: number, rgba: [number, number,
   }
 }
 
-function clearRegion(data: ImageData, rect: SelectionRect): void {
-  const transparent: [number, number, number, number] = [0, 0, 0, 0];
+function drawRect(
+  data: ImageData,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  rgba: [number, number, number, number],
+  brush: number,
+  filled: boolean
+): void {
+  const left = Math.max(0, Math.min(from.x, to.x));
+  const right = Math.min(data.width - 1, Math.max(from.x, to.x));
+  const top = Math.max(0, Math.min(from.y, to.y));
+  const bottom = Math.min(data.height - 1, Math.max(from.y, to.y));
+  for (let y = top; y <= bottom; y++) {
+    for (let x = left; x <= right; x++) {
+      const edge = x === left || x === right || y === top || y === bottom;
+      if (filled || edge) writePixel(data, x, y, rgba, brush);
+    }
+  }
+}
+
+function drawEllipse(
+  data: ImageData,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  rgba: [number, number, number, number],
+  brush: number,
+  filled: boolean
+): void {
+  const left = Math.max(0, Math.min(from.x, to.x));
+  const right = Math.min(data.width - 1, Math.max(from.x, to.x));
+  const top = Math.max(0, Math.min(from.y, to.y));
+  const bottom = Math.min(data.height - 1, Math.max(from.y, to.y));
+  const cx = (left + right + 1) / 2;
+  const cy = (top + bottom + 1) / 2;
+  const rx = Math.max(0.5, (right - left + 1) / 2);
+  const ry = Math.max(0.5, (bottom - top + 1) / 2);
+  const inside = (x: number, y: number): boolean =>
+    ((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2 <= 1;
+  for (let y = top; y <= bottom; y++) {
+    for (let x = left; x <= right; x++) {
+      if (!inside(x, y)) continue;
+      const edge =
+        !inside(x - 1, y) || !inside(x + 1, y) || !inside(x, y - 1) || !inside(x, y + 1);
+      if (filled || edge) writePixel(data, x, y, rgba, brush);
+    }
+  }
+}
+
+function hexKey(r: number, g: number, b: number, a: number): string {
+  return rgbaToHex(r, g, b, a).toLowerCase();
+}
+
+function rgbKey(hex: string): string {
+  const [r, g, b] = hexToRgba(hex);
+  return `#${[r, g, b].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function replaceColors(
+  data: ImageData,
+  mapping: Map<string, [number, number, number]>
+): void {
+  if (!mapping.size) return;
+  for (let offset = 0; offset < data.data.length; offset += 4) {
+    if (data.data[offset + 3] === 0) continue;
+    const key = `#${data.data[offset]!.toString(16).padStart(2, "0")}${data.data[offset + 1]!
+      .toString(16)
+      .padStart(2, "0")}${data.data[offset + 2]!.toString(16).padStart(2, "0")}`;
+    const target = mapping.get(key);
+    if (!target) continue;
+    data.data[offset] = target[0];
+    data.data[offset + 1] = target[1];
+    data.data[offset + 2] = target[2];
+  }
+}
+
+function collectUsedColors(frames: EditorFrameState[]): Array<{ hex: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const frame of frames) {
+    const pixels = frame.data.data;
+    for (let offset = 0; offset < pixels.length; offset += 4) {
+      if (pixels[offset + 3] === 0) continue;
+      const key = hexKey(
+        pixels[offset]!,
+        pixels[offset + 1]!,
+        pixels[offset + 2]!,
+        pixels[offset + 3]!
+      );
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .map(([hex, count]) => ({ hex, count }))
+    .sort((a, b) => b.count - a.count || a.hex.localeCompare(b.hex));
+}
+
+function uniqueFrameName(name: string, frames: EditorFrameState[]): string {
+  const used = new Set(frames.map((frame) => frame.name));
+  if (!used.has(name)) return name;
+  let suffix = 2;
+  while (used.has(`${name}_${suffix}`)) suffix += 1;
+  return `${name}_${suffix}`;
+}
+
+function clearRegion(data: ImageData, rect: SelectionRect): void {  const transparent: [number, number, number, number] = [0, 0, 0, 0];
   for (let y = rect.y; y < rect.y + rect.h; y++) {
     for (let x = rect.x; x < rect.x + rect.w; x++) {
       writePixel(data, x, y, transparent, 1);
@@ -290,24 +430,58 @@ function loadImage(dataUrl: string): Promise<HTMLImageElement> {
   });
 }
 
+const PixelCanvasPreview: React.FC<{
+  data: ImageData;
+  scale?: number;
+  className?: string;
+}> = ({ data, scale = 4, className }) => {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    canvas.width = data.width * scale;
+    canvas.height = data.height * scale;
+    const context = canvas.getContext("2d")!;
+    context.imageSmoothingEnabled = false;
+    const source = imageDataToCanvas(data);
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(source, 0, 0, canvas.width, canvas.height);
+  }, [data, scale]);
+  return (
+    <canvas
+      ref={ref}
+      className={className}
+      style={{ imageRendering: "pixelated", width: data.width * scale, height: data.height * scale }}
+    />
+  );
+};
+
 export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
   assets,
+  characters,
   detail,
   selectedAssetId,
   initialFrameIndex,
   onSelectAsset,
   onSaveFrames,
+  onSavePalette,
+  onOpenCharacter,
   onToast,
 }) => {
   const [dims, setDims] = useState({ w: 32, h: 32 });
   const [frames, setFrames] = useState<EditorFrameState[]>([]);
+  const [baseline, setBaseline] = useState<EditorFrameState[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [tool, setTool] = useState<EditorTool>("pencil");
   const [color, setColor] = useState("#191920");
   const [brush, setBrush] = useState(1);
+  const [filled, setFilled] = useState(false);
   const [zoom, setZoom] = useState(8);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
   const [showGrid, setShowGrid] = useState(true);
+  const [checker, setChecker] = useState(true);
   const [onion, setOnion] = useState(false);
+  const [compare, setCompare] = useState(false);
   const [selection, setSelection] = useState<SelectionRect | null>(null);
   const [resizeDraft, setResizeDraft] = useState({ w: 32, h: 32 });
   const [undoStack, setUndoStack] = useState<EditorSnapshot[]>([]);
@@ -316,9 +490,24 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
   const [saving, setSaving] = useState(false);
   const [dimensionChanged, setDimensionChanged] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [palette, setPalette] = useState<string[]>([]);
+  const [paletteDirty, setPaletteDirty] = useState(false);
+  const [replaceFrom, setReplaceFrom] = useState("");
+  const [replaceTo, setReplaceTo] = useState("#ffffff");
+  const [replaceScope, setReplaceScope] = useState<"frame" | "all">("all");
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [previewMapping, setPreviewMapping] = useState(false);
+  const [savedPalettes, setSavedPalettes] = useState<PixelSavedPalette[]>([]);
+  const [paletteName, setPaletteName] = useState("");
+  const [paletteBusy, setPaletteBusy] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const strokeRef = useRef<{ buffer: ImageData; last: { x: number; y: number } } | null>(null);
+  const shapeRef = useRef<{
+    base: ImageData;
+    start: { x: number; y: number };
+    tool: "line" | "rect" | "ellipse";
+  } | null>(null);
   const selectRef = useRef<{ start: { x: number; y: number }; last: { x: number; y: number } } | null>(null);
   const moveRef = useRef<{
     base: ImageData;
@@ -326,6 +515,13 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
     from: { x: number; y: number };
     origin: SelectionRect;
   } | null>(null);
+  const panRef = useRef<{
+    start: { x: number; y: number };
+    origin: { x: number; y: number };
+  } | null>(null);
+  const paletteFileRef = useRef<HTMLInputElement | null>(null);
+
+  const unsaved = dirty || paletteDirty;
 
   const assetOptions = useMemo(
     () => assets.filter((asset) => asset.frameCount > 0),
@@ -345,6 +541,7 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
         for (const frame of detail.frames) {
           if (!frame.dataUrl) {
             loaded.push({
+              id: frame.id,
               name: frame.name,
               durationMs: frame.durationMs,
               data: blankImageData(detail.width, detail.height),
@@ -359,6 +556,7 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
           context.imageSmoothingEnabled = false;
           context.drawImage(image, 0, 0, detail.width, detail.height);
           loaded.push({
+            id: frame.id,
             name: frame.name,
             durationMs: frame.durationMs,
             data: context.getImageData(0, 0, detail.width, detail.height),
@@ -368,12 +566,19 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
         setDims({ w: detail.width, h: detail.height });
         setResizeDraft({ w: detail.width, h: detail.height });
         setFrames(loaded);
+        setBaseline(loaded.map((frame) => ({ ...frame, data: cloneImageData(frame.data) })));
         setActiveIndex(Math.min(initialFrameIndex, Math.max(0, loaded.length - 1)));
         setUndoStack([]);
         setRedoStack([]);
         setSelection(null);
         setDirty(false);
         setDimensionChanged(false);
+        setPalette(detail.palette);
+        setPaletteDirty(false);
+        setMapping({});
+        setPreviewMapping(false);
+        setPan({ x: 0, y: 0 });
+        setReplaceFrom(detail.palette[0] ?? "#191920");
         setColor(detail.palette[0] ?? "#191920");
       } catch (error) {
         if (!cancelled) {
@@ -388,7 +593,23 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detail?.id]);
+  }, [detail?.id, detail?.version]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadPalettes = async (): Promise<void> => {
+      try {
+        const entries = await window.kirea.listPixelPalettes();
+        if (!cancelled) setSavedPalettes(entries);
+      } catch {
+        // The palette library is an enhancement; editing still works without it.
+      }
+    };
+    void loadPalettes();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (frames.length && initialFrameIndex < frames.length) {
@@ -554,6 +775,10 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
     if (!currentFrame) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     const point = toPixel(event);
+    if (tool === "pan" || event.button === 1) {
+      panRef.current = { start: { x: event.clientX, y: event.clientY }, origin: pan };
+      return;
+    }
     if (tool === "pencil" || tool === "eraser") {
       pushUndo();
       const buffer = cloneImageData(currentFrame.data);
@@ -562,6 +787,15 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
       writePixel(buffer, point.x, point.y, rgba, brush);
       strokeRef.current = { buffer, last: point };
       applyFrame(buffer);
+      return;
+    }
+    if (tool === "line" || tool === "rect" || tool === "ellipse") {
+      pushUndo();
+      shapeRef.current = {
+        base: cloneImageData(currentFrame.data),
+        start: point,
+        tool,
+      };
       return;
     }
     if (tool === "picker") {
@@ -602,6 +836,14 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
 
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     if (!currentFrame) return;
+    if (panRef.current) {
+      const { start, origin } = panRef.current;
+      setPan({
+        x: origin.x + event.clientX - start.x,
+        y: origin.y + event.clientY - start.y,
+      });
+      return;
+    }
     const point = toPixel(event);
     if (strokeRef.current) {
       const { buffer, last } = strokeRef.current;
@@ -613,6 +855,30 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
         prev.map((frame, index) =>
           index === activeIndex ? { ...frame, data: buffer } : frame
         )
+      );
+      return;
+    }
+    if (shapeRef.current) {
+      const { base, start, tool: shape } = shapeRef.current;
+      const next = cloneImageData(base);
+      const rgba = hexToRgba(color);
+      if (shape === "line") drawLine(next, start, point, rgba, brush);
+      else if (shape === "rect") drawRect(next, start, point, rgba, brush, filled);
+      else drawEllipse(next, start, point, rgba, brush, filled);
+      setFrames((prev) =>
+        prev.map((frame, index) =>
+          index === activeIndex ? { ...frame, data: next } : frame
+        )
+      );
+      setSelection(
+        shape === "line"
+          ? normalizeSelection(start, point, dims.w, dims.h)
+          : {
+              x: Math.max(0, Math.min(start.x, point.x)),
+              y: Math.max(0, Math.min(start.y, point.y)),
+              w: Math.min(dims.w, Math.abs(point.x - start.x) + 1),
+              h: Math.min(dims.h, Math.abs(point.y - start.y) + 1),
+            }
       );
       return;
     }
@@ -643,6 +909,7 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
 
   const finishStroke = (): void => {
     strokeRef.current = null;
+    shapeRef.current = null;
     if (selectRef.current) {
       const { start, last } = selectRef.current;
       selectRef.current = null;
@@ -656,6 +923,7 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
       }
     }
     moveRef.current = null;
+    panRef.current = null;
   };
 
   const onPointerUp = (): void => {
@@ -713,36 +981,275 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
     applyFrame(blankImageData(dims.w, dims.h));
   };
 
+  const usedColors = useMemo(() => collectUsedColors(frames), [frames]);
+  const outsideColors = useMemo(() => {
+    const allowed = new Set(palette.map(rgbKey));
+    return usedColors.filter((entry) => !allowed.has(rgbKey(entry.hex)));
+  }, [usedColors, palette]);
+  const activeBaseline = useMemo(() => {
+    if (!currentFrame) return null;
+    return (
+      baseline.find((frame) => frame.id === currentFrame.id) ??
+      baseline.find((frame) => frame.name === currentFrame.name) ??
+      null
+    );
+  }, [baseline, currentFrame]);
+  const siblings = useMemo(
+    () =>
+      detail?.characterId
+        ? assets.filter(
+            (asset) => asset.characterId === detail.characterId && asset.id !== detail.id
+          )
+        : [],
+    [assets, detail?.characterId, detail?.id]
+  );
+  const character = useMemo(
+    () => characters.find((entry) => entry.id === detail?.characterId) ?? null,
+    [characters, detail?.characterId]
+  );
+  const mappingEntries = useMemo(
+    () =>
+      usedColors
+        .filter((entry) => {
+          const target = mapping[entry.hex];
+          return target && rgbKey(target) !== rgbKey(entry.hex);
+        })
+        .map((entry) => ({ ...entry, target: mapping[entry.hex]! })),
+    [usedColors, mapping]
+  );
+  const mappedPreviewUrl = useMemo(() => {
+    if (!previewMapping || !currentFrame || !mappingEntries.length) return "";
+    const map = new Map<string, [number, number, number]>();
+    for (const entry of mappingEntries) {
+      const [r, g, b] = hexToRgba(entry.target);
+      map.set(rgbKey(entry.hex), [r, g, b]);
+    }
+    const copy = cloneImageData(currentFrame.data);
+    replaceColors(copy, map);
+    return imageDataToDataUrl(copy);
+  }, [previewMapping, currentFrame, mappingEntries]);
+
+  const addPaletteColor = (hex = color): void => {
+    if (!/^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(hex)) {
+      onToast("Enter a 6 or 8 digit hex colour.", "error");
+      return;
+    }
+    const normalized = hex.startsWith("#") ? hex.toLowerCase() : `#${hex.toLowerCase()}`;
+    if (palette.some((entry) => rgbKey(entry) === rgbKey(normalized))) {
+      onToast("That colour is already in the palette.", "info");
+      return;
+    }
+    if (palette.length >= 64) {
+      onToast("A palette can hold at most 64 colours.", "error");
+      return;
+    }
+    setPalette((prev) => [...prev, normalized]);
+    setPaletteDirty(true);
+  };
+
+  const removePaletteColor = (index: number): void => {
+    if (palette.length <= 1) {
+      onToast("Keep at least one palette colour.", "error");
+      return;
+    }
+    setPalette((prev) => prev.filter((_, entryIndex) => entryIndex !== index));
+    setPaletteDirty(true);
+  };
+
+  const updatePaletteColor = (index: number, value: string): void => {
+    if (!/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(value)) return;
+    setPalette((prev) =>
+      prev.map((entry, entryIndex) => (entryIndex === index ? value.toLowerCase() : entry))
+    );
+    setPaletteDirty(true);
+  };
+
+  const replaceAcrossFrames = (mapping: Map<string, [number, number, number]>): void => {
+    if (!mapping.size) {
+      onToast("No colours to replace.", "info");
+      return;
+    }
+    pushUndo();
+    setFrames((prev) =>
+      prev.map((frame, index) => {
+        if (replaceScope === "frame" && index !== activeIndex) return frame;
+        const next = cloneImageData(frame.data);
+        replaceColors(next, mapping);
+        return { ...frame, data: next };
+      })
+    );
+    setDirty(true);
+    setPreviewMapping(false);
+  };
+
+  const applyColorReplacement = (): void => {
+    if (!/^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(replaceFrom)) {
+      onToast("Choose a valid colour to replace.", "error");
+      return;
+    }
+    const [r, g, b] = hexToRgba(replaceTo);
+    replaceAcrossFrames(new Map([[rgbKey(replaceFrom), [r, g, b]]]));
+  };
+
+  const applyMapping = (): void => {
+    if (!mappingEntries.length) {
+      onToast("Set at least one mapped colour.", "info");
+      return;
+    }
+    const map = new Map<string, [number, number, number]>();
+    for (const entry of mappingEntries) {
+      const [r, g, b] = hexToRgba(entry.target);
+      map.set(rgbKey(entry.hex), [r, g, b]);
+    }
+    replaceAcrossFrames(map);
+  };
+
+  const duplicateFrame = (): void => {
+    if (!currentFrame) return;
+    pushUndo();
+    const copy: EditorFrameState = {
+      id: crypto.randomUUID(),
+      name: uniqueFrameName(`${currentFrame.name}_copy`, frames),
+      durationMs: currentFrame.durationMs,
+      data: cloneImageData(currentFrame.data),
+    };
+    setFrames((prev) => {
+      const next = [...prev];
+      next.splice(activeIndex + 1, 0, copy);
+      return next;
+    });
+    setActiveIndex((index) => index + 1);
+    setDirty(true);
+  };
+
+  const revertFrame = (): void => {
+    if (!activeBaseline) return;
+    pushUndo();
+    setFrames((prev) =>
+      prev.map((frame, index) =>
+        index === activeIndex
+          ? { ...frame, data: cloneImageData(activeBaseline.data) }
+          : frame
+      )
+    );
+    setDirty(true);
+    onToast(`Reverted ${activeBaseline.name} to its saved version.`, "info");
+  };
+
+  const exportPalette = (): void => {
+    const blob = new Blob([JSON.stringify({ name: detail?.name ?? "palette", colors: palette }, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${(detail?.name ?? "palette").replace(/[^a-z0-9-_]+/gi, "-").toLowerCase()}-palette.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const importPalette = async (file: File): Promise<void> => {
+    try {
+      const parsed = JSON.parse(await file.text()) as unknown;
+      const source = Array.isArray(parsed)
+        ? parsed
+        : typeof parsed === "object" && parsed && Array.isArray((parsed as { colors?: unknown }).colors)
+          ? (parsed as { colors: unknown[] }).colors
+          : null;
+      if (!source) throw new Error("Expected a JSON array of colours or a palette object.");
+      const colors = source
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => (entry.startsWith("#") ? entry : `#${entry}`))
+        .filter((entry) => /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(entry));
+      const deduped = [...new Map(colors.map((entry) => [rgbKey(entry), entry.toLowerCase()])).values()];
+      if (!deduped.length) throw new Error("The palette file has no valid hex colours.");
+      setPalette(deduped.slice(0, 64));
+      setPaletteDirty(true);
+      onToast(`Imported ${Math.min(deduped.length, 64)} palette colours.`, "info");
+    } catch (error) {
+      onToast(error instanceof Error ? error.message : "Could not import the palette.", "error");
+    }
+  };
+
+  const savePaletteToLibrary = async (): Promise<void> => {
+    if (!paletteName.trim()) {
+      onToast("Name the palette before saving it.", "error");
+      return;
+    }
+    setPaletteBusy(true);
+    try {
+      const entry = await window.kirea.savePixelPalette({
+        name: paletteName.trim(),
+        colors: palette,
+      });
+      setSavedPalettes((prev) => [entry, ...prev.filter((item) => item.id !== entry.id)]);
+      setPaletteName("");
+      onToast(`Saved “${entry.name}” to the palette library.`, "info");
+    } catch (error) {
+      onToast(error instanceof Error ? error.message : "Could not save the palette.", "error");
+    } finally {
+      setPaletteBusy(false);
+    }
+  };
+
+  const loadPaletteFromLibrary = (entry: PixelSavedPalette): void => {
+    setPalette(entry.colors);
+    setPaletteDirty(true);
+    onToast(`Loaded “${entry.name}”. Apply a mapping to recolour existing pixels.`, "info");
+  };
+
+  const deletePaletteFromLibrary = async (entry: PixelSavedPalette): Promise<void> => {
+    try {
+      await window.kirea.deletePixelPalette(entry.id);
+      setSavedPalettes((prev) => prev.filter((item) => item.id !== entry.id));
+    } catch (error) {
+      onToast(error instanceof Error ? error.message : "Could not delete the palette.", "error");
+    }
+  };
+
   const save = async (): Promise<void> => {
     if (!detail || !frames.length) return;
     setSaving(true);
     try {
-      const payload: PixelFrameInput[] = frames.map((frame, index) => ({
-        index,
-        name: frame.name || `frame_${index + 1}`,
-        durationMs: frame.durationMs,
-        dataUrl: imageDataToDataUrl(frame.data),
-      }));
-      await onSaveFrames(
-        detail.id,
-        payload,
-        dimensionChanged ? { width: dims.w, height: dims.h } : undefined
-      );
+      if (dirty || dimensionChanged) {
+        const payload: PixelFrameInput[] = frames.map((frame, index) => ({
+          id: frame.id,
+          index,
+          name: frame.name || `frame_${index + 1}`,
+          durationMs: frame.durationMs,
+          dataUrl: imageDataToDataUrl(frame.data),
+        }));
+        await onSaveFrames(
+          detail.id,
+          payload,
+          dimensionChanged ? { width: dims.w, height: dims.h } : undefined,
+          palette
+        );
+        setBaseline(frames.map((frame) => ({ ...frame, data: cloneImageData(frame.data) })));
+      } else {
+        await onSavePalette(detail.id, palette);
+      }
       setDirty(false);
+      setPaletteDirty(false);
       setDimensionChanged(false);
       setUndoStack([]);
       setRedoStack([]);
-      onToast(`Saved a new version of ${detail.name}.`, "info");
+      onToast(
+        dirty || dimensionChanged
+          ? `Saved a new version of ${detail.name}.`
+          : `Saved the palette for ${detail.name}.`,
+        "info"
+      );
     } catch (error) {
-      onToast(error instanceof Error ? error.message : "Could not save the frames.", "error");
+      onToast(error instanceof Error ? error.message : "Could not save the asset.", "error");
     } finally {
       setSaving(false);
     }
   };
 
-  const paletteColors = detail?.palette?.length
-    ? detail.palette
-    : ["#191920", "#4F7BFC", "#e8c9ae", "#d9c9a8", "#f2dc93", "#f7f3e8"];
+  const paletteColors = palette.length ? palette : DEFAULT_PALETTE;
 
   if (!detail) {
     return (
@@ -794,8 +1301,10 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
           <Badge tone="neutral">
             {dims.w}×{dims.h}
           </Badge>
-          <Badge tone={dirty ? "warning" : "success"}>{dirty ? "Unsaved" : "Saved"}</Badge>
+          <Badge tone={unsaved ? "warning" : "success"}>{unsaved ? "Unsaved" : "Saved"}</Badge>
           <Badge tone="sand">v{detail.version}</Badge>
+          <Badge tone="neutral">{palette.length} colours</Badge>
+          {compare && activeBaseline ? <Badge tone="warning">Comparing</Badge> : null}
           <span className="ml-auto flex items-center gap-1.5">
             <Button
               size="sm"
@@ -819,7 +1328,7 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
               size="sm"
               variant="accent"
               loading={saving}
-              disabled={!dirty || loading}
+              disabled={!unsaved || loading}
               onClick={() => void save()}
             >
               <Save className="w-3.5 h-3.5" /> Save version
@@ -866,6 +1375,15 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
                 className="font-mono text-[11px]"
                 maxLength={9}
               />
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => addPaletteColor(color)}
+                aria-label="Add the current colour to the asset palette"
+                title="Add to palette"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </Button>
             </div>
             <div className="grid grid-cols-6 gap-1 mt-1.5">
               {paletteColors.map((entry, paletteIndex) => (
@@ -873,7 +1391,10 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
                   key={`${entry}-${paletteIndex}`}
                   type="button"
                   aria-label={`Use ${entry}`}
-                  onClick={() => setColor(entry)}
+                  onClick={() => {
+                    setColor(entry);
+                    if (!replaceFrom) setReplaceFrom(entry);
+                  }}
                   className={`h-5 rounded-sm border ${
                     color.toLowerCase() === entry.toLowerCase()
                       ? "border-accent ring-1 ring-accent"
@@ -905,11 +1426,31 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
             <Button
               size="sm"
               variant="utility"
+              aria-pressed={filled}
+              onClick={() => setFilled((prev) => !prev)}
+              className={filled ? "border-accent text-fg justify-start" : "justify-start"}
+              disabled={tool !== "rect" && tool !== "ellipse"}
+              title="Rectangle and ellipse shapes fill their interior"
+            >
+              <Square className="w-3.5 h-3.5" /> Filled shapes
+            </Button>
+            <Button
+              size="sm"
+              variant="utility"
               aria-pressed={showGrid}
               onClick={() => setShowGrid((prev) => !prev)}
               className={showGrid ? "border-accent text-fg justify-start" : "justify-start"}
             >
               <Grid3X3 className="w-3.5 h-3.5" /> Pixel grid
+            </Button>
+            <Button
+              size="sm"
+              variant="utility"
+              aria-pressed={checker}
+              onClick={() => setChecker((prev) => !prev)}
+              className={checker ? "border-accent text-fg justify-start" : "justify-start"}
+            >
+              <Grid3X3 className="w-3.5 h-3.5" /> Transparency
             </Button>
             <Button
               size="sm"
@@ -924,6 +1465,10 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
               <Eraser className="w-3.5 h-3.5" /> Clear frame
             </Button>
           </div>
+          <p className="text-[10px] text-fg-faint leading-relaxed">
+            Shape tools draw pixel-exact previews while dragging. Filled mode applies to rectangle
+            and ellipse.
+          </p>
         </Card>
 
         <Card className="p-3 space-y-3 min-w-0">
@@ -944,7 +1489,7 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
                 onChange={(event) => setActiveIndex(Number(event.target.value))}
               >
                 {frames.map((frame, index) => (
-                  <option key={`${frame.name}-${index}`} value={index}>
+                  <option key={frame.id} value={index}>
                     {index + 1}. {frame.name}
                   </option>
                 ))}
@@ -961,8 +1506,16 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
                 <ArrowRight className="w-3.5 h-3.5" />
               </Button>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <span className="text-[11px] text-fg-faint">Zoom</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label="Zoom out"
+                onClick={() => setZoom((value) => Math.max(1, value - (value > 8 ? 4 : 2)))}
+              >
+                <Minus className="w-3.5 h-3.5" />
+              </Button>
               <Select
                 className="w-20"
                 value={String(zoom)}
@@ -974,12 +1527,34 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
                   </option>
                 ))}
               </Select>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label="Zoom in"
+                onClick={() => setZoom((value) => Math.min(32, value + (value >= 8 ? 4 : 2)))}
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label="Reset pan"
+                title="Centre canvas"
+                onClick={() => setPan({ x: 0, y: 0 })}
+                disabled={!pan.x && !pan.y}
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </Button>
             </div>
           </div>
 
           <div
-            className="rounded-lg border border-border overflow-auto flex items-center justify-center p-4"
-            style={{ ...checkerStyle(Math.max(4, zoom / 2)), maxHeight: 520 }}
+            className="relative rounded-lg border border-border overflow-hidden flex items-center justify-center p-4"
+            style={{
+              ...(checker ? checkerStyle(Math.max(4, zoom / 2)) : { background: "#0b0b10" }),
+              maxHeight: 520,
+              minHeight: 200,
+            }}
           >
             {loading ? (
               <div className="h-40 flex items-center justify-center text-[11px] text-fg-muted">
@@ -992,28 +1567,67 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
                 onPointerCancel={onPointerUp}
-                className="shrink-0 touch-none"
+                onAuxClick={(event) => {
+                  if (event.button === 1) event.preventDefault();
+                }}
+                className="shrink-0 touch-none shadow-[0_0_0_1px_rgba(127,127,127,0.35)]"
                 style={{
                   width: dims.w * zoom,
                   height: dims.h * zoom,
+                  transform: `translate(${pan.x}px, ${pan.y}px)`,
                   imageRendering: "pixelated",
                   cursor:
-                    tool === "picker"
-                      ? "crosshair"
-                      : tool === "move"
-                        ? "move"
-                        : tool === "select" || tool === "crop"
-                          ? "crosshair"
-                          : "cell",
+                    tool === "pan"
+                      ? "grab"
+                      : tool === "picker"
+                        ? "crosshair"
+                        : tool === "move"
+                          ? "move"
+                          : tool === "select" || tool === "crop" || tool === "line" ||
+                              tool === "rect" || tool === "ellipse"
+                            ? "crosshair"
+                            : "cell",
                 }}
                 aria-label="Pixel canvas"
               />
             )}
           </div>
+
+          <div className="flex gap-1.5 overflow-x-auto pb-1">
+            {frames.map((frame, index) => {
+              const original = baseline.find(
+                (entry) => entry.id === frame.id || entry.name === frame.name
+              );
+              const changed = original
+                ? original.data.data.some((value, offset) => value !== frame.data.data[offset])
+                : true;
+              return (
+                <button
+                  key={frame.id}
+                  type="button"
+                  onClick={() => setActiveIndex(index)}
+                  aria-pressed={index === activeIndex}
+                  className={`shrink-0 rounded border p-0.5 ${
+                    index === activeIndex
+                      ? "border-accent ring-1 ring-accent"
+                      : "border-border hover:border-border-strong"
+                  }`}
+                  style={checker ? checkerStyle(3) : undefined}
+                  title={`${frame.name} · ${frame.durationMs} ms${changed ? " · edited" : ""}`}
+                >
+                  <PixelCanvasPreview data={frame.data} scale={2} />
+                  <span className="block max-w-14 truncate text-[9px] text-fg-muted px-0.5">
+                    {index + 1}
+                    {changed ? " •" : ""}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
           <p className="text-[11px] text-fg-faint">
             Draw at native resolution. Eraser paints transparency; the grid appears from 6× zoom.
-            Shortcuts: B pencil · E eraser · I picker · G fill · M select · V move · C crop · Ctrl+Z
-            undo.
+            Shortcuts: B pencil · E eraser · I picker · G fill · L line · R rectangle · O ellipse ·
+            M select · V move · C crop · H pan · Ctrl+Z undo.
           </p>
         </Card>
 
@@ -1053,6 +1667,58 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
             >
               Clear selection
             </Button>
+          </div>
+
+          <div className="border-t border-border pt-3 space-y-2">
+            <span className="label-mono text-fg-muted">Frame</span>
+            <div className="flex flex-col gap-1.5">
+              <Button size="sm" variant="secondary" onClick={duplicateFrame}>
+                <Copy className="w-3.5 h-3.5" /> Duplicate frame
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!activeBaseline}
+                onClick={revertFrame}
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> Revert frame
+              </Button>
+              <Button
+                size="sm"
+                variant="utility"
+                aria-pressed={compare}
+                disabled={!activeBaseline}
+                onClick={() => setCompare((prev) => !prev)}
+              >
+                <Layers className="w-3.5 h-3.5" /> Compare with saved
+              </Button>
+            </div>
+            {compare && activeBaseline && currentFrame ? (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <span className="text-[10px] text-fg-faint">Saved</span>
+                  <div className="rounded border border-border p-1" style={checker ? checkerStyle(4) : undefined}>
+                    <PixelCanvasPreview
+                      data={activeBaseline.data}
+                      scale={Math.max(1, Math.min(4, Math.floor(120 / dims.w)))}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] text-fg-faint">Editing</span>
+                  <div className="rounded border border-accent/60 p-1" style={checker ? checkerStyle(4) : undefined}>
+                    <PixelCanvasPreview
+                      data={currentFrame.data}
+                      scale={Math.max(1, Math.min(4, Math.floor(120 / dims.w)))}
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
+            <p className="text-[10px] text-fg-faint leading-relaxed">
+              Duplicate adds a frame in this asset. Revert replaces only the active frame with its
+              last saved pixels.
+            </p>
           </div>
 
           <div className="border-t border-border pt-3 space-y-2">
@@ -1103,8 +1769,398 @@ export const PixelEditorPanel: React.FC<PixelEditorProps> = ({
               </span>
             </div>
           </div>
+
+          <div className="border-t border-border pt-3 space-y-2 text-[11px]">
+            <span className="label-mono text-fg-muted">Identity</span>
+            <div className="flex justify-between gap-2">
+              <span className="text-fg-muted">Character</span>
+              <span className="text-fg truncate">{character?.name ?? "Unassigned"}</span>
+            </div>
+            {character && onOpenCharacter ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="w-full justify-start"
+                onClick={() => onOpenCharacter(character.id)}
+              >
+                <ArrowLeft className="w-3.5 h-3.5" /> Open character
+              </Button>
+            ) : null}
+            {detail.parentAssetId ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="w-full justify-start"
+                onClick={() => onSelectAsset(detail.parentAssetId!)}
+              >
+                <Layers className="w-3.5 h-3.5" /> Open parent asset
+              </Button>
+            ) : null}
+            <div className="flex justify-between gap-2">
+              <span className="text-fg-muted">Engine</span>
+              <span className="font-mono text-fg">{detail.engine}</span>
+            </div>
+            <div className="flex justify-between gap-2">
+              <span className="text-fg-muted">Seed</span>
+              <span className="font-mono text-fg">{detail.seed ?? "—"}</span>
+            </div>
+            <div className="flex justify-between gap-2">
+              <span className="text-fg-muted">Clips</span>
+              <span className="text-fg truncate">
+                {Object.keys(detail.animations ?? {}).join(", ") || "None"}
+              </span>
+            </div>
+          </div>
         </Card>
       </div>
+
+      {character || siblings.length ? (
+        <Card className="p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="label-mono text-fg-muted">Character directions</span>
+            <span className="text-[11px] text-fg-faint">
+              {character ? character.name : "Directional assets"} · editing one direction does not
+              change its siblings or the identity reference.
+            </span>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
+            {[detail, ...siblings].map((asset) => {
+              const current = asset.id === detail.id;
+              return (
+                <button
+                  key={asset.id}
+                  type="button"
+                  onClick={() => {
+                    if (!current) onSelectAsset(asset.id);
+                  }}
+                  className={`rounded-lg border p-2 text-left transition-colors ${
+                    current ? "border-accent bg-accent-soft/40" : "border-border hover:border-border-strong"
+                  }`}
+                  aria-pressed={current}
+                >
+                  <div className="h-24 rounded border border-border flex items-center justify-center overflow-hidden" style={checkerStyle(4)}>
+                    {current && currentFrame ? (
+                      <PixelCanvasPreview
+                        data={currentFrame.data}
+                        scale={Math.max(1, Math.min(4, Math.floor(88 / dims.w)))}
+                      />
+                    ) : asset.previewDataUrl ? (
+                      <img
+                        src={asset.previewDataUrl}
+                        alt={asset.name}
+                        className="max-h-20 max-w-full"
+                        style={{ imageRendering: "pixelated" }}
+                      />
+                    ) : (
+                      <span className="text-[10px] text-fg-faint">No preview</span>
+                    )}
+                  </div>
+                  <div className="mt-1 text-[11px] text-fg truncate">{asset.name}</div>
+                  <div className="text-[10px] text-fg-faint">
+                    {current ? "Editing now" : `v${asset.version}`} · {asset.width}×{asset.height}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+      ) : null}
+
+      <Card className="p-4 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <span className="label-mono text-fg-muted">Palette</span>
+            <p className="text-[10px] text-fg-faint mt-1">
+              Palette edits preserve pixel alpha. Recolouring only happens when you apply a
+              replacement or mapping.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge tone="neutral">{palette.length} palette</Badge>
+            <Badge tone={outsideColors.length ? "warning" : "success"}>
+              {outsideColors.length} outside
+            </Badge>
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="space-y-2 min-w-0">
+            <span className="text-[11px] font-medium text-fg">Asset palette</span>
+            <div className="grid grid-cols-2 gap-2">
+              {palette.map((entry, index) => (
+                <div key={`${entry}-${index}`} className="flex items-center gap-1.5 min-w-0">
+                  <input
+                    type="color"
+                    value={entry.slice(0, 7)}
+                    onChange={(event) => updatePaletteColor(index, event.target.value)}
+                    className="w-7 h-7 shrink-0 rounded border border-border bg-transparent cursor-pointer"
+                    aria-label={`Edit palette colour ${index + 1}`}
+                  />
+                  <span className="font-mono text-[10px] text-fg-muted truncate">{entry}</span>
+                  <button
+                    type="button"
+                    onClick={() => removePaletteColor(index)}
+                    className="ml-auto shrink-0 text-fg-faint hover:text-fg"
+                    aria-label={`Remove ${entry}`}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              <Button size="sm" variant="utility" onClick={() => addPaletteColor()}>
+                <Plus className="w-3.5 h-3.5" /> Add current
+              </Button>
+              <Button
+                size="sm"
+                variant="utility"
+                onClick={() => paletteFileRef.current?.click()}
+              >
+                <Upload className="w-3.5 h-3.5" /> Import
+              </Button>
+              <Button size="sm" variant="utility" onClick={exportPalette}>
+                <Download className="w-3.5 h-3.5" /> Export
+              </Button>
+              <input
+                ref={paletteFileRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void importPalette(file);
+                  event.target.value = "";
+                }}
+              />
+            </div>
+            <p className="text-[10px] text-fg-faint leading-relaxed">
+              Palette metadata saves as its own version when no pixels changed. Original generated
+              colours are never quantized automatically.
+            </p>
+          </div>
+
+          <div className="space-y-2 min-w-0">
+            <span className="text-[11px] font-medium text-fg">Colours in this sprite</span>
+            <div className="max-h-48 overflow-auto rounded border border-border divide-y divide-border">
+              {usedColors.slice(0, 40).map((entry) => {
+                const outside = outsideColors.some((color) => color.hex === entry.hex);
+                return (
+                  <div key={entry.hex} className="flex items-center gap-2 px-2 py-1">
+                    <span
+                      className="w-4 h-4 rounded-sm border border-border shrink-0"
+                      style={{ backgroundColor: entry.hex }}
+                    />
+                    <span className="font-mono text-[10px] text-fg">{entry.hex}</span>
+                    <span className="ml-auto text-[10px] text-fg-faint">{entry.count}px</span>
+                    {outside ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-5 px-1 text-[10px]"
+                        onClick={() => addPaletteColor(entry.hex)}
+                      >
+                        Add
+                      </Button>
+                    ) : null}
+                  </div>
+                );
+              })}
+              {!usedColors.length ? (
+                <p className="p-2 text-[10px] text-fg-faint">The sprite is fully transparent.</p>
+              ) : null}
+            </div>
+            <p className="text-[10px] text-fg-faint leading-relaxed">
+              Out-of-palette colours are listed, not removed. Add them or map them deliberately.
+            </p>
+          </div>
+
+          <div className="space-y-3 min-w-0">
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-medium text-fg">Global replace</span>
+              <div className="grid grid-cols-[1fr_auto] gap-1.5 items-center">
+                <Select
+                  value={replaceFrom}
+                  onChange={(event) => setReplaceFrom(event.target.value)}
+                >
+                  <option value="">Choose source…</option>
+                  {paletteColors.map((entry) => (
+                    <option key={`p-${entry}`} value={entry}>
+                      Palette {entry}
+                    </option>
+                  ))}
+                  {usedColors.map((entry) => (
+                    <option key={`u-${entry.hex}`} value={entry.hex}>
+                      Used {entry.hex} ({entry.count})
+                    </option>
+                  ))}
+                </Select>
+                <input
+                  type="color"
+                  value={replaceTo.slice(0, 7)}
+                  onChange={(event) => setReplaceTo(event.target.value)}
+                  className="w-8 h-8 rounded border border-border bg-transparent cursor-pointer"
+                  aria-label="Replacement colour"
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Select
+                  className="w-32"
+                  value={replaceScope}
+                  onChange={(event) =>
+                    setReplaceScope(event.target.value === "frame" ? "frame" : "all")
+                  }
+                >
+                  <option value="all">All frames</option>
+                  <option value="frame">Active frame</option>
+                </Select>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={!replaceFrom}
+                  onClick={applyColorReplacement}
+                >
+                  Replace
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-medium text-fg">Mapping</span>
+              <div className="max-h-28 overflow-auto rounded border border-border divide-y divide-border">
+                {usedColors.slice(0, 16).map((entry) => (
+                  <div key={`map-${entry.hex}`} className="flex items-center gap-2 px-2 py-1">
+                    <span
+                      className="w-3.5 h-3.5 rounded-sm border border-border shrink-0"
+                      style={{ backgroundColor: entry.hex }}
+                    />
+                    <span className="font-mono text-[10px] text-fg-muted truncate">{entry.hex}</span>
+                    <input
+                      type="color"
+                      value={(mapping[entry.hex] ?? entry.hex).slice(0, 7)}
+                      onChange={(event) =>
+                        setMapping((prev) => ({ ...prev, [entry.hex]: event.target.value }))
+                      }
+                      className="ml-auto w-6 h-6 rounded border border-border bg-transparent cursor-pointer"
+                      aria-label={`Map ${entry.hex} to a new colour`}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <Button
+                  size="sm"
+                  variant="utility"
+                  disabled={!mappingEntries.length}
+                  onClick={() => setPreviewMapping((prev) => !prev)}
+                  aria-pressed={previewMapping}
+                >
+                  {previewMapping ? "Hide preview" : "Preview mapping"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={!mappingEntries.length}
+                  onClick={applyMapping}
+                >
+                  Apply mapping
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={!mappingEntries.length}
+                  onClick={() => {
+                    setMapping({});
+                    setPreviewMapping(false);
+                  }}
+                >
+                  Reset
+                </Button>
+              </div>
+              {previewMapping && mappedPreviewUrl ? (
+                <div
+                  className="rounded border border-accent/60 p-2 flex items-center justify-center"
+                  style={checkerStyle(6)}
+                >
+                  <img
+                    src={mappedPreviewUrl}
+                    alt="Palette mapping preview"
+                    style={{
+                      imageRendering: "pixelated",
+                      width: dims.w * Math.max(1, Math.min(4, Math.floor(120 / dims.w))),
+                    }}
+                  />
+                </div>
+              ) : (
+                <p className="text-[10px] text-fg-faint">
+                  {mappingEntries.length
+                    ? `${mappingEntries.length} colour${mappingEntries.length === 1 ? "" : "s"} will change.`
+                    : "Choose target colours to preview a recolour before applying it."}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-border pt-3 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-medium text-fg">Saved palettes</span>
+            <Input
+              className="w-48"
+              placeholder="Palette name"
+              value={paletteName}
+              onChange={(event) => setPaletteName(event.target.value)}
+              maxLength={80}
+            />
+            <Button
+              size="sm"
+              variant="utility"
+              loading={paletteBusy}
+              disabled={!paletteName.trim()}
+              onClick={() => void savePaletteToLibrary()}
+            >
+              <Save className="w-3.5 h-3.5" /> Save to library
+            </Button>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {savedPalettes.map((entry) => (
+              <span
+                key={entry.id}
+                className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-1"
+              >
+                <button
+                  type="button"
+                  className="flex items-center gap-1 text-[10px] text-fg hover:text-accent"
+                  onClick={() => loadPaletteFromLibrary(entry)}
+                  title={`${entry.name}: ${entry.colors.join(", ")}`}
+                >
+                  {entry.colors.slice(0, 6).map((swatch, index) => (
+                    <span
+                      key={`${swatch}-${index}`}
+                      className="w-2.5 h-2.5 rounded-sm border border-border"
+                      style={{ backgroundColor: swatch }}
+                    />
+                  ))}
+                  <span className="ml-1 max-w-28 truncate">{entry.name}</span>
+                </button>
+                <button
+                  type="button"
+                  className="text-fg-faint hover:text-fg"
+                  onClick={() => void deletePaletteFromLibrary(entry)}
+                  aria-label={`Delete palette ${entry.name}`}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+            {!savedPalettes.length ? (
+              <p className="text-[10px] text-fg-faint">
+                No saved palettes yet. Palettes are available across characters and projects.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </Card>
     </div>
   );
 };

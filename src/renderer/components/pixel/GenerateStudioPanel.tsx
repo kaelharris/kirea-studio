@@ -387,8 +387,8 @@ export const GenerateStudioPanel: React.FC<GenerateStudioProps> = ({
           </Button>
           {kind === "character" && (
             <p className="text-[11px] text-fg-faint leading-relaxed">
-              A character asset includes idle, walk and attack frames. Use Character Studio to
-              render all four facings as one set.
+              A character asset includes 20 frames across idle, walk, run, attack, jump, hurt and
+              death clips. Use Character Studio to render all four facings as one set.
             </p>
           )}
           {kind === "effect" && (

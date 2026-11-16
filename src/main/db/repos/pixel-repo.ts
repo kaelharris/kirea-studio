@@ -8,6 +8,8 @@ import type {
   PixelExportResult,
   PixelProject,
   PixelProjectInput,
+  PixelSavedPalette,
+  PixelSavedPaletteInput,
 } from "../../../shared/pixel-types";
 import type { StudioDatabase } from "../database";
 
@@ -31,6 +33,7 @@ export interface PixelAssetInsert {
 }
 
 export interface PixelFrameInsert {
+  id: string;
   index: number;
   name: string;
   durationMs: number;
@@ -38,6 +41,7 @@ export interface PixelFrameInsert {
 }
 
 export interface PixelFrameRow {
+  id: string;
   index: number;
   name: string;
   durationMs: number;
@@ -183,7 +187,7 @@ export class PixelRepository {
           now
         );
       this.insertFrames(asset.id, frames);
-      this.recordVersion(asset.id, 1, asset.recipeJson, asset.previewPath);
+      this.recordVersion(asset.id, 1, asset.recipeJson, asset.previewPath, asset.palette);
     });
     tx();
   }
@@ -226,6 +230,7 @@ export class PixelRepository {
       .prepare("SELECT * FROM pixel_frames WHERE asset_id = ? ORDER BY frame_index ASC")
       .all(assetId) as Array<Record<string, unknown>>;
     return rows.map((row) => ({
+      id: String(row.frame_id ?? ""),
       index: Number(row.frame_index),
       name: String(row.name),
       durationMs: Number(row.duration_ms),
@@ -244,6 +249,7 @@ export class PixelRepository {
       version: number;
       width: number;
       height: number;
+      palette: string[];
     }
   ): void {
     const now = new Date().toISOString();
@@ -254,7 +260,7 @@ export class PixelRepository {
         .prepare(
           `UPDATE pixel_assets SET
              frame_count = ?, recipe_json = ?, preview_path = ?, sheet_path = ?,
-             version = ?, width = ?, height = ?, updated_at = ?
+             version = ?, width = ?, height = ?, palette_json = ?, updated_at = ?
            WHERE id = ?`
         )
         .run(
@@ -265,10 +271,41 @@ export class PixelRepository {
           patch.version,
           patch.width,
           patch.height,
+          JSON.stringify(patch.palette),
           now,
           assetId
         );
-      this.recordVersion(assetId, patch.version, patch.recipeJson, patch.previewPath);
+      this.recordVersion(assetId, patch.version, patch.recipeJson, patch.previewPath, patch.palette);
+    });
+    tx();
+  }
+
+  updatePalette(assetId: string, palette: string[], version: number): void {
+    const asset = this.getAsset(assetId);
+    if (!asset) throw new Error("Pixel asset not found.");
+    const now = new Date().toISOString();
+    const tx = this.studioDb.db.transaction(() => {
+      this.studioDb.db
+        .prepare(
+          `UPDATE pixel_assets SET palette_json = ?, version = ?, updated_at = ? WHERE id = ?`
+        )
+        .run(JSON.stringify(palette), version, now, assetId);
+      this.recordVersion(assetId, version, asset.recipeJson, asset.previewPath, palette);
+    });
+    tx();
+  }
+
+  updateRecipe(assetId: string, recipeJson: string, version: number): void {
+    const asset = this.getAsset(assetId);
+    if (!asset) throw new Error("Pixel asset not found.");
+    const now = new Date().toISOString();
+    const tx = this.studioDb.db.transaction(() => {
+      this.studioDb.db
+        .prepare(
+          `UPDATE pixel_assets SET recipe_json = ?, version = ?, updated_at = ? WHERE id = ?`
+        )
+        .run(recipeJson, version, now, assetId);
+      this.recordVersion(assetId, version, recipeJson, asset.previewPath, asset.palette);
     });
     tx();
   }
@@ -292,6 +329,80 @@ export class PixelRepository {
       previewPath: String(row.preview_path ?? ""),
       createdAt: String(row.created_at),
     }));
+  }
+
+  hasVersion(assetId: string, version: number): boolean {
+    return Boolean(
+      this.studioDb.db
+        .prepare("SELECT 1 FROM pixel_asset_versions WHERE asset_id = ? AND version = ?")
+        .get(assetId, version)
+    );
+  }
+
+  getVersion(
+    assetId: string,
+    version: number
+  ): {
+    version: number;
+    recipeJson: string;
+    previewPath: string;
+    palette: string[];
+    createdAt: string;
+  } | null {
+    const row = this.studioDb.db
+      .prepare(
+        "SELECT version, recipe_json, preview_path, palette_json, created_at FROM pixel_asset_versions WHERE asset_id = ? AND version = ?"
+      )
+      .get(assetId, version) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return {
+      version: Number(row.version),
+      recipeJson: String(row.recipe_json ?? "{}"),
+      previewPath: String(row.preview_path ?? ""),
+      palette: parsePalette(row.palette_json),
+      createdAt: String(row.created_at),
+    };
+  }
+
+  listPalettes(): PixelSavedPalette[] {
+    const rows = this.studioDb.db
+      .prepare("SELECT * FROM pixel_palettes ORDER BY updated_at DESC")
+      .all() as Array<Record<string, unknown>>;
+    return rows.map(mapPaletteRow);
+  }
+
+  savePalette(input: PixelSavedPaletteInput & { colors: string[] }): PixelSavedPalette {
+    const now = new Date().toISOString();
+    const id = input.id ?? randomUUID();
+    const existing = this.getPalette(id);
+    this.studioDb.db
+      .prepare(
+        `INSERT INTO pixel_palettes (id, name, colors_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           name = excluded.name,
+           colors_json = excluded.colors_json,
+           updated_at = excluded.updated_at`
+      )
+      .run(
+        id,
+        input.name.trim(),
+        JSON.stringify(input.colors),
+        existing?.createdAt ?? now,
+        now
+      );
+    return this.getPalette(id)!;
+  }
+
+  getPalette(id: string): PixelSavedPalette | null {
+    const row = this.studioDb.db
+      .prepare("SELECT * FROM pixel_palettes WHERE id = ?")
+      .get(id) as Record<string, unknown> | undefined;
+    return row ? mapPaletteRow(row) : null;
+  }
+
+  deletePalette(id: string): boolean {
+    return this.studioDb.db.prepare("DELETE FROM pixel_palettes WHERE id = ?").run(id).changes > 0;
   }
 
   renameAsset(id: string, name: string): boolean {
@@ -332,21 +443,47 @@ export class PixelRepository {
 
   private insertFrames(assetId: string, frames: PixelFrameInsert[]): void {
     const stmt = this.studioDb.db.prepare(
-      "INSERT INTO pixel_frames (asset_id, frame_index, name, duration_ms, file_path) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO pixel_frames (asset_id, frame_id, frame_index, name, duration_ms, file_path) VALUES (?, ?, ?, ?, ?, ?)"
     );
     for (const frame of frames) {
-      stmt.run(assetId, frame.index, frame.name, frame.durationMs, frame.filePath);
+      stmt.run(assetId, frame.id, frame.index, frame.name, frame.durationMs, frame.filePath);
     }
   }
 
-  private recordVersion(assetId: string, version: number, recipeJson: string, previewPath: string): void {
+  private recordVersion(
+    assetId: string,
+    version: number,
+    recipeJson: string,
+    previewPath: string,
+    palette: string[]
+  ): void {
     this.studioDb.db
       .prepare(
-        `INSERT OR IGNORE INTO pixel_asset_versions (id, asset_id, version, recipe_json, preview_path, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)`
+        `INSERT OR IGNORE INTO pixel_asset_versions (id, asset_id, version, recipe_json, preview_path, palette_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(randomUUID(), assetId, version, recipeJson, previewPath, new Date().toISOString());
+      .run(
+        randomUUID(),
+        assetId,
+        version,
+        recipeJson,
+        previewPath,
+        JSON.stringify(palette),
+        new Date().toISOString()
+      );
   }
+}
+
+function parsePalette(value: unknown): string[] {
+  try {
+    const parsed = JSON.parse(String(value ?? "[]")) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed.filter((entry): entry is string => typeof entry === "string");
+    }
+  } catch {
+    // Fall through to an empty palette.
+  }
+  return [];
 }
 
 function mapProjectRow(row: Record<string, unknown>): PixelProject {
@@ -371,6 +508,25 @@ function mapCharacterRow(row: Record<string, unknown>): PixelCharacter {
     seed: Number(row.seed ?? 1),
     paletteId: String(row.palette_id ?? "kirea"),
     referenceAssetId: row.reference_asset_id ? String(row.reference_asset_id) : null,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
+function mapPaletteRow(row: Record<string, unknown>): PixelSavedPalette {
+  let colors: string[] = [];
+  try {
+    const parsed = JSON.parse(String(row.colors_json ?? "[]")) as unknown;
+    if (Array.isArray(parsed)) {
+      colors = parsed.filter((entry): entry is string => typeof entry === "string");
+    }
+  } catch {
+    colors = [];
+  }
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    colors,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };

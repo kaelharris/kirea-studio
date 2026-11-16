@@ -1,6 +1,7 @@
 import type {
   CollectionRecord,
   GeneratedImageRecord,
+  GeneratedVideoRecord,
   GenerationJob,
   GenerationMode,
   GenerationRequest,
@@ -9,6 +10,7 @@ import type {
   LoraSelection,
   OutputFormat,
   PromptRecord,
+  VideoContainerFormat,
 } from "../../../shared/types";
 import type { StudioDatabase } from "../database";
 import { safeParseJson } from "../repo-mappers";
@@ -246,8 +248,139 @@ export class GenerationsRepository {
     });
   }
 
-  listImages(filters?: {
-    search?: string;
+  recordCompletedVideoTx(
+    job: GenerationJob,
+    videos: GeneratedVideoRecord[],
+    promptRecord: { id: string; title: string; prompt: string; negativePrompt: string } | null
+  ): void {
+    const insertVideo = this.studioDb.db.prepare(
+      `INSERT INTO generated_videos (
+        id, job_id, file_path, file_name, container, width, height, size_bytes,
+        duration_seconds, fps, frame_count, prompt, negative_prompt, seed,
+        checkpoint, loras_json, workflow_id, sampler, scheduler, steps, cfg,
+        denoise, mode, favorite, tags_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+
+    const hasValidPrompt = Boolean(promptRecord && promptRecord.prompt.trim().length > 0);
+    const existingPrompt = hasValidPrompt
+      ? (this.studioDb.db
+          .prepare("SELECT id, usage_count FROM prompts WHERE prompt = ? AND negative_prompt = ? LIMIT 1")
+          .get(promptRecord!.prompt, promptRecord!.negativePrompt) as
+          | { id: string; usage_count: number }
+          | undefined)
+      : undefined;
+
+    this.studioDb.transaction(() => {
+      const now = new Date().toISOString();
+      this.upsertJob(job);
+      for (const video of videos) {
+        insertVideo.run(
+          video.id,
+          video.jobId,
+          video.filePath,
+          video.fileName,
+          video.container,
+          video.width,
+          video.height,
+          video.sizeBytes,
+          video.durationSeconds,
+          video.fps,
+          video.frameCount,
+          video.prompt,
+          video.negativePrompt,
+          video.seed,
+          video.checkpoint,
+          JSON.stringify(video.loras),
+          video.workflowId,
+          video.sampler,
+          video.scheduler,
+          video.steps,
+          video.cfg,
+          video.denoise,
+          video.mode,
+          video.favorite ? 1 : 0,
+          JSON.stringify(video.tags),
+          video.createdAt
+        );
+      }
+
+      if (hasValidPrompt && existingPrompt) {
+        this.studioDb.db
+          .prepare("UPDATE prompts SET usage_count = ?, last_used_at = ? WHERE id = ?")
+          .run(existingPrompt.usage_count + 1, now, existingPrompt.id);
+      } else if (hasValidPrompt && promptRecord) {
+        this.studioDb.db
+          .prepare(
+            `INSERT INTO prompts (id, title, prompt, negative_prompt, tags_json, favorite, usage_count, last_used_at, created_at)
+             VALUES (?, ?, ?, ?, '[]', 0, 1, ?, ?)`
+          )
+          .run(promptRecord.id, promptRecord.title, promptRecord.prompt, promptRecord.negativePrompt, now, now);
+      }
+    });
+  }
+
+  listVideos(limit = 100): GeneratedVideoRecord[] {
+    const rows = this.studioDb.db
+      .prepare("SELECT * FROM generated_videos ORDER BY created_at DESC LIMIT ?")
+      .all(limit) as Array<Record<string, unknown>>;
+    return rows.map((row) => this.mapVideoRow(row));
+  }
+
+  getVideoById(id: string): GeneratedVideoRecord | null {
+    const row = this.studioDb.db
+      .prepare("SELECT * FROM generated_videos WHERE id = ?")
+      .get(id) as Record<string, unknown> | undefined;
+    return row ? this.mapVideoRow(row) : null;
+  }
+
+  toggleVideoFavorite(id: string): GeneratedVideoRecord | null {
+    const current = this.studioDb.db
+      .prepare("SELECT favorite FROM generated_videos WHERE id = ?")
+      .get(id) as { favorite: number } | undefined;
+    if (!current) return null;
+    this.studioDb.db
+      .prepare("UPDATE generated_videos SET favorite = ? WHERE id = ?")
+      .run(current.favorite ? 0 : 1, id);
+    return this.getVideoById(id);
+  }
+
+  deleteVideo(id: string): void {
+    this.studioDb.db.prepare("DELETE FROM generated_videos WHERE id = ?").run(id);
+  }
+
+  private mapVideoRow(row: Record<string, unknown>): GeneratedVideoRecord {
+    return {
+      id: String(row.id),
+      jobId: String(row.job_id),
+      filePath: String(row.file_path),
+      fileName: String(row.file_name),
+      container: row.container as VideoContainerFormat,
+      width: Number(row.width),
+      height: Number(row.height),
+      sizeBytes: Number(row.size_bytes),
+      durationSeconds: Number(row.duration_seconds),
+      fps: Number(row.fps),
+      frameCount: Number(row.frame_count),
+      prompt: String(row.prompt),
+      negativePrompt: String(row.negative_prompt ?? ""),
+      seed: Number(row.seed),
+      checkpoint: String(row.checkpoint),
+      loras: safeParseJson<LoraSelection[]>(String(row.loras_json), []),
+      workflowId: String(row.workflow_id),
+      sampler: String(row.sampler),
+      scheduler: String(row.scheduler),
+      steps: Number(row.steps),
+      cfg: Number(row.cfg),
+      denoise: Number(row.denoise ?? 1),
+      mode: row.mode as GenerationMode,
+      favorite: Boolean(row.favorite),
+      tags: safeParseJson<string[]>(String(row.tags_json), []),
+      createdAt: String(row.created_at),
+    };
+  }
+
+  listImages(filters?: {    search?: string;
     favoriteOnly?: boolean;
     collectionId?: string | null;
     sortBy?: "newest" | "oldest" | "name";

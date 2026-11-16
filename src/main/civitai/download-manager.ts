@@ -224,6 +224,25 @@ function writeFileAtomic(targetPath: string, contents: string): void {
   fs.renameSync(tempPath, targetPath);
 }
 
+async function readResponseErrorDetail(response: Response): Promise<string | null> {
+  try {
+    const text = (await response.text()).trim();
+    if (!text) return null;
+    try {
+      const parsed = JSON.parse(text) as Record<string, unknown>;
+      const message = parsed.message ?? parsed.error ?? parsed.details;
+      if (typeof message === "string" && message.trim()) {
+        return message.trim().replace(/\s+/g, " ").slice(0, 300);
+      }
+    } catch {
+      // Fall through to the raw body.
+    }
+    return text.replace(/\s+/g, " ").slice(0, 300);
+  } catch {
+    return null;
+  }
+}
+
 export class CivitaiDownloadManager extends EventEmitter {
   private readonly entries = new Map<string, ManagedEntry>();
 
@@ -279,6 +298,50 @@ export class CivitaiDownloadManager extends EventEmitter {
       input.version.architecture,
       fileName
     );
+
+    if (fs.existsSync(targetPath)) {
+      const existingBytes = fs.statSync(targetPath).size;
+      if (existingBytes === 0) {
+        fs.rmSync(targetPath, { force: true });
+      } else if (
+        input.version.sizeBytes === 0 ||
+        Math.abs(existingBytes - input.version.sizeBytes) <= 4096
+      ) {
+        const completedAt = new Date().toISOString();
+        const alreadyInstalled: CivitaiDownloadTask = {
+          id,
+          modelId: input.model.id,
+          versionId: input.version.id,
+          modelName: input.model.name,
+          versionName: input.version.name,
+          architecture: input.version.architecture,
+          fileName,
+          targetPath,
+          totalBytes: existingBytes,
+          downloadedBytes: existingBytes,
+          speedBytesPerSec: 0,
+          etaSeconds: null,
+          status: "completed",
+          error: null,
+          createdAt: existing?.task.createdAt ?? completedAt,
+          completedAt,
+        };
+        const entry: ManagedEntry = {
+          task: alreadyInstalled,
+          request: input,
+          controller: null,
+          promise: null,
+          cancelRequested: false,
+        };
+        this.entries.set(id, entry);
+        this.emitTask(alreadyInstalled);
+        return { ...alreadyInstalled };
+      } else {
+        throw new Error(
+          `A different file already exists at '${targetPath}'. Remove or rename it before downloading this version.`
+        );
+      }
+    }
 
     const task: CivitaiDownloadTask = {
       id,
@@ -433,9 +496,27 @@ export class CivitaiDownloadManager extends EventEmitter {
         allowLoopbackHttp: this.options.allowLoopbackHttpForTests,
       });
 
-      if (response.status === 401 || response.status === 403) {
+      if (response.status === 401) {
+        const detail = await readResponseErrorDetail(response);
         throw new Error(
-          "Civitai refused the download. Add or update the API key in Settings → Civitai Hub."
+          `Civitai requires authentication for this download (HTTP 401)${detail ? `: ${detail}` : "."} Add or update the API key in Settings → Civitai Hub.`
+        );
+      }
+      if (response.status === 403) {
+        const detail = await readResponseErrorDetail(response);
+        throw new Error(
+          `Civitai refused this download (HTTP 403)${detail ? `: ${detail}` : "."} The model may be gated, in early access, or restricted; accept its terms on Civitai and verify your API key has access.`
+        );
+      }
+      if (response.status === 404 || response.status === 410 || response.status === 451) {
+        const detail = await readResponseErrorDetail(response);
+        throw new Error(
+          `Civitai reports this file as unavailable (HTTP ${response.status})${detail ? `: ${detail}` : "."}`
+        );
+      }
+      if (response.status === 429) {
+        throw new Error(
+          "Civitai rate limit reached while downloading. Wait a moment and retry."
         );
       }
 

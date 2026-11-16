@@ -64,6 +64,8 @@ export class ComfyWsClient extends EventEmitter {
     if (this.ws) {
       try {
         this.ws.removeAllListeners();
+        // close() can emit an error while still connecting; keep a sink so it is not unhandled.
+        this.ws.on("error", () => undefined);
         this.ws.close();
       } catch {
         // ignore close error

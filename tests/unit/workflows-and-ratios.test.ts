@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   calculateDimensionsForAspect,
   calculateHiresDimensions,
+  formatAspectRatio,
   IMAGE_UPSCALER_LANCZOS,
   inferModelArchitecture,
   LATENT_UPSCALER_BISLERP,
+  resolveCustomDimensions,
+  resolveDimensionsForAspect,
   snapDimension,
 } from "../../src/shared/aspect-ratios";
 import {
@@ -214,6 +217,65 @@ describe("Aspect ratios & architecture inference", () => {
       height: 512,
     });
     expect(snapDimension(1027, 8, 512, 1536)).toBe(1024);
+  });
+
+  it("supports 21:9 and custom frames without cropping the request", () => {
+    const wide = resolveDimensionsForAspect("21:9", "sdxl", "balanced", {
+      minDim: 512,
+      maxDim: 1536,
+      dimStep: 8,
+    });
+    expect(wide.width).toBe(1344);
+    expect(wide.height).toBe(576);
+    expect(wide.width / wide.height).toBeCloseTo(21 / 9, 5);
+    expect(wide.notes).toHaveLength(0);
+    expect(formatAspectRatio(wide.width, wide.height)).toBe("7:3");
+
+    const custom = resolveCustomDimensions(1003, 997, {
+      minDim: 512,
+      maxDim: 1536,
+      dimStep: 64,
+    });
+    expect(custom.width).toBe(1024);
+    expect(custom.height).toBe(1024);
+    expect(custom.snapped).toBe(true);
+    expect(custom.notes.some((note) => note.includes("64px"))).toBe(true);
+  });
+
+  it("re-fits model-native buckets that fall outside the selected workflow", () => {
+    const limited = resolveDimensionsForAspect("16:9", "sdxl", "quality", {
+      minDim: 512,
+      maxDim: 1024,
+      dimStep: 8,
+    });
+    expect(limited.width).toBeLessThanOrEqual(1024);
+    expect(limited.height).toBeLessThanOrEqual(1024);
+    expect(limited.width / limited.height).toBeCloseTo(16 / 9, 2);
+    expect(limited.clamped).toBe(true);
+    expect(limited.notes.length).toBeGreaterThan(0);
+  });
+
+  it("explains configurations the workflow cannot represent", () => {
+    const impossible = resolveDimensionsForAspect("21:9", "sdxl", "balanced", {
+      minDim: 1024,
+      maxDim: 1536,
+      dimStep: 8,
+    });
+    expect(impossible.width).toBeLessThanOrEqual(1536);
+    expect(impossible.height).toBeGreaterThanOrEqual(1024);
+    expect(impossible.deviation).toBeGreaterThan(0.2);
+    expect(impossible.notes[0]).toContain("cannot represent 21:9");
+  });
+
+  it("clamps custom dimensions to the workflow range instead of passing them through", () => {
+    const clamped = resolveCustomDimensions(4096, 300, {
+      minDim: 512,
+      maxDim: 1536,
+      dimStep: 8,
+    });
+    expect(clamped.width).toBe(1536);
+    expect(clamped.height).toBe(512);
+    expect(clamped.clamped).toBe(true);
   });
 
   it("infers common local model architectures accurately", () => {

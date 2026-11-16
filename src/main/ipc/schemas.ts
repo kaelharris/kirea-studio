@@ -1,6 +1,10 @@
 import type { BrowserWindow, IpcMainInvokeEvent } from "electron";
 import { z } from "zod";
 import type { AppSettings, ModelRecord } from "../../shared/types";
+import {
+  DEFAULT_PACKAGE_OUTPUTS,
+  DEFAULT_SHEET_LAYOUT,
+} from "../../shared/pixel-package-types";
 import type { CivitaiClient } from "../civitai/civitai-client";
 import type { CivitaiDownloadManager } from "../civitai/download-manager";
 import type { CivitaiKeyStore } from "../civitai/secure-key-store";
@@ -11,6 +15,7 @@ import type { JobOrchestrator } from "../jobs/job-orchestrator";
 import type { StudioLogger } from "../logger";
 import type { ModelScanner } from "../models/model-scanner";
 import type { StudioPaths } from "../paths";
+import { PIXEL_ASSET_ID_PATTERN } from "../pixel/pixel-export-path";
 import { isAllowedLoopbackHost } from "../security";
 
 export const RuntimeModeSchema = z.enum(["external", "managed"]);
@@ -20,6 +25,7 @@ export const NavSectionSchema = z.enum([
   "home",
   "explore",
   "create",
+  "video",
   "library",
   "characters",
   "stories",
@@ -124,6 +130,12 @@ export const PartialSettingsSchema = z
       .refine((v) => isAllowedLoopbackHost(v), "Only loopback ComfyUI hosts are permitted.")
       .optional(),
     comfyPort: z.number().int().min(1024).max(65535).optional(),
+    pixelBackendHost: z
+      .string()
+      .refine((v) => isAllowedLoopbackHost(v), "Only loopback Pixel backend hosts are permitted.")
+      .optional(),
+    pixelBackendPort: z.number().int().min(1024).max(65535).optional(),
+    pixelBackendWorkflowRoot: z.string().max(1024).optional(),
     managedComfyPath: z.string().max(1024).optional(),
     autoStartRuntime: z.boolean().optional(),
     outputDirectory: z.string().min(1).max(1024).optional(),
@@ -176,9 +188,16 @@ export const UpscaleConfigSchema = z.object({
   checkpoint: z.string().max(512).nullable().optional(),
 });
 
+export const VideoGenerationSettingsSchema = z.object({
+  fps: z.number().min(1).max(120),
+  frameCount: z.number().int().min(1).max(1000),
+  durationSeconds: z.number().min(0.1).max(120),
+  format: z.enum(["mp4", "webm"]),
+});
+
 export const GenerationRequestSchema = z.object({
   workflowId: z.string().min(1).max(100),
-  mode: z.enum(["txt2img", "img2img", "upscale"]),
+  mode: z.enum(["txt2img", "img2img", "upscale", "t2v", "i2v"]),
   prompt: z.string().max(10000),
   negativePrompt: z.string().max(10000),
   checkpoint: z.string().max(512),
@@ -198,12 +217,30 @@ export const GenerationRequestSchema = z.object({
   outputFormat: OutputFormatSchema,
   inputImagePath: z.string().max(1024).nullable(),
   denoise: z.number().min(0.05).max(1.0),
+  video: VideoGenerationSettingsSchema.optional(),
   hiresFix: HiresFixSchema.optional(),
   upscale: UpscaleConfigSchema.optional(),
   characterId: z.string().max(64).nullable().optional(),
   loraRecipeId: z.string().max(64).nullable().optional(),
   storyId: z.string().max(64).nullable().optional(),
   storySceneId: z.string().max(64).nullable().optional(),
+});
+
+export const WorkflowImportUrlSchema = z.object({
+  url: z.string().trim().min(8).max(2048),
+  allowCivitaiRedirect: z.boolean().optional(),
+});
+
+export const WorkflowImportInstallSchema = z.object({
+  previewId: z.string().min(8).max(128),
+});
+
+export const WorkflowImportRevealSchema = z.object({
+  filePath: z.string().min(1).max(2048),
+});
+
+export const WorkflowInstalledFileSchema = z.object({
+  filePath: z.string().min(1).max(2048),
 });
 
 export const LibraryFiltersSchema = z
@@ -214,6 +251,42 @@ export const LibraryFiltersSchema = z
     sortBy: z.enum(["newest", "oldest", "name"]).optional(),
   })
   .optional();
+
+export const LibraryMediaQuerySchema = z
+  .object({
+    mediaType: z.enum(["all", "image", "video", "pixel", "character", "animation"]).optional(),
+    search: z.string().max(200).optional(),
+    favoriteOnly: z.boolean().optional(),
+    collectionId: z.string().max(100).nullable().optional(),
+    sortBy: z.enum(["newest", "oldest", "name"]).optional(),
+    model: z.string().max(200).optional(),
+    aspectRatio: z.enum(["all", "landscape", "portrait", "square"]).optional(),
+  })
+  .strict()
+  .optional();
+
+export const LibraryBatchDeleteSchema = z.array(z.string().min(1).max(256)).max(500);
+
+export const LibraryBatchExportSchema = z
+  .object({
+    ids: z.array(z.string().min(1).max(256)).max(500),
+    destinationDir: z.string().min(1).max(1024),
+  })
+  .strict();
+
+export const LibraryBatchSetCollectionSchema = z
+  .object({
+    ids: z.array(z.string().min(1).max(256)).max(500),
+    collectionId: z.string().max(100).nullable(),
+  })
+  .strict();
+
+export const LibraryBatchFavoriteSchema = z
+  .object({
+    ids: z.array(z.string().min(1).max(256)).max(500),
+    favorite: z.boolean(),
+  })
+  .strict();
 
 export const CharacterReferenceRoleSchema = z.enum([
   "primary",
@@ -434,6 +507,37 @@ export const CivitaiStartDownloadSchema = z
   })
   .strict();
 
+export const CivitaiWorkflowSearchSchema = z
+  .object({
+    query: z.string().max(200).optional(),
+    category: z
+      .enum([
+        "image-generation",
+        "image-editing",
+        "inpainting",
+        "upscaling",
+        "animation",
+        "video-generation",
+        "other",
+      ])
+      .nullable()
+      .optional(),
+    sort: z.enum(["Most Downloaded", "Highest Rated", "Newest"]).optional(),
+    nsfw: z.boolean().optional(),
+    cursor: z.string().max(2048).nullable().optional(),
+    limit: z.number().int().min(1).max(50).optional(),
+  })
+  .strict();
+
+export const CivitaiWorkflowIdSchema = z.number().int().positive();
+
+export const CivitaiWorkflowImportSchema = z
+  .object({
+    modelId: z.number().int().positive(),
+    versionId: z.number().int().positive(),
+  })
+  .strict();
+
 export const PixelKindSchema = z.enum([
   "character",
   "creature",
@@ -458,6 +562,9 @@ export const PixelExportFormatSchema = z.enum([
   "phaser",
 ]);
 export const PixelIdSchema = z.string().min(1).max(64);
+export const PixelFrameIdSchema = z
+  .string()
+  .regex(PIXEL_ASSET_ID_PATTERN, "Invalid pixel frame identifier.");
 
 export const PixelProjectInputSchema = z
   .object({
@@ -516,6 +623,7 @@ export const PixelImportSchema = z
 
 export const PixelFrameInputSchema = z
   .object({
+    id: PixelFrameIdSchema.optional(),
     index: z.number().int().min(0).max(255),
     name: z.string().trim().min(1).max(60),
     durationMs: z.number().int().min(1).max(60000),
@@ -532,6 +640,57 @@ export const PixelSaveFramesSchema = z
     frames: z.array(PixelFrameInputSchema).min(1).max(256),
     width: z.number().int().min(8).max(256).optional(),
     height: z.number().int().min(8).max(256).optional(),
+    palette: z
+      .array(z.string().regex(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/))
+      .min(1)
+      .max(64)
+      .optional(),
+  })
+  .strict();
+
+export const PixelSavePaletteSchema = z
+  .object({
+    assetId: PixelIdSchema,
+    palette: z
+      .array(z.string().regex(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/))
+      .min(1)
+      .max(64),
+  })
+  .strict();
+
+export const PixelPaletteRecordSchema = z
+  .object({
+    id: PixelIdSchema.optional(),
+    name: z.string().trim().min(1).max(80),
+    colors: z
+      .array(z.string().regex(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/))
+      .min(1)
+      .max(64),
+  })
+  .strict();
+
+export const PixelVersionRequestSchema = z
+  .object({
+    assetId: PixelIdSchema,
+    version: z.number().int().min(1).max(100000),
+  })
+  .strict();
+
+export const PixelSaveAnimationsSchema = z
+  .object({
+    assetId: PixelIdSchema,
+    animations: z
+      .array(
+        z
+          .object({
+            name: z.string().trim().min(1).max(60),
+            frames: z.array(z.string().trim().min(1).max(60)).min(1).max(256),
+            loop: z.boolean(),
+          })
+          .strict()
+      )
+      .min(1)
+      .max(64),
   })
   .strict();
 
@@ -550,6 +709,60 @@ export const PixelExportRequestSchema = z
   })
   .strict();
 
+export const PixelPackageLayoutSchema = z
+  .object({
+    columns: z.number().int().min(0).max(256),
+    rows: z.number().int().min(0).max(256),
+    padding: z.number().int().min(0).max(64),
+    spacing: z.number().int().min(0).max(64),
+    extrude: z.number().int().min(0).max(8),
+    trim: z.boolean(),
+    uniformFrames: z.boolean(),
+    maxSize: z.number().int().min(64).max(16384),
+  })
+  .strict();
+
+export const PixelPackageOutputsSchema = z
+  .object({
+    frames: z.boolean(),
+    stills: z.boolean(),
+    combinedSheet: z.boolean(),
+    animationSheets: z.boolean(),
+    directionSheets: z.boolean(),
+    gif: z.boolean(),
+    apng: z.boolean(),
+  })
+  .strict();
+
+export const PixelPackageRequestSchema = z
+  .object({
+    jobId: z.string().uuid().optional(),
+    scope: z.enum(["asset", "animation", "character", "project"]),
+    projectId: PixelIdSchema.optional(),
+    characterId: PixelIdSchema.optional(),
+    assetId: PixelIdSchema.optional(),
+    animation: z.string().trim().min(1).max(60).optional(),
+    version: z.number().int().min(1).max(100000).optional(),
+    preset: z.enum(["generic", "godot", "unity", "phaser"]).default("generic"),
+    container: z.enum(["zip", "folder"]).default("zip"),
+    scale: z.number().int().min(1).max(8).default(1),
+    layout: PixelPackageLayoutSchema.default({ ...DEFAULT_SHEET_LAYOUT }),
+    outputs: PixelPackageOutputsSchema.default({ ...DEFAULT_PACKAGE_OUTPUTS }),
+    background: z
+      .string()
+      .regex(/^#[0-9a-f]{6}$/, "Background must be a #rrggbb colour.")
+      .nullable()
+      .default(null),
+    pivot: z.enum(["center", "bottom-center", "top-left"]).default("bottom-center"),
+    pixelsPerUnit: z.number().int().min(1).max(10000).default(100),
+    destination: z.string().max(1024).nullable().default(null),
+  })
+  .strict();
+
+export const PixelPackageJobSchema = z.string().uuid();
+
+export const PixelPackageRevealSchema = z.string().trim().min(1).max(1024);
+
 export const PixelAssetFiltersSchema = z
   .object({
     projectId: PixelIdSchema.optional(),
@@ -559,6 +772,78 @@ export const PixelAssetFiltersSchema = z
   })
   .strict()
   .optional();
+
+const PixelAiImageInputSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("asset"),
+      assetId: PixelIdSchema,
+      frameIndex: z.number().int().min(0).max(255).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("dataUrl"),
+      dataUrl: z
+        .string()
+        .max(28_000_000)
+        .regex(
+          /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/,
+          "Images must be PNG, JPEG or WebP data URLs."
+        ),
+      fileName: z.string().max(255).optional(),
+    })
+    .strict(),
+]);
+
+const PixelAiInpaintRegionSchema = z
+  .object({
+    x: z.number().int().min(0).max(255),
+    y: z.number().int().min(0).max(255),
+    width: z.number().int().min(1).max(256),
+    height: z.number().int().min(1).max(256),
+    grow: z.number().int().min(0).max(8).optional(),
+  })
+  .strict();
+
+export const PixelAiGenerateSchema = z
+  .object({
+    projectId: PixelIdSchema,
+    characterId: z.string().max(64).nullable().optional(),
+    parentAssetId: z.string().max(64).nullable().optional(),
+    kind: PixelKindSchema,
+    name: z.string().trim().min(1).max(120),
+    mode: z.enum(["text", "image", "reference", "inpaint", "directions"]),
+    prompt: z.string().max(10000),
+    negativePrompt: z.string().max(10000).optional(),
+    width: z.number().int().min(8).max(256),
+    height: z.number().int().min(8).max(256),
+    paletteId: PixelPaletteIdSchema,
+    seed: z.number().int().min(0).max(4294967295).optional(),
+    style: z.string().max(64).optional(),
+    transparent: z.boolean().optional(),
+    steps: z.number().int().min(1).max(60).optional(),
+    longSide: z.number().int().min(512).max(2048).optional(),
+    conversion: z.enum(["direct", "ai"]).optional(),
+    strength: z.number().min(0).max(2).optional(),
+    directionCount: z.union([z.literal(4), z.literal(8)]).optional(),
+    image: PixelAiImageInputSchema.optional(),
+    reference: z
+      .object({
+        subject: PixelAiImageInputSchema,
+        style: PixelAiImageInputSchema.optional(),
+      })
+      .strict()
+      .optional(),
+    inpaint: z
+      .object({
+        base: PixelAiImageInputSchema,
+        region: PixelAiInpaintRegionSchema,
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 
 export interface HandlerContext {
   paths: StudioPaths;

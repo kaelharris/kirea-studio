@@ -1,17 +1,20 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Boxes,
   Film,
   FolderKanban,
   Grid3X3,
+  Package,
   Pencil,
   Plus,
+  Sparkles,
   Trash2,
   Trees,
   Users,
   Wand2,
 } from "lucide-react";
 import type {
+  PixelAnimationInput,
   PixelAssetDetail,
   PixelAssetRecord,
   PixelCharacter,
@@ -31,14 +34,17 @@ import {
   Textarea,
 } from "../components/ui/Primitives";
 import { GenerateStudioPanel } from "../components/pixel/GenerateStudioPanel";
+import { AiGeneratePanel } from "../components/pixel/AiGeneratePanel";
 import { CharacterStudioPanel } from "../components/pixel/CharacterStudioPanel";
 import { AnimationStudioPanel } from "../components/pixel/AnimationStudioPanel";
 import { PixelEditorPanel } from "../components/pixel/PixelEditorPanel";
 import { AssetLibraryPanel } from "../components/pixel/AssetLibraryPanel";
+import { PackageExportDialog } from "../components/pixel/PackageExportDialog";
 import { PixelField } from "../components/pixel/pixel-ui";
 
 type PixelTab =
   | "generate"
+  | "ai"
   | "characters"
   | "animation"
   | "environment"
@@ -48,10 +54,14 @@ type PixelTab =
 
 interface PixelStudioPageProps {
   onToast: (message: string, tone?: "info" | "error") => void;
+  initialAssetId?: string;
+  initialAssetTab?: "editor" | "animation";
+  onFocusApplied?: () => void;
 }
 
 const TABS: Array<{ id: PixelTab; label: string; icon: React.ReactNode }> = [
   { id: "generate", label: "Generate", icon: <Wand2 className="w-3.5 h-3.5" /> },
+  { id: "ai", label: "AI Generate", icon: <Sparkles className="w-3.5 h-3.5" /> },
   { id: "characters", label: "Characters", icon: <Users className="w-3.5 h-3.5" /> },
   { id: "animation", label: "Animation", icon: <Film className="w-3.5 h-3.5" /> },
   { id: "environment", label: "Environment", icon: <Trees className="w-3.5 h-3.5" /> },
@@ -62,13 +72,19 @@ const TABS: Array<{ id: PixelTab; label: string; icon: React.ReactNode }> = [
 
 const PROJECT_STORAGE_KEY = "kirea.pixel.project";
 
-export const PixelStudioPage: React.FC<PixelStudioPageProps> = ({ onToast }) => {
+export const PixelStudioPage: React.FC<PixelStudioPageProps> = ({
+  onToast,
+  initialAssetId,
+  initialAssetTab,
+  onFocusApplied,
+}) => {
   const [projects, setProjects] = useState<PixelProject[]>([]);
   const [projectId, setProjectId] = useState("");
   const [characters, setCharacters] = useState<PixelCharacter[]>([]);
   const [assets, setAssets] = useState<PixelAssetRecord[]>([]);
   const [tab, setTab] = useState<PixelTab>("generate");
   const [selectedAssetId, setSelectedAssetId] = useState("");
+  const [focusCharacterId, setFocusCharacterId] = useState("");
   const [detail, setDetail] = useState<PixelAssetDetail | null>(null);
   const [initialFrameIndex, setInitialFrameIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -84,8 +100,14 @@ export const PixelStudioPage: React.FC<PixelStudioPageProps> = ({ onToast }) => 
   });
   const [projectSaving, setProjectSaving] = useState(false);
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
+  const [packageOpen, setPackageOpen] = useState(false);
 
   const activeProject = projects.find((project) => project.id === projectId) ?? null;
+
+  const appliedFocusRef = useRef<string | null>(null);
+  const pendingAssetRef = useRef<string | null>(null);
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
 
   const loadProjects = useCallback(async (selectId?: string): Promise<void> => {
     const list = await window.kirea.listPixelProjects();
@@ -106,6 +128,10 @@ export const PixelStudioPage: React.FC<PixelStudioPageProps> = ({ onToast }) => 
         const list = await window.kirea.listPixelProjects();
         if (cancelled) return;
         setProjects(list);
+        if (initialAssetId) {
+          setLoading(false);
+          return;
+        }
         const stored = localStorage.getItem(PROJECT_STORAGE_KEY);
         const storedMatch = stored ? list.find((project) => project.id === stored) : undefined;
         const chosen = storedMatch?.id ?? list[0]?.id ?? "";
@@ -145,6 +171,12 @@ export const PixelStudioPage: React.FC<PixelStudioPageProps> = ({ onToast }) => 
         if (cancelled) return;
         setCharacters(characterList);
         setAssets(assetList);
+        const pending = pendingAssetRef.current;
+        if (pending && assetList.some((asset) => asset.id === pending)) {
+          pendingAssetRef.current = null;
+          setSelectedAssetId(pending);
+          setInitialFrameIndex(0);
+        }
       } catch (loadError) {
         if (!cancelled) {
           setError(loadError instanceof Error ? loadError.message : "Could not load the project.");
@@ -155,6 +187,41 @@ export const PixelStudioPage: React.FC<PixelStudioPageProps> = ({ onToast }) => 
       cancelled = true;
     };
   }, [projectId]);
+
+  useEffect(() => {
+    if (!initialAssetId) {
+      appliedFocusRef.current = null;
+      return;
+    }
+    if (appliedFocusRef.current === initialAssetId) return;
+    appliedFocusRef.current = initialAssetId;
+    pendingAssetRef.current = initialAssetId;
+    setInitialFrameIndex(0);
+    setTab(initialAssetTab ?? "editor");
+    let cancelled = false;
+    void window.kirea
+      .getPixelAsset(initialAssetId)
+      .then((asset) => {
+        if (cancelled) return;
+        if (asset.projectId && asset.projectId !== projectIdRef.current) {
+          setProjectId(asset.projectId);
+        } else {
+          pendingAssetRef.current = null;
+          setSelectedAssetId(asset.id);
+        }
+        onFocusApplied?.();
+      })
+      .catch(() => {
+        if (cancelled) return;
+        pendingAssetRef.current = null;
+        onFocusApplied?.();
+        void loadProjects();
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialAssetId, initialAssetTab, onFocusApplied]);
 
   useEffect(() => {
     if (!selectedAssetId) {
@@ -212,6 +279,11 @@ export const PixelStudioPage: React.FC<PixelStudioPageProps> = ({ onToast }) => 
     setTab("editor");
   };
 
+  const openCharacter = (characterId: string): void => {
+    setFocusCharacterId(characterId);
+    setTab("characters");
+  };
+
   const handleGenerated = async (details: PixelAssetDetail[]): Promise<void> => {
     await refreshAssets();
     if (details[0]) setSelectedAssetId(details[0].id);
@@ -222,12 +294,38 @@ export const PixelStudioPage: React.FC<PixelStudioPageProps> = ({ onToast }) => 
     setSelectedAssetId(imported.id);
   };
 
+  const handleAssetRestored = async (updated: PixelAssetDetail): Promise<void> => {
+    if (updated.id === selectedAssetId) setDetail(updated);
+    await refreshAssets();
+  };
+
   const saveFrames = async (
     assetId: string,
     frames: PixelFrameInput[],
-    dimensions?: { width: number; height: number }
+    dimensions?: { width: number; height: number },
+    palette?: string[]
   ): Promise<void> => {
-    const updated = await window.kirea.savePixelAssetFrames(assetId, frames, dimensions);
+    const updated = await window.kirea.savePixelAssetFrames(
+      assetId,
+      frames,
+      dimensions,
+      palette
+    );
+    setDetail(updated);
+    await refreshAssets();
+  };
+
+  const savePalette = async (assetId: string, palette: string[]): Promise<void> => {
+    const updated = await window.kirea.savePixelAssetPalette(assetId, palette);
+    setDetail(updated);
+    await refreshAssets();
+  };
+
+  const saveAnimations = async (
+    assetId: string,
+    animations: PixelAnimationInput[]
+  ): Promise<void> => {
+    const updated = await window.kirea.savePixelAssetAnimations(assetId, animations);
     setDetail(updated);
     await refreshAssets();
   };
@@ -311,6 +409,13 @@ export const PixelStudioPage: React.FC<PixelStudioPageProps> = ({ onToast }) => 
               <Plus className="w-3.5 h-3.5" /> Project
             </Button>
             <Button
+              variant="secondary"
+              disabled={!projectId}
+              onClick={() => setPackageOpen(true)}
+            >
+              <Package className="w-3.5 h-3.5" /> Export project
+            </Button>
+            <Button
               variant="utility"
               aria-label="Delete project"
               disabled={!activeProject || projects.length <= 1}
@@ -390,11 +495,23 @@ export const PixelStudioPage: React.FC<PixelStudioPageProps> = ({ onToast }) => 
             />
           )}
 
+          {tab === "ai" && (
+            <AiGeneratePanel
+              projectId={projectId}
+              characters={characters}
+              assets={assets}
+              onGenerated={(details) => void handleGenerated(details)}
+              onInspect={inspect}
+              onToast={onToast}
+            />
+          )}
+
           {tab === "characters" && (
             <CharacterStudioPanel
               projectId={projectId}
               characters={characters}
               assets={assets}
+              focusCharacterId={focusCharacterId}
               onCharactersChanged={refreshCharacters}
               onGenerated={(details) => void handleGenerated(details)}
               onInspect={inspect}
@@ -412,6 +529,7 @@ export const PixelStudioPage: React.FC<PixelStudioPageProps> = ({ onToast }) => 
                 setInitialFrameIndex(0);
               }}
               onSaveFrames={saveFrames}
+              onSaveAnimations={saveAnimations}
               onOpenEditor={openEditorAt}
               onToast={onToast}
             />
@@ -442,6 +560,7 @@ export const PixelStudioPage: React.FC<PixelStudioPageProps> = ({ onToast }) => 
           {tab === "editor" && (
             <PixelEditorPanel
               assets={assets}
+              characters={characters}
               detail={detail}
               selectedAssetId={selectedAssetId}
               initialFrameIndex={initialFrameIndex}
@@ -450,6 +569,8 @@ export const PixelStudioPage: React.FC<PixelStudioPageProps> = ({ onToast }) => 
                 setInitialFrameIndex(0);
               }}
               onSaveFrames={saveFrames}
+              onSavePalette={savePalette}
+              onOpenCharacter={openCharacter}
               onToast={onToast}
             />
           )}
@@ -462,8 +583,10 @@ export const PixelStudioPage: React.FC<PixelStudioPageProps> = ({ onToast }) => 
               selectedAssetId={selectedAssetId}
               onSelectAsset={setSelectedAssetId}
               onAssetsChanged={refreshAssets}
+              onAssetRestored={(updated) => void handleAssetRestored(updated)}
               onImported={(imported) => void handleImported(imported)}
               onInspect={inspect}
+              onOpenCharacter={openCharacter}
               onToast={onToast}
             />
           )}
@@ -549,6 +672,17 @@ export const PixelStudioPage: React.FC<PixelStudioPageProps> = ({ onToast }) => 
         title="Delete project"
         description={`Delete ${activeProject?.name ?? "this project"} and every asset file inside it? This cannot be undone.`}
         confirmLabel="Delete project"
+      />
+
+      <PackageExportDialog
+        open={packageOpen}
+        onClose={() => setPackageOpen(false)}
+        target={
+          activeProject
+            ? { scope: "project", projectId: activeProject.id, label: activeProject.name }
+            : null
+        }
+        onToast={onToast}
       />
     </div>
   );

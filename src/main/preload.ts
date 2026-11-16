@@ -121,10 +121,27 @@ const api: KireaDesktopApi = {
   listCivitaiDownloads: () => ipcRenderer.invoke("civitai:listDownloads"),
   setCivitaiApiKey: (apiKey) => ipcRenderer.invoke("civitai:setApiKey", apiKey),
   testCivitaiConnection: () => ipcRenderer.invoke("civitai:testConnection"),
+  searchCivitaiWorkflows: (query) =>
+    ipcRenderer.invoke("civitai:searchWorkflows", query),
+  getCivitaiWorkflowDetails: (modelId) =>
+    ipcRenderer.invoke("civitai:getWorkflowDetails", modelId),
+  prepareCivitaiWorkflowImport: (request) =>
+    ipcRenderer.invoke("civitai:prepareWorkflowImport", request),
 
   // Workflows & generation
   listWorkflows: () => ipcRenderer.invoke("workflows:list"),
   getSamplersAndSchedulers: () => ipcRenderer.invoke("workflows:getSamplers"),
+  analyzeWorkflowUrl: (url) => ipcRenderer.invoke("workflows:analyzeImportUrl", url),
+  analyzeWorkflowFile: () => ipcRenderer.invoke("workflows:analyzeImportFile"),
+  analyzeWorkflowArchiveFile: () => ipcRenderer.invoke("workflows:analyzeArchiveFile"),
+  installWorkflowImport: (previewId) => ipcRenderer.invoke("workflows:installImport", previewId),
+  listInstalledWorkflows: () => ipcRenderer.invoke("workflows:listInstalled"),
+  revealInstalledWorkflow: (filePath) => ipcRenderer.invoke("workflows:revealInstalled", filePath),
+  removeInstalledWorkflow: (filePath) => ipcRenderer.invoke("workflows:removeInstalled", filePath),
+  revalidateInstalledWorkflow: (filePath) =>
+    ipcRenderer.invoke("workflows:revalidateInstalled", filePath),
+  reimportInstalledWorkflow: (filePath) =>
+    ipcRenderer.invoke("workflows:reimportInstalled", filePath),
   validateJob: (req) => ipcRenderer.invoke("jobs:validate", req),
   submitJob: (req) => ipcRenderer.invoke("jobs:submit", req),
   listJobs: () => ipcRenderer.invoke("jobs:list"),
@@ -132,12 +149,24 @@ const api: KireaDesktopApi = {
   retryJob: (jobId) => ipcRenderer.invoke("jobs:retry", jobId),
 
   // Library, collections & prompts
+  listLibraryMedia: (query) => ipcRenderer.invoke("library:listMedia", query),
   listImages: (filters) => ipcRenderer.invoke("library:list", filters),
   toggleImageFavorite: (id) => ipcRenderer.invoke("library:toggleFavorite", id),
   updateImageMeta: (id, updates) => ipcRenderer.invoke("library:updateMeta", id, updates),
   deleteImage: (id) => ipcRenderer.invoke("library:delete", id),
   exportImage: (id, format, stripMetadata) =>
     ipcRenderer.invoke("library:export", id, format, stripMetadata),
+  batchDeleteLibraryMedia: (ids) => ipcRenderer.invoke("library:batchDelete", ids),
+  batchExportLibraryMedia: (ids, destinationDir) =>
+    ipcRenderer.invoke("library:batchExport", ids, destinationDir),
+  batchSetLibraryCollection: (ids, collectionId) =>
+    ipcRenderer.invoke("library:batchSetCollection", ids, collectionId),
+  batchSetLibraryFavorite: (ids, favorite) =>
+    ipcRenderer.invoke("library:batchFavorite", ids, favorite),
+  listVideos: () => ipcRenderer.invoke("videos:list"),
+  toggleVideoFavorite: (id) => ipcRenderer.invoke("videos:toggleFavorite", id),
+  deleteVideo: (id) => ipcRenderer.invoke("videos:delete", id),
+  exportVideo: (id) => ipcRenderer.invoke("videos:export", id),
   listCollections: () => ipcRenderer.invoke("collections:list"),
   createCollection: (name, description) =>
     ipcRenderer.invoke("collections:create", name, description),
@@ -159,9 +188,25 @@ const api: KireaDesktopApi = {
   getPixelAsset: (id) => ipcRenderer.invoke("pixel:getAsset", id),
   generatePixelAsset: (input) => ipcRenderer.invoke("pixel:generateAsset", input),
   importPixelAsset: (input) => ipcRenderer.invoke("pixel:importAsset", input),
-  savePixelAssetFrames: (assetId, frames, dimensions) =>
-    ipcRenderer.invoke("pixel:saveFrames", { assetId, frames, ...(dimensions ?? {}) }),
+  savePixelAssetFrames: (assetId, frames, dimensions, palette) =>
+    ipcRenderer.invoke("pixel:saveFrames", {
+      assetId,
+      frames,
+      ...(dimensions ?? {}),
+      ...(palette ? { palette } : {}),
+    }),
+  savePixelAssetAnimations: (assetId, animations) =>
+    ipcRenderer.invoke("pixel:saveAnimations", { assetId, animations }),
+  savePixelAssetPalette: (assetId, palette) =>
+    ipcRenderer.invoke("pixel:savePalette", { assetId, palette }),
   listPixelAssetVersions: (assetId) => ipcRenderer.invoke("pixel:listVersions", assetId),
+  getPixelAssetVersion: (assetId, version) =>
+    ipcRenderer.invoke("pixel:getVersion", { assetId, version }),
+  restorePixelAssetVersion: (assetId, version) =>
+    ipcRenderer.invoke("pixel:restoreVersion", { assetId, version }),
+  listPixelPalettes: () => ipcRenderer.invoke("pixel:listPalettes"),
+  savePixelPalette: (input) => ipcRenderer.invoke("pixel:savePaletteRecord", input),
+  deletePixelPalette: (id) => ipcRenderer.invoke("pixel:deletePaletteRecord", id),
   renamePixelAsset: (id, name) => ipcRenderer.invoke("pixel:renameAsset", id, name),
   duplicatePixelAsset: (id, name) => ipcRenderer.invoke("pixel:duplicateAsset", id, name),
   deletePixelAsset: (id) => ipcRenderer.invoke("pixel:deleteAsset", id),
@@ -170,7 +215,20 @@ const api: KireaDesktopApi = {
   openPixelExportFolder: (assetId) =>
     ipcRenderer.invoke("pixel:openExportFolder", assetId),
   pickPixelReferenceImage: () => ipcRenderer.invoke("pixel:pickImage"),
+  planPixelPackage: (request) => ipcRenderer.invoke("pixel:packagePlan", request),
+  exportPixelPackage: (request) => ipcRenderer.invoke("pixel:packageExport", request),
+  cancelPixelPackage: (jobId) => ipcRenderer.invoke("pixel:packageCancel", jobId),
+  pickPixelPackageDestination: () =>
+    ipcRenderer.invoke("pixel:packagePickDestination"),
+  revealPixelPackage: (targetPath) =>
+    ipcRenderer.invoke("pixel:packageReveal", targetPath),
   getSpriteKilnReport: () => ipcRenderer.invoke("pixel:spriteKilnReport"),
+  getPixelAiStatus: () => ipcRenderer.invoke("pixel:aiStatus"),
+  testPixelAiConnection: () => ipcRenderer.invoke("pixel:aiTestConnection"),
+  generatePixelAi: (input) => ipcRenderer.invoke("pixel:aiGenerate", input),
+  cancelPixelAiJob: (jobId) => ipcRenderer.invoke("pixel:aiCancel", jobId),
+  getPixelAiJob: (jobId) => ipcRenderer.invoke("pixel:aiGetJob", jobId),
+  listPixelAiJobs: () => ipcRenderer.invoke("pixel:aiListJobs"),
 
   // Push events
   onRuntimeChanged: (cb) => subscribe("event:runtimeChanged", cb),
@@ -179,6 +237,9 @@ const api: KireaDesktopApi = {
   onCivitaiDownloadProgress: (cb) =>
     subscribe("event:civitaiDownloadProgress", cb),
   onImageCreated: (cb) => subscribe("event:imageCreated", cb),
+  onVideoCreated: (cb) => subscribe("event:videoCreated", cb),
+  onPixelAiJobUpdated: (cb) => subscribe("event:pixelAiJobUpdated", cb),
+  onPixelPackageProgress: (cb) => subscribe("event:pixelPackageProgress", cb),
 };
 
 contextBridge.exposeInMainWorld("kirea", api);

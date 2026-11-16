@@ -320,6 +320,7 @@ describe("ComfyUI HTTP/WS Integration Lifecycle", () => {
       charactersDir: path.join(tmp, "characters"),
       pixelAssetsDir: path.join(tmp, "pixel-assets"),
       pixelExportsDir: path.join(tmp, "pixel-exports"),
+      pixelAiTempDir: path.join(tmp, "pixel-ai-temp"),
     };
     fs.mkdirSync(paths.logsDir, { recursive: true });
     fs.mkdirSync(paths.defaultOutputDir, { recursive: true });
@@ -341,6 +342,9 @@ describe("ComfyUI HTTP/WS Integration Lifecycle", () => {
       externalComfyPath: "",
       comfyHost: "127.0.0.1",
       comfyPort: mock.port,
+      pixelBackendHost: "127.0.0.1",
+      pixelBackendPort: 18189,
+      pixelBackendWorkflowRoot: "",
       managedComfyPath: paths.defaultManagedRuntimeDir,
       autoStartRuntime: false,
       outputDirectory: paths.defaultOutputDir,

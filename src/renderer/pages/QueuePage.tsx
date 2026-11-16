@@ -231,7 +231,7 @@ export const QueuePage: React.FC<QueuePageProps> = ({
                         src={toMediaUrl(job.outputPaths[0])}
                         alt={job.prompt}
                         compact
-                        className="w-16 h-16 rounded-lg object-cover border border-border shrink-0"
+                        className="w-16 h-16 rounded-lg bg-surface-subtle object-contain border border-border shrink-0"
                       />
                     ) : (
                       <div className="w-16 h-16 rounded-lg bg-surface-subtle border border-border flex items-center justify-center shrink-0">

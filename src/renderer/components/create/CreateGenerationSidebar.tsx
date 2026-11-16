@@ -21,10 +21,11 @@ import {
 } from "lucide-react";
 import {
   ASPECT_RATIOS,
+  CUSTOM_ASPECT_ID,
+  formatAspectRatio,
   IMAGE_UPSCALER_LANCZOS,
   LATENT_UPSCALER_BICUBIC,
   LATENT_UPSCALER_BISLERP,
-  snapDimension,
 } from "../../../shared/aspect-ratios";
 import { PROMPT_SNIPPETS } from "../../../shared/presets";
 import type {
@@ -110,6 +111,7 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
     upscaleConfig,
     compatibleWorkflows,
     activeWorkflow,
+    dimensionInfo,
     activeJob,
     latestImage,
     currentCheckpointInfo,
@@ -120,6 +122,7 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
     handleWorkflowChange,
     handleCheckpointChange,
     handleAspectChange,
+    handleDimensionChange,
     handleProfileChange,
     handleAddLora,
     updateLora,
@@ -598,12 +601,13 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
 
           {/* Aspect Ratio & Dimensions */}
           <div className="space-y-2.5 pt-2 border-t border-border">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold text-fg-muted">
                 Aspect Ratio
               </span>
-              <span className="text-[11px] text-fg-subtle tabular-nums">
-                {draft.width} × {draft.height}
+              <span className="font-mono text-[11px] text-fg-subtle tabular-nums">
+                {formatAspectRatio(draft.width, draft.height)} · {draft.width} ×{" "}
+                {draft.height}
               </span>
             </div>
             <div className="grid grid-cols-4 gap-1.5">
@@ -621,6 +625,17 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
                   {ar.id}
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => handleAspectChange(CUSTOM_ASPECT_ID)}
+                className={`h-8 text-xs font-medium rounded-lg border transition-colors cursor-pointer ${
+                  draft.aspectRatio === CUSTOM_ASPECT_ID
+                    ? "bg-accent-soft border-accent text-accent-hover"
+                    : "bg-bg border-border text-fg-muted hover:text-fg"
+                }`}
+              >
+                Custom
+              </button>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
@@ -631,17 +646,11 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
                   min={activeWorkflow?.minDim ?? 256}
                   max={activeWorkflow?.maxDim ?? 1536}
                   value={draft.width}
-                  onChange={(e) =>
-                    setDraft((p) => ({
-                      ...p,
-                      width: snapDimension(
-                        Number(e.target.value) || 512,
-                        activeWorkflow?.dimStep ?? 8,
-                        activeWorkflow?.minDim ?? 256,
-                        activeWorkflow?.maxDim ?? 1536
-                      ),
-                    }))
-                  }
+                  onChange={(e) => {
+                    const next = Number(e.target.value);
+                    if (!Number.isFinite(next) || next <= 0) return;
+                    handleDimensionChange("width", next);
+                  }}
                   className="h-8 text-xs tabular-nums"
                 />
               </div>
@@ -653,21 +662,33 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
                   min={activeWorkflow?.minDim ?? 256}
                   max={activeWorkflow?.maxDim ?? 1536}
                   value={draft.height}
-                  onChange={(e) =>
-                    setDraft((p) => ({
-                      ...p,
-                      height: snapDimension(
-                        Number(e.target.value) || 512,
-                        activeWorkflow?.dimStep ?? 8,
-                        activeWorkflow?.minDim ?? 256,
-                        activeWorkflow?.maxDim ?? 1536
-                      ),
-                    }))
-                  }
+                  onChange={(e) => {
+                    const next = Number(e.target.value);
+                    if (!Number.isFinite(next) || next <= 0) return;
+                    handleDimensionChange("height", next);
+                  }}
                   className="h-8 text-xs tabular-nums"
                 />
               </div>
             </div>
+            <p className="text-[11px] text-fg-subtle">
+              {activeWorkflow
+                ? `${activeWorkflow.name} accepts ${activeWorkflow.minDim}–${activeWorkflow.maxDim}px in ${activeWorkflow.dimStep}px steps.`
+                : "This workflow does not publish dimension limits."}
+            </p>
+            {dimensionInfo.notes.length > 0 && (
+              <div className="space-y-1 rounded-lg border border-warning/30 bg-warning-soft px-2 py-1.5">
+                {dimensionInfo.notes.map((note) => (
+                  <p
+                    key={note}
+                    className="flex items-start gap-1.5 text-[11px] leading-snug text-warning"
+                  >
+                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                    <span>{note}</span>
+                  </p>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* High-Res Fix (2-Pass Detail) */}
