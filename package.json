@@ -1,6 +1,6 @@
 {
   "name": "ai-image-studio-desktop",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Kirea Studio — Native Windows AI image-generation desktop studio powered by local ComfyUI",
   "main": "dist-electron/main/index.js",
   "author": "kaellabsstudio",
