@@ -523,6 +523,7 @@ export function inferModelArchitecture(filename: string): ModelArchitecture {
     return "z_image";
   }
   if (lower.includes("krea")) return "krea2";
+  if (lower.includes("moss")) return "moss_image";
   if (
     /(^|[._\-\s])anima([._\-\s]|$)/.test(lower) ||
     lower.includes("anima_base") ||

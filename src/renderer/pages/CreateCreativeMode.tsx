@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   AlertTriangle,
@@ -11,11 +11,17 @@ import {
   Users,
   Wand2,
   X,
+  Eraser,
+  Copy,
+  Maximize2,
+  BookmarkPlus,
+  FolderOpen as FolderIcon,
 } from "lucide-react";
 import {
   ASPECT_RATIOS,
   CUSTOM_ASPECT_ID,
   formatAspectRatio,
+  inferModelArchitecture,
 } from "../../shared/aspect-ratios";
 import { PROMPT_SNIPPETS, STUDIO_PRESETS } from "../../shared/presets";
 import type {
@@ -27,8 +33,10 @@ import type {
   RuntimeState,
   ValidationIssue,
 } from "../../shared/types";
-import { Button } from "../components/ui/Primitives";
+import { Badge, Button, useContextMenu, type ContextMenuItem } from "../components/ui/Primitives";
+import { imageWorkflowLabel } from "../../shared/image-labels";
 import { MediaImage } from "../components/ui/MediaImage";
+import { MagicPromptModal } from "../components/create/MagicPromptModal";
 import { shortModelLabel, toMediaUrl } from "../utils/format";
 
 interface CreateCreativeModeProps {
@@ -92,10 +100,287 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
 }) => {
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const [showNegative, setShowNegative] = useState(false);
+  const [magicModalOpen, setMagicModalOpen] = useState(false);
+  const { showContextMenu } = useContextMenu();
+
+  const handlePromptContextMenu = (e: React.MouseEvent<HTMLTextAreaElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const textarea = promptRef.current;
+    const selectedText = textarea
+      ? textarea.value.substring(textarea.selectionStart, textarea.selectionEnd)
+      : "";
+    const hasSelection = selectedText.length > 0;
+
+    const items: ContextMenuItem[] = [
+      {
+        id: "prompt-undo",
+        label: "Undo",
+        shortcut: "Ctrl+Z",
+        onClick: () => {
+          document.execCommand("undo");
+        },
+      },
+      {
+        id: "prompt-redo",
+        label: "Redo",
+        shortcut: "Ctrl+Y",
+        onClick: () => {
+          document.execCommand("redo");
+        },
+        separator: true,
+      },
+      {
+        id: "prompt-cut",
+        label: "Cut",
+        shortcut: "Ctrl+X",
+        disabled: !hasSelection,
+        disabledReason: "No text selected",
+        onClick: () => {
+          if (!textarea) return;
+          const start = textarea.selectionStart;
+          const end = textarea.selectionEnd;
+          void navigator.clipboard.writeText(selectedText).catch(() => {});
+          const nextVal = textarea.value.substring(0, start) + textarea.value.substring(end);
+          setDraft((p) => ({ ...p, prompt: nextVal }));
+        },
+      },
+      {
+        id: "prompt-copy",
+        label: hasSelection ? "Copy Selection" : "Copy Entire Prompt",
+        shortcut: "Ctrl+C",
+        disabled: !draft.prompt,
+        disabledReason: "Prompt is empty",
+        onClick: () => {
+          const textToCopy = hasSelection ? selectedText : draft.prompt;
+          void navigator.clipboard.writeText(textToCopy).catch(() => {});
+        },
+      },
+      {
+        id: "prompt-paste",
+        label: "Paste",
+        shortcut: "Ctrl+V",
+        onClick: () => {
+          void navigator.clipboard
+            .readText()
+            .then((clipText) => {
+              if (!clipText || !textarea) return;
+              const start = textarea.selectionStart;
+              const end = textarea.selectionEnd;
+              const nextVal = textarea.value.substring(0, start) + clipText + textarea.value.substring(end);
+              setDraft((p) => ({ ...p, prompt: nextVal }));
+            })
+            .catch(() => {});
+        },
+      },
+      {
+        id: "prompt-select-all",
+        label: "Select All",
+        shortcut: "Ctrl+A",
+        onClick: () => {
+          textarea?.select();
+        },
+        separator: true,
+      },
+      {
+        id: "prompt-magic",
+        label: "Magic Prompt Enhancement...",
+        icon: <Wand2 className="w-3.5 h-3.5 text-accent" />,
+        onClick: () => setMagicModalOpen(true),
+      },
+      {
+        id: "prompt-snippets",
+        label: "Append Snippet",
+        icon: <Sparkles className="w-3.5 h-3.5 text-creative" />,
+        children: PROMPT_SNIPPETS.map((snip, idx) => ({
+          id: `snippet-${idx}`,
+          label: snip.label,
+          onClick: () => {
+            setDraft((p) => ({
+              ...p,
+              prompt: p.prompt.trim() ? `${p.prompt.trim()}, ${snip.text}` : snip.text,
+            }));
+          },
+        })),
+        separator: true,
+      },
+      {
+        id: "prompt-clear",
+        label: "Clear Prompt",
+        icon: <Eraser className="w-3.5 h-3.5" />,
+        disabled: !draft.prompt,
+        disabledReason: "Prompt is empty",
+        destructive: true,
+        onClick: () => setDraft((p) => ({ ...p, prompt: "" })),
+      },
+    ];
+
+    showContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      title: "Prompt Composer",
+      items,
+    });
+  };
+
+  const handleNegativePromptContextMenu = (e: React.MouseEvent<HTMLTextAreaElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const target = e.currentTarget;
+    const selectedText = target.value.substring(target.selectionStart, target.selectionEnd);
+    const hasSelection = selectedText.length > 0;
+
+    const items: ContextMenuItem[] = [
+      {
+        id: "neg-undo",
+        label: "Undo",
+        shortcut: "Ctrl+Z",
+        onClick: () => {
+          document.execCommand("undo");
+        },
+      },
+      {
+        id: "neg-redo",
+        label: "Redo",
+        shortcut: "Ctrl+Y",
+        onClick: () => {
+          document.execCommand("redo");
+        },
+        separator: true,
+      },
+      {
+        id: "neg-cut",
+        label: "Cut",
+        shortcut: "Ctrl+X",
+        disabled: !hasSelection,
+        disabledReason: "No text selected",
+        onClick: () => {
+          const start = target.selectionStart;
+          const end = target.selectionEnd;
+          void navigator.clipboard.writeText(selectedText).catch(() => {});
+          const nextVal = target.value.substring(0, start) + target.value.substring(end);
+          setDraft((p) => ({ ...p, negativePrompt: nextVal }));
+        },
+      },
+      {
+        id: "neg-copy",
+        label: hasSelection ? "Copy Selection" : "Copy Entire Negative Prompt",
+        shortcut: "Ctrl+C",
+        disabled: !draft.negativePrompt,
+        disabledReason: "Negative prompt is empty",
+        onClick: () => {
+          const textToCopy = hasSelection ? selectedText : draft.negativePrompt;
+          void navigator.clipboard.writeText(textToCopy).catch(() => {});
+        },
+      },
+      {
+        id: "neg-paste",
+        label: "Paste",
+        shortcut: "Ctrl+V",
+        onClick: () => {
+          void navigator.clipboard
+            .readText()
+            .then((clipText) => {
+              if (!clipText) return;
+              const start = target.selectionStart;
+              const end = target.selectionEnd;
+              const nextVal = target.value.substring(0, start) + clipText + target.value.substring(end);
+              setDraft((p) => ({ ...p, negativePrompt: nextVal }));
+            })
+            .catch(() => {});
+        },
+      },
+      {
+        id: "neg-select-all",
+        label: "Select All",
+        shortcut: "Ctrl+A",
+        onClick: () => target.select(),
+        separator: true,
+      },
+      {
+        id: "neg-clear",
+        label: "Clear Negative Prompt",
+        icon: <Eraser className="w-3.5 h-3.5" />,
+        disabled: !draft.negativePrompt,
+        disabledReason: "Negative prompt is empty",
+        destructive: true,
+        onClick: () => setDraft((p) => ({ ...p, negativePrompt: "" })),
+      },
+    ];
+
+    showContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      title: "Negative Prompt",
+      items,
+    });
+  };
+
+  const handleImageContextMenu = (e: React.MouseEvent, img: GeneratedImageRecord) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const items: ContextMenuItem[] = [
+      {
+        id: "img-inspect",
+        label: "Open in Preview",
+        icon: <Maximize2 className="w-3.5 h-3.5" />,
+        onClick: () => onInspectImage(img),
+        shortcut: "Space",
+      },
+      {
+        id: "img-fav",
+        label: img.favorite ? "Remove from Favorites" : "Add to Favorites",
+        icon: <Heart className={`w-3.5 h-3.5 ${img.favorite ? "text-accent fill-accent" : ""}`} />,
+        onClick: () => onToggleFavorite(img.id),
+        shortcut: "F",
+        separator: true,
+      },
+      {
+        id: "img-copy-path",
+        label: "Copy File Path",
+        icon: <Copy className="w-3.5 h-3.5" />,
+        onClick: () => void navigator.clipboard.writeText(img.filePath),
+      },
+      {
+        id: "img-copy-prompt",
+        label: "Copy Prompt",
+        icon: <Copy className="w-3.5 h-3.5" />,
+        onClick: () => void navigator.clipboard.writeText(img.prompt),
+      },
+      {
+        id: "img-reveal",
+        label: "Reveal in File Explorer",
+        icon: <FolderIcon className="w-3.5 h-3.5" />,
+        onClick: () => void window.kirea.openPath(img.filePath),
+      },
+    ];
+
+    showContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      title: "Artwork Actions",
+      items,
+    });
+  };
+
+  // Content-aware auto-resize for prompt textarea
+  useEffect(() => {
+    const el = promptRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const nextHeight = Math.min(220, Math.max(52, el.scrollHeight));
+    el.style.height = `${nextHeight}px`;
+  }, [draft.prompt]);
   const threadImages = images.slice(0, 10);
   const characterAvatar = activeCharacter?.references[0]?.filePath;
   const hasReference = draft.mode === "img2img" && Boolean(draft.inputImagePath);
   const engineOnline = runtime.status === "connected";
+  const checkpointLabel = (ref: string): string =>
+    checkpointOptions.find((option) => option.path === ref)?.label ??
+    shortModelLabel(ref);
 
   const applyStarterBrief = (preset: (typeof STUDIO_PRESETS)[number]): void => {
     onAspectChange(preset.aspectRatio);
@@ -117,7 +402,7 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
             <h2 className="text-h2 text-fg">Studio thread</h2>
             <span className="font-mono text-tech tabular-nums text-fg-subtle">
               {images.length} render{images.length === 1 ? "" : "s"} ·{" "}
-              {shortModelLabel(draft.checkpoint)}
+              {checkpointLabel(draft.checkpoint)}
             </span>
           </div>
 
@@ -155,7 +440,7 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
                   <img
                     src={activeJob.previewDataUrl}
                     alt="Live inference preview"
-                    className="h-24 w-24 rounded-lg border border-border bg-surface-subtle object-contain"
+                    className="h-28 w-20 aspect-[2/3] rounded-lg border border-border bg-surface-subtle object-contain p-0.5"
                   />
                 ) : null}
                 <p className="min-w-0 flex-1 truncate text-caption font-normal text-fg-subtle">
@@ -193,23 +478,27 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
               {threadImages.map((img) => (
                 <li
                   key={img.id}
-                  className="grid gap-4 py-5 sm:grid-cols-[176px_minmax(0,1fr)]"
+                  className="grid gap-5 py-5 sm:grid-cols-[200px_minmax(0,1fr)] md:grid-cols-[220px_minmax(0,1fr)] items-start"
                 >
                   <button
                     type="button"
                     onClick={() => onInspectImage(img)}
-                    className="group block aspect-square overflow-hidden rounded-lg border border-border bg-bg transition-colors hover:border-accent"
+                    onContextMenu={(e) => handleImageContextMenu(e, img)}
+                    className="group relative flex aspect-[2/3] w-full items-center justify-center overflow-hidden rounded-xl border border-border bg-well transition-all hover:border-accent p-1"
                   >
                     <MediaImage
                       src={toMediaUrl(img.filePath)}
                       alt={img.prompt}
                       loading="lazy"
-                      className="h-full w-full bg-surface-subtle object-contain"
+                      className="h-full w-full object-contain object-center transition-transform duration-200 group-hover:scale-[1.02]"
                     />
                   </button>
 
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-tech tabular-nums text-fg-subtle">
+                      <Badge tone={imageWorkflowLabel(img).tone}>
+                        {imageWorkflowLabel(img).label}
+                      </Badge>
                       <span>
                         {new Date(img.createdAt).toLocaleString(undefined, {
                           month: "short",
@@ -235,7 +524,7 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
                     </p>
 
                     <p className="mt-1.5 truncate text-caption font-normal text-fg-subtle">
-                      {shortModelLabel(img.checkpoint)} · {img.sampler} ·{" "}
+                      {checkpointLabel(img.checkpoint)} · {img.sampler} ·{" "}
                       {img.steps} steps · cfg {img.cfg}
                     </p>
 
@@ -360,6 +649,7 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
                 }
               }}
               placeholder="Brief the render: subject, light, lens, materials, mood..."
+              onContextMenu={handlePromptContextMenu}
               className="w-full resize-none bg-transparent px-3.5 pt-3 text-body text-fg placeholder:text-fg-subtle"
             />
 
@@ -466,6 +756,16 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
               </button>
 
               <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setMagicModalOpen(true)}
+                  className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent-soft/40 px-2.5 py-1 text-caption font-medium text-accent hover:border-accent hover:bg-accent-soft transition-colors cursor-pointer"
+                  title="Enhance brief into model-aware Danbooru tags"
+                >
+                  <Sparkles className="h-3 w-3 animate-pulse" />
+                  Magic Danbooru
+                </button>
+
                 {PROMPT_SNIPPETS.slice(0, 3).map((snippet) => (
                   <button
                     key={snippet.label}
@@ -505,6 +805,7 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
                 onChange={(e) =>
                   setDraft((p) => ({ ...p, negativePrompt: e.target.value }))
                 }
+                onContextMenu={handleNegativePromptContextMenu}
                 placeholder="blurry, artifacts, bad anatomy, text..."
                 className="w-full resize-none rounded-md border border-border bg-surface px-3 py-2 text-small text-fg-muted placeholder:text-fg-subtle focus:border-border-strong"
               />
@@ -544,6 +845,21 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
           )}
         </div>
       </div>
+
+      <MagicPromptModal
+        open={magicModalOpen}
+        onClose={() => setMagicModalOpen(false)}
+        currentPrompt={draft.prompt}
+        architecture={inferModelArchitecture(draft.checkpoint)}
+        onApply={(newPrompt) => {
+          setDraft((p) => ({ ...p, prompt: newPrompt }));
+          setMagicModalOpen(false);
+        }}
+        onAppend={(appendedPrompt) => {
+          setDraft((p) => ({ ...p, prompt: appendedPrompt }));
+          setMagicModalOpen(false);
+        }}
+      />
     </div>
   );
 };

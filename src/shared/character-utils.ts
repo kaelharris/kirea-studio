@@ -130,6 +130,8 @@ export function removeCharacterIdentityTokens(
 }
 
 export function characterTextWorkflowId(architecture: ModelArchitecture): string {
+  if (architecture === "illustrious") return "t2i_illustrious_base";
+  if (architecture === "moss_image") return "t2i_moss_image";
   if (architecture === "anima") return "t2i_anima_base";
   if (architecture === "z_image") return "t2i_z_image_turbo";
   if (architecture === "sd15") return "t2i_sd15_base";
@@ -139,11 +141,12 @@ export function characterTextWorkflowId(architecture: ModelArchitecture): string
 export function characterImg2ImgWorkflowId(
   architecture: ModelArchitecture
 ): string | null {
+  if (architecture === "illustrious") return "i2i_illustrious_base";
+  if (architecture === "moss_image") return "i2i_moss_image_edit";
   if (architecture === "anima") return "i2i_anima_base";
   if (architecture === "sd15") return "i2i_sd15_base";
   if (
     architecture === "sdxl" ||
-    architecture === "illustrious" ||
     architecture === "pony" ||
     architecture === "unknown"
   ) {

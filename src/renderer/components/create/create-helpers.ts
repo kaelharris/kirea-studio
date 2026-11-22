@@ -35,13 +35,17 @@ export interface CreatePageProps {
   onSelectRecipe: (recipeId: string | null) => void;
   onSaveRecipe: (input: LoraRecipeInput) => Promise<LoraRecipe>;
   onChangeProfile: (profile: PerformanceProfile) => Promise<void>;
-  onInspectImage: (img: GeneratedImageRecord) => void;
+  onInspectImage: (
+    img: GeneratedImageRecord,
+    collection?: GeneratedImageRecord[]
+  ) => void;
   onToggleFavorite: (id: string) => Promise<void>;
   onSavePrompt: (record: {
     title: string;
     prompt: string;
     negativePrompt: string;
   }) => Promise<void>;
+  onUpdateSettings: (patch: Partial<AppSettings>) => Promise<void>;
   onToast: (msg: string, tone?: "info" | "error") => void;
 }
 

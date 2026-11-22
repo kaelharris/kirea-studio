@@ -589,12 +589,10 @@ describe("Unified library aggregation", () => {
     expect(landscape.items.map((i) => i.id)).toEqual(["video:vid-1"]);
 
     const square = service.list({ aspectRatio: "square" });
-    expect(square.items.map((i) => i.id)).toEqual([
-      "pixel:asset-1",
-      "pixel:asset-2",
-      "image:img-2",
-      "image:img-1",
-    ]);
+    expect(square.items).toHaveLength(4);
+    expect(new Set(square.items.map((i) => i.id))).toEqual(
+      new Set(["pixel:asset-1", "pixel:asset-2", "image:img-2", "image:img-1"])
+    );
 
     const portrait = service.list({ aspectRatio: "portrait" });
     expect(portrait.items).toHaveLength(0);

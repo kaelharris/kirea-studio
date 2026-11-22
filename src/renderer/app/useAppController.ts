@@ -43,9 +43,15 @@ import type {
 import {
   DEFAULT_RUNTIME,
   DEFAULT_SETTINGS,
+  DEFAULT_UPDATE_STATE,
   INITIAL_DRAFT,
   type ToastItem,
 } from "./app-constants";
+import type {
+  UpdateChannel,
+  UpdateInstallResult,
+  UpdateState,
+} from "../../shared/update-types";
 import {
   applyTheme,
   commitPersistedTheme,
@@ -66,6 +72,7 @@ export function useAppController() {
     resolveTheme(settings.theme)
   );
   const [runtime, setRuntime] = useState<RuntimeState>(DEFAULT_RUNTIME);
+  const [updateState, setUpdateState] = useState<UpdateState>(DEFAULT_UPDATE_STATE);
   const [hardware, setHardware] = useState<GpuStats | null>(null);
   const [models, setModels] = useState<ModelRecord[]>([]);
   const [catalog, setCatalog] = useState<CuratedModelCatalogItem[]>([]);
@@ -133,6 +140,7 @@ export function useAppController() {
           loadedCharacters,
           loadedStories,
           loadedCanvases,
+          loadedUpdate,
         ] = await Promise.all([
           window.kirea.getSettings(),
           window.kirea.getRuntimeState(),
@@ -150,6 +158,7 @@ export function useAppController() {
           window.kirea.listCharacters(),
           window.kirea.listStories(),
           window.kirea.listCanvases(),
+          window.kirea.getUpdateState(),
         ]);
 
         if (!active) return;
@@ -170,6 +179,7 @@ export function useAppController() {
         setCharacters(loadedCharacters);
         setStories(loadedStories);
         setCanvases(loadedCanvases);
+        setUpdateState(loadedUpdate);
 
         void window.kirea
           .listCivitaiDownloads()
@@ -282,6 +292,10 @@ export function useAppController() {
       }
     });
 
+    const unsubUpdate = window.kirea.onUpdateStateChanged((nextState) => {
+      setUpdateState(nextState);
+    });
+
     // Periodic lightweight GPU VRAM refresh
     const hwInterval = setInterval(() => {
       void window.kirea.getHardwareStats().then(setHardware).catch(() => undefined);
@@ -295,6 +309,7 @@ export function useAppController() {
       unsubDownload();
       unsubCivitai();
       unsubImage();
+      unsubUpdate();
     };
   }, [pushToast]);
 
@@ -315,6 +330,55 @@ export function useAppController() {
         setSettings((prev) => ({ ...prev, theme: previousTheme }));
       }
       pushToast(err instanceof Error ? err.message : String(err), "error");
+    }
+  };
+
+  const handleCheckForUpdates = async (): Promise<void> => {
+    try {
+      setUpdateState(await window.kirea.checkForUpdates());
+    } catch (err) {
+      pushToast(err instanceof Error ? err.message : String(err), "error");
+    }
+  };
+
+  const handleDownloadUpdate = async (): Promise<void> => {
+    try {
+      setUpdateState(await window.kirea.downloadUpdate());
+    } catch (err) {
+      pushToast(err instanceof Error ? err.message : String(err), "error");
+    }
+  };
+
+  const handleCancelUpdateDownload = async (): Promise<void> => {
+    try {
+      setUpdateState(await window.kirea.cancelUpdateDownload());
+    } catch (err) {
+      pushToast(err instanceof Error ? err.message : String(err), "error");
+    }
+  };
+
+  const handleDismissUpdate = async (): Promise<void> => {
+    try {
+      setUpdateState(await window.kirea.dismissUpdate());
+    } catch (err) {
+      pushToast(err instanceof Error ? err.message : String(err), "error");
+    }
+  };
+
+  const handleSetUpdateChannel = async (channel: UpdateChannel): Promise<void> => {
+    try {
+      setUpdateState(await window.kirea.setUpdateChannel(channel));
+    } catch (err) {
+      pushToast(err instanceof Error ? err.message : String(err), "error");
+    }
+  };
+
+  const handleInstallUpdate = async (force = false): Promise<UpdateInstallResult> => {
+    try {
+      return await window.kirea.installUpdate(force);
+    } catch (err) {
+      pushToast(err instanceof Error ? err.message : String(err), "error");
+      return { started: false, activeJobs: 0, reason: "not-ready" };
     }
   };
 
@@ -399,6 +463,7 @@ export function useAppController() {
       sampler: preset.sampler,
       scheduler: preset.scheduler,
       denoise: preset.denoise ?? prev.denoise,
+      layoutJson: null,
     }));
     setActivePage("create");
     pushToast(`Loaded '${preset.title}' into Create Studio.`);
@@ -467,12 +532,60 @@ export function useAppController() {
       sampler: img.sampler,
       scheduler: img.scheduler,
       seed: img.seed,
+      layoutJson: null,
       randomSeed: false,
       denoise: img.denoise,
     }));
     setActivePage("create");
     pushToast("Restored prompt, model, and seed into Create Studio.");
   };
+
+  const handleSendImageToWorkflow = (
+    img: GeneratedImageRecord,
+    targetWorkflow: "edit" | "inpaint" | "outpaint" | "variations" | "upscale"
+  ): void => {
+    if (targetWorkflow === "upscale") {
+      handleUpscaleImage(img);
+      return;
+    }
+    const arch = inferModelArchitecture(img.checkpoint);
+    const fallbackWf =
+      img.workflowId ||
+      (arch === "sd15" ? "i2i_sd15_base" : "i2i_sdxl_base");
+
+    setDraft((prev) => ({
+      ...prev,
+      mode: "img2img",
+      workflowId: fallbackWf,
+      prompt: img.prompt,
+      negativePrompt: img.negativePrompt,
+      checkpoint: img.checkpoint,
+      loras: img.loras ?? [],
+      inputImagePath: img.filePath,
+      width: Math.min(2048, img.width),
+      height: Math.min(2048, img.height),
+      steps: img.steps,
+      cfg: img.cfg,
+      sampler: img.sampler,
+      scheduler: img.scheduler,
+      seed:
+        targetWorkflow === "variations"
+          ? Math.floor(Math.random() * 2147483647)
+          : img.seed,
+      randomSeed: targetWorkflow === "variations",
+      denoise:
+        targetWorkflow === "inpaint"
+          ? 0.75
+          : targetWorkflow === "outpaint"
+          ? 0.85
+          : 0.55,
+    }));
+    setActivePage("create");
+    pushToast(
+      `Loaded '${img.fileName}' into ${targetWorkflow.toUpperCase()} workspace.`
+    );
+  };
+
 
   const handleToggleFavorite = async (id: string): Promise<void> => {
     const updated = await window.kirea.toggleImageFavorite(id);
@@ -811,6 +924,7 @@ export function useAppController() {
     setSettings,
     resolvedTheme,
     runtime,
+    updateState,
     hardware,
     models,
     setModels,
@@ -844,12 +958,19 @@ export function useAppController() {
     pushToast,
     activeWorkCount,
     handleUpdateSettings,
+    handleCheckForUpdates,
+    handleDownloadUpdate,
+    handleCancelUpdateDownload,
+    handleDismissUpdate,
+    handleSetUpdateChannel,
+    handleInstallUpdate,
     handleStartRuntime,
     handleStopRuntime,
     handleTestConnection,
     handleApplyPreset,
     handleUpscaleImage,
     handleReuseImageSettings,
+    handleSendImageToWorkflow,
     handleToggleFavorite,
     handleUpdateImageMeta,
     handleDeleteImage,

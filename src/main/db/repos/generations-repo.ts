@@ -5,6 +5,7 @@ import type {
   GenerationJob,
   GenerationMode,
   GenerationRequest,
+  ImageOperationRecord,
   JobErrorKind,
   JobLifecycleState,
   LoraSelection,
@@ -12,6 +13,8 @@ import type {
   PromptRecord,
   VideoContainerFormat,
 } from "../../../shared/types";
+import crypto from "node:crypto";
+import { classifyImageOperation } from "../../../shared/image-labels";
 import type { StudioDatabase } from "../database";
 import { safeParseJson } from "../repo-mappers";
 
@@ -156,8 +159,21 @@ export class GenerationsRepository {
         id, job_id, file_path, file_name, format, width, height, size_bytes,
         prompt, negative_prompt, seed, checkpoint, loras_json, workflow_id,
         sampler, scheduler, steps, cfg, denoise, mode, favorite, tags_json,
-        collection_id, created_at, character_id, lora_recipe_id, story_id, story_scene_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        collection_id, created_at, character_id, lora_recipe_id, story_id,
+        story_scene_id, parent_image_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    const findParent = this.studioDb.db.prepare(
+      "SELECT id FROM generated_images WHERE file_path = ? LIMIT 1"
+    );
+    const parentSequence = this.studioDb.db.prepare(
+      "SELECT COALESCE(MAX(sequence), -1) AS sequence FROM image_operations WHERE image_id = ?"
+    );
+    const insertOperation = this.studioDb.db.prepare(
+      `INSERT INTO image_operations (
+        id, image_id, sequence, operation, workflow_id, workflow_version,
+        checkpoint, prompt, seed, parameters_json, parent_image_id, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
 
     const hasValidPrompt = Boolean(promptRecord && promptRecord.prompt.trim().length > 0);
@@ -173,6 +189,10 @@ export class GenerationsRepository {
       const now = new Date().toISOString();
       this.upsertJob(job);
       for (const img of images) {
+        const parent = img.sourceImagePath
+          ? (findParent.get(img.sourceImagePath) as { id: string } | undefined)
+          : undefined;
+        const parentImageId = parent?.id ?? null;
         insertImg.run(
           img.id,
           img.jobId,
@@ -201,7 +221,32 @@ export class GenerationsRepository {
           img.characterId ?? job.characterId ?? null,
           img.loraRecipeId ?? job.loraRecipeId ?? null,
           img.storyId ?? job.storyId ?? job.settings?.storyId ?? null,
-          img.storySceneId ?? job.storySceneId ?? job.settings?.storySceneId ?? null
+          img.storySceneId ?? job.storySceneId ?? job.settings?.storySceneId ?? null,
+          parentImageId
+        );
+
+        const parentSeq = parentImageId
+          ? Number(
+              (
+                parentSequence.get(parentImageId) as
+                  | { sequence: number }
+                  | undefined
+              )?.sequence ?? -1
+            )
+          : -1;
+        insertOperation.run(
+          `op_${crypto.randomUUID().slice(0, 12)}`,
+          img.id,
+          parentSeq + 1,
+          classifyImageOperation(img.mode, img.workflowId),
+          img.workflowId,
+          job.workflowVersion ?? null,
+          img.checkpoint,
+          img.prompt,
+          img.seed,
+          JSON.stringify(job.settings ?? {}),
+          parentImageId,
+          img.createdAt
         );
       }
 
@@ -380,6 +425,61 @@ export class GenerationsRepository {
     };
   }
 
+  private attachOperationLineage(records: GeneratedImageRecord[]): void {
+    if (records.length === 0) return;
+    const parentRows = this.studioDb.db
+      .prepare("SELECT id, parent_image_id FROM generated_images")
+      .all() as Array<{ id: string; parent_image_id: string | null }>;
+    const parents = new Map(
+      parentRows.map((row) => [row.id, row.parent_image_id])
+    );
+
+    const operationRows = this.studioDb.db
+      .prepare("SELECT * FROM image_operations ORDER BY sequence ASC")
+      .all() as Array<Record<string, unknown>>;
+    const operations = new Map<string, ImageOperationRecord[]>();
+    for (const row of operationRows) {
+      const imageId = String(row.image_id);
+      const list = operations.get(imageId) ?? [];
+      list.push({
+        id: String(row.id),
+        imageId,
+        sequence: Number(row.sequence ?? 0),
+        operation: String(row.operation) as ImageOperationRecord["operation"],
+        workflowId: String(row.workflow_id),
+        workflowVersion: row.workflow_version
+          ? String(row.workflow_version)
+          : null,
+        checkpoint: String(row.checkpoint ?? ""),
+        prompt: String(row.prompt ?? ""),
+        seed: Number(row.seed ?? 0),
+        parameters: safeParseJson<Record<string, unknown>>(
+          String(row.parameters_json ?? "{}"),
+          {}
+        ),
+        parentImageId: row.parent_image_id
+          ? String(row.parent_image_id)
+          : null,
+        createdAt: String(row.created_at),
+      });
+      operations.set(imageId, list);
+    }
+
+    for (const record of records) {
+      const lineage: ImageOperationRecord[] = [];
+      const seen = new Set<string>();
+      let cursor: string | null = record.id;
+      while (cursor && !seen.has(cursor)) {
+        seen.add(cursor);
+        lineage.push(...(operations.get(cursor) ?? []));
+        cursor = parents.get(cursor) ?? null;
+      }
+      lineage.sort((a, b) => a.sequence - b.sequence);
+      record.parentImageId = parents.get(record.id) ?? null;
+      record.operations = lineage;
+    }
+  }
+
   listImages(filters?: {    search?: string;
     favoriteOnly?: boolean;
     collectionId?: string | null;
@@ -420,7 +520,7 @@ export class GenerationsRepository {
       `)
       .all(...params) as Array<Record<string, unknown>>;
 
-    return rows.map((r) => ({
+    const records = rows.map((r) => ({
       id: String(r.id),
       jobId: String(r.job_id),
       filePath: String(r.file_path),
@@ -450,7 +550,10 @@ export class GenerationsRepository {
       storyId: r.story_id ? String(r.story_id) : null,
       storySceneId: r.story_scene_id ? String(r.story_scene_id) : null,
       sourceImagePath: (r.source_image_path ?? r.sourceImagePath) ? String(r.source_image_path ?? r.sourceImagePath) : null,
+      parentImageId: r.parent_image_id ? String(r.parent_image_id) : null,
     }));
+    this.attachOperationLineage(records);
+    return records;
   }
 
   getImageById(id: string): GeneratedImageRecord | null {
@@ -463,7 +566,7 @@ export class GenerationsRepository {
       `)
       .get(id) as Record<string, unknown> | undefined;
     if (!row) return null;
-    return {
+    const record: GeneratedImageRecord = {
       id: String(row.id),
       jobId: String(row.job_id),
       filePath: String(row.file_path),
@@ -493,7 +596,10 @@ export class GenerationsRepository {
       storyId: row.story_id ? String(row.story_id) : null,
       storySceneId: row.story_scene_id ? String(row.story_scene_id) : null,
       sourceImagePath: (row.source_image_path ?? row.sourceImagePath) ? String(row.source_image_path ?? row.sourceImagePath) : null,
+      parentImageId: row.parent_image_id ? String(row.parent_image_id) : null,
     };
+    this.attachOperationLineage([record]);
+    return record;
   }
 
   toggleImageFavorite(id: string): GeneratedImageRecord | null {

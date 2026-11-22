@@ -5,6 +5,7 @@ import type {
   CivitaiModelType,
   CivitaiSearchQuery,
   CivitaiSearchResult,
+  CivitaiSort,
   CivitaiVersion,
 } from "../../shared/civitai";
 import {
@@ -122,6 +123,10 @@ export function normalizeCivitaiBaseModel(raw: string | null | undefined): Model
   if (value.includes("pony")) return "pony";
   if (value.includes("flux")) return "flux";
   if (value.includes("anima")) return "anima";
+  if (value.includes("moss")) return "moss_image";
+  if (value.includes("krea")) return "krea2";
+  if (value.includes("wan")) return "wan_video";
+  if (value.includes("ltx")) return "ltx_video";
   if (value.includes("z image") || value.includes("z-image") || value.includes("zimage")) {
     return "z_image";
   }
@@ -144,14 +149,48 @@ export function normalizeCivitaiBaseModel(raw: string | null | undefined): Model
   return "unknown";
 }
 
-export function mapCivitaiType(raw: string | null | undefined): CivitaiModelType | null {
+export function mapCivitaiBaseModelQuery(
+  baseModel: string | null | undefined
+): string | undefined {
+  if (!baseModel) return undefined;
+  const trimmed = baseModel.trim();
+  const lower = trimmed.toLowerCase();
+  if (
+    lower === "moss-image" ||
+    lower === "moss_image" ||
+    lower === "moss image" ||
+    lower === "moss"
+  ) {
+    return "MOSS Image";
+  }
+  if (lower === "krea-2" || lower === "krea_2" || lower === "krea 2" || lower === "krea") {
+    return "Krea 2";
+  }
+  return trimmed;
+}
+
+export function mapCivitaiSort(sort: CivitaiSort | undefined): string {
+  // Verified against the live v1 models endpoint: Most Liked and Most Discussed
+  // are accepted directly. "Most Reactions"/"Most Comments" return HTTP 400.
+  return sort ?? "Most Downloaded";
+}
+
+export function mapCivitaiType(
+  raw: string | null | undefined
+): CivitaiModelType | null {
   const value = (raw ?? "").trim().toLowerCase();
   if (value.startsWith("checkpoint")) return "Checkpoint";
   if (value === "lora" || value === "locon" || value === "dora" || value === "lycoris") {
     return "LORA";
   }
+  if (value === "textualinversion" || value === "embedding" || value === "textual inversion") {
+    return "TextualInversion";
+  }
   if (value === "vae") return "VAE";
+  if (value === "controlnet") return "Controlnet";
   if (value === "upscaler") return "Upscaler";
+  if (value === "motionmodel" || value === "motion") return "MotionModel";
+  if (value === "other" || value === "wildcards" || value === "poses") return "Other";
   return null;
 }
 
@@ -519,11 +558,15 @@ export class CivitaiClient {
     const params = new URLSearchParams();
     const limit = Math.min(Math.max(query.limit ?? 24, 1), 50);
     params.set("limit", String(limit));
-    params.set("sort", query.sort ?? "Most Downloaded");
+    params.set("sort", mapCivitaiSort(query.sort));
+    if (query.period) params.set("period", query.period);
     params.set("nsfw", String(query.nsfw === true));
     if (query.query?.trim()) params.set("query", query.query.trim());
     if (query.type) params.set("types", query.type);
-    if (query.baseModel) params.set("baseModels", query.baseModel);
+    if (query.baseModel) {
+      const mapped = mapCivitaiBaseModelQuery(query.baseModel);
+      if (mapped) params.set("baseModels", mapped);
+    }
     if (query.cursor) params.set("cursor", query.cursor);
 
     const payload = await this.requestJson<RawSearchResponse>(

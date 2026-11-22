@@ -160,6 +160,7 @@ export function registerAppRuntimeHandlers(
     const saved = {
       ...ctx.repo.saveSettings(partial, ctx.defaultSettings),
       civitaiApiKeySet: ctx.civitaiKeyStore.hasKey(),
+      huggingfaceTokenSet: ctx.huggingFaceTokenStore.hasToken(),
     };
     ctx.setSettings(saved);
     ctx.runtime.applySettings(saved);

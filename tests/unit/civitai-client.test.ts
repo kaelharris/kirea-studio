@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { CivitaiSearchSchema } from "../../src/main/ipc/schemas";
 import {
   CivitaiClient,
   buildLocalModelIndex,
   isVersionInstalled,
+  mapCivitaiBaseModelQuery,
   mapCivitaiModel,
+  mapCivitaiSort,
   mapCivitaiType,
   normalizeCivitaiBaseModel,
   stripCivitaiHtml,
@@ -74,12 +77,23 @@ const RAW_MODEL: RawCivitaiModel = {
 };
 
 describe("Civitai architecture and type normalization", () => {
+  it("passes the live-supported sort values through unchanged", () => {
+    // "Most Reactions"/"Most Comments" are rejected with HTTP 400 by the v1 models endpoint.
+    expect(mapCivitaiSort("Most Liked")).toBe("Most Liked");
+    expect(mapCivitaiSort("Most Discussed")).toBe("Most Discussed");
+    expect(mapCivitaiSort("Most Downloaded")).toBe("Most Downloaded");
+    expect(mapCivitaiSort(undefined)).toBe("Most Downloaded");
+  });
+
   it.each([
     ["Illustrious", "illustrious"],
     ["NoobAI-XL", "illustrious"],
     ["Pony", "pony"],
     ["Flux.1 D", "flux"],
     ["Anima", "anima"],
+    ["MOSS-Image", "moss_image"],
+    ["Krea 2", "krea2"],
+    ["Wan 2.1", "wan_video"],
     ["Z-Image Turbo", "z_image"],
     ["SD 1.5", "sd15"],
     ["stable diffusion 1", "sd15"],
@@ -99,8 +113,9 @@ describe("Civitai architecture and type normalization", () => {
     expect(mapCivitaiType("LyCORIS")).toBe("LORA");
     expect(mapCivitaiType("VAE")).toBe("VAE");
     expect(mapCivitaiType("Upscaler")).toBe("Upscaler");
-    expect(mapCivitaiType("TextualInversion")).toBeNull();
-    expect(mapCivitaiType("Controlnet")).toBeNull();
+    expect(mapCivitaiType("TextualInversion")).toBe("TextualInversion");
+    expect(mapCivitaiType("Controlnet")).toBe("Controlnet");
+    expect(mapCivitaiType("MotionModel")).toBe("MotionModel");
     expect(mapCivitaiType(null)).toBeNull();
   });
 
@@ -293,7 +308,7 @@ describe("Local model index and installed badges", () => {
   it("drops models with unsupported types or no usable versions", () => {
     expect(
       mapCivitaiModel(
-        { ...RAW_MODEL, type: "TextualInversion" },
+        { ...RAW_MODEL, type: "NonExistentFakeType" },
         buildLocalModelIndex([])
       )
     ).toBeNull();
@@ -384,6 +399,28 @@ describe("CivitaiClient HTTP behavior", () => {
     expect(url.searchParams.get("cursor")).toBeNull();
   });
 
+  it("normalizes baseModel query parameters for Civitai API compatibility", async () => {
+    expect(mapCivitaiBaseModelQuery("MOSS-Image")).toBe("MOSS Image");
+    expect(mapCivitaiBaseModelQuery("moss_image")).toBe("MOSS Image");
+    expect(mapCivitaiBaseModelQuery("MOSS Image")).toBe("MOSS Image");
+    expect(mapCivitaiBaseModelQuery("moss")).toBe("MOSS Image");
+    expect(mapCivitaiBaseModelQuery("krea-2")).toBe("Krea 2");
+    expect(mapCivitaiBaseModelQuery("SDXL 1.0")).toBe("SDXL 1.0");
+    expect(mapCivitaiBaseModelQuery("Illustrious")).toBe("Illustrious");
+
+    let capturedUrl = "";
+    const fetcher = (async (input: RequestInfo | URL) => {
+      capturedUrl = String(input);
+      return new Response(JSON.stringify({ items: [] }), { status: 200 });
+    }) as typeof fetch;
+
+    const client = new CivitaiClient({ getApiKey: () => null, fetcher });
+    await client.searchModels({ baseModel: "MOSS-Image" as any });
+
+    const url = new URL(capturedUrl);
+    expect(url.searchParams.get("baseModels")).toBe("MOSS Image");
+  });
+
   it("surfaces authentication, rate limit, and HTTP failures", async () => {
     const clientFor = (status: number): CivitaiClient =>
       new CivitaiClient({
@@ -426,5 +463,53 @@ describe("CivitaiClient HTTP behavior", () => {
     }).testConnection();
     expect(rejected.ok).toBe(false);
     expect(rejected.message).toMatch(/rejected/i);
+  });
+
+  it("validates CivitaiSearchSchema across all supported base models and types", () => {
+    const allBases = [
+      "Illustrious",
+      "SDXL 1.0",
+      "Pony",
+      "SD 1.5",
+      "Anima",
+      "Flux.1 D",
+      "MOSS-Image",
+      "Krea 2",
+      "Wan 2.1",
+      "Z-Image Turbo",
+    ];
+
+    const allTypes = [
+      "Checkpoint",
+      "LORA",
+      "TextualInversion",
+      "VAE",
+      "Controlnet",
+      "Upscaler",
+      "MotionModel",
+      "Other",
+    ];
+
+    for (const baseModel of allBases) {
+      const parsed = CivitaiSearchSchema.parse({ baseModel });
+      expect(parsed.baseModel).toBe(baseModel);
+    }
+
+    for (const type of allTypes) {
+      const parsed = CivitaiSearchSchema.parse({ type });
+      expect(parsed.type).toBe(type);
+    }
+
+    const full = CivitaiSearchSchema.parse({
+      query: "anime portrait",
+      baseModel: "MOSS-Image",
+      type: "Controlnet",
+      sort: "Most Downloaded",
+      period: "AllTime",
+      nsfw: false,
+      limit: 24,
+    });
+    expect(full.baseModel).toBe("MOSS-Image");
+    expect(full.type).toBe("Controlnet");
   });
 });

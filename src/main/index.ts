@@ -20,6 +20,9 @@ import { WORKFLOW_TEMPLATES } from "./comfy/workflow-registry";
 import { StudioDatabase } from "./db/database";
 import { StudioRepository } from "./db/repositories";
 import { DownloadManager } from "./downloads/download-manager";
+import { HuggingFaceClient } from "./huggingface/hf-client";
+import { HuggingFaceService } from "./huggingface/hf-service";
+import { HuggingFaceTokenStore } from "./huggingface/token-store";
 import { detectHardwareStats } from "./hardware/gpu-detector";
 import { registerIpcHandlers } from "./ipc/register-handlers";
 import { JobOrchestrator } from "./jobs/job-orchestrator";
@@ -27,6 +30,18 @@ import { StudioLogger } from "./logger";
 import { ModelScanner } from "./models/model-scanner";
 import { resolveStudioPaths, type StudioPaths } from "./paths";
 import { isPathInsideAnyRoot } from "./security";
+import { createElectronUpdaterHandle } from "./updater/electron-updater-adapter";
+import { createFileUpdatePreferenceStore } from "./updater/update-preference-store";
+import { UpdateService } from "./updater/update-service";
+
+const ACTIVE_JOB_STATUSES = new Set([
+  "IDLE",
+  "VALIDATING",
+  "SUBMITTING",
+  "QUEUED",
+  "RUNNING",
+  "PROCESSING_OUTPUT",
+]);
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -52,6 +67,7 @@ const SPLASH_MIN_VISIBLE_MS = 1600;
 const SPLASH_EXIT_FADE_MS = 220;
 let isQuitting = false;
 let cleanupFn: (() => Promise<void>) | null = null;
+let updateService: UpdateService | null = null;
 
 function buildDefaultSettings(paths: StudioPaths, firstDetectedComfyPath: string): AppSettings {
   return {
@@ -84,6 +100,7 @@ function buildDefaultSettings(paths: StudioPaths, firstDetectedComfyPath: string
     checkUpdatesAutomatically: true,
     nsfwFilter: true,
     civitaiApiKeySet: false,
+    huggingfaceTokenSet: false,
   };
 }
 
@@ -283,14 +300,22 @@ async function bootstrapApplication(): Promise<void> {
   await fs.promises.mkdir(currentSettings.outputDirectory, { recursive: true });
 
   const civitaiKeyStore = new CivitaiKeyStore(paths.userDataDir);
+  const huggingFaceTokenStore = new HuggingFaceTokenStore(paths.userDataDir);
   currentSettings = {
     ...currentSettings,
     civitaiApiKeySet: civitaiKeyStore.hasKey(),
+    huggingfaceTokenSet: huggingFaceTokenStore.hasToken(),
   };
 
   const runtime = new ComfyRuntimeManager(paths, currentSettings, logger);
   const modelScanner = new ModelScanner(logger);
-  const downloadManager = new DownloadManager(repo, logger);
+  const downloadManager = new DownloadManager(repo, logger, {
+    headerProvider: (task) => {
+      if (task.sourceName !== "huggingface") return null;
+      const token = huggingFaceTokenStore.getToken();
+      return token ? { Authorization: `Bearer ${token}` } : null;
+    },
+  });
   const civitaiClient = new CivitaiClient({
     getApiKey: () => civitaiKeyStore.getKey(),
     logger,
@@ -298,8 +323,26 @@ async function bootstrapApplication(): Promise<void> {
   const civitaiDownloadManager = new CivitaiDownloadManager({
     logger,
     previewCacheDir: path.join(paths.cacheDir, "civitai-previews"),
+    persistPath: path.join(paths.cacheDir, "civitai-downloads.json"),
   });
   let cachedModels: ModelRecord[] = repo.listModels();
+  const huggingFaceClient = new HuggingFaceClient({
+    getToken: () => huggingFaceTokenStore.getToken(),
+    logger,
+  });
+  const huggingFaceService = new HuggingFaceService({
+    client: huggingFaceClient,
+    downloadManager,
+    logger,
+    getSettings: () => currentSettings,
+    getModels: () => cachedModels,
+    getRuntime: () => ({
+      status: runtime.getState().status,
+      comfyVersion: runtime.getState().comfyVersion,
+      api: runtime.getState().status === "connected" ? runtime.getApiClient() : null,
+    }),
+    managedModelsDir: paths.defaultManagedModelsDir,
+  });
   let vramTotalMB = 0;
   const approvedInputFiles = new Set<string>();
 
@@ -311,6 +354,31 @@ async function bootstrapApplication(): Promise<void> {
     () => vramTotalMB,
     logger
   );
+
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? null;
+  updateService = new UpdateService({
+    logger,
+    store: createFileUpdatePreferenceStore(paths.userDataDir),
+    getCurrentVersion: () => app.getVersion(),
+    isEnabled: () =>
+      app.isPackaged &&
+      !devServerUrl &&
+      process.env.KIREA_DISABLE_UPDATES !== "1",
+    getAutomaticChecksEnabled: () => currentSettings.checkUpdatesAutomatically,
+    getActiveJobCount: () =>
+      jobOrchestrator
+        .listJobs()
+        .filter((job) => ACTIVE_JOB_STATUSES.has(job.status)).length,
+    beforeInstall: async () => {
+      if (cleanupFn) {
+        await cleanupFn();
+        return;
+      }
+      await runtime.stopRuntime().catch(() => undefined);
+      studioDb.close();
+    },
+    createAdapter: () => createElectronUpdaterHandle(logger),
+  });
 
   // Register custom kirea-media:// image protocol scoped strictly to studio outputs & user-picked inputs
   protocol.handle("kirea-media", (request) => {
@@ -330,6 +398,11 @@ async function bootstrapApplication(): Promise<void> {
           paths.cacheDir,
           paths.charactersDir,
           paths.pixelAssetsDir,
+          paths.pixelExportsDir,
+          paths.modelPreviewCacheDir,
+          paths.defaultManagedModelsDir,
+          currentSettings.externalComfyPath,
+          currentSettings.managedComfyPath,
         ]);
 
       if (!allowed) {
@@ -358,7 +431,6 @@ async function bootstrapApplication(): Promise<void> {
     }
   });
 
-  const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? null;
   const devServerOrigin = devServerUrl ? new URL(devServerUrl).origin : null;
   const expectedHtmlPath = path.join(app.getAppPath(), "dist", "index.html");
 
@@ -380,7 +452,10 @@ async function bootstrapApplication(): Promise<void> {
     civitaiClient,
     civitaiDownloadManager,
     civitaiKeyStore,
+    huggingFaceService,
+    huggingFaceTokenStore,
     jobOrchestrator,
+    updateService,
     logger,
     getVramTotalMB: () => vramTotalMB,
     setVramTotalMB: (v) => {
@@ -444,6 +519,10 @@ async function bootstrapApplication(): Promise<void> {
         repo.replaceScannedModels(models);
         cachedModels = repo.listModels();
       });
+  });
+
+  updateService.on("stateChanged", (state) => {
+    pushToRenderer(IPC_CHANNELS.EVENT_UPDATE_STATE_CHANGED, state);
   });
 
   mainWindow = new BrowserWindow({
@@ -525,10 +604,14 @@ async function bootstrapApplication(): Promise<void> {
   })();
 
   cleanupFn = async () => {
+    civitaiDownloadManager.prepareShutdown();
     await runtime.stopRuntime().catch(() => undefined);
     studioDb.close();
     logger.info("shutdown", "Kirea Studio shut down cleanly.");
   };
+
+  // Update checks never block startup; the service waits for the first idle window.
+  updateService.scheduleAutomaticChecks();
 }
 
 app.on("second-instance", () => {
@@ -546,6 +629,8 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", (event) => {
   if (isQuitting) return;
+  // electron-updater already ran the cleanup callback before quitAndInstall.
+  if (updateService?.isInstalling()) return;
   event.preventDefault();
   isQuitting = true;
   const fallbackTimer = setTimeout(() => {

@@ -21,10 +21,13 @@ import type {
   CharacterReferenceRole,
   CollectionRecord,
   GeneratedImageRecord,
+  ModelRecord,
   OutputFormat,
 } from "../../shared/types";
 import { CHARACTER_REFERENCE_ROLE_LABELS } from "../../shared/character-utils";
-import { formatBytes, shortModelLabel, toMediaUrl } from "../utils/format";
+import { imageWorkflowLabels } from "../../shared/image-labels";
+import { getModelRefDisplayName } from "../../shared/model-utils";
+import { formatBytes, toMediaUrl } from "../utils/format";
 import {
   Badge,
   Button,
@@ -32,8 +35,8 @@ import {
   Input,
   Select,
 } from "./ui/Primitives";
-import { MediaImage } from "./ui/MediaImage";
 import { ComparisonSlider } from "./ui/ComparisonSlider";
+import { ZoomableImage } from "./ui/ZoomableImage";
 
 const PROMOTE_ROLES: CharacterReferenceRole[] = [
   "primary",
@@ -49,6 +52,7 @@ interface ImagePreviewModalProps {
   onSelectImage?: (image: GeneratedImageRecord) => void;
   collections: CollectionRecord[];
   characters: CharacterProfile[];
+  models?: ModelRecord[];
   onClose: () => void;
   onReuseSettings: (image: GeneratedImageRecord) => void;
   onUpscaleImage?: (image: GeneratedImageRecord) => void;
@@ -72,6 +76,7 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
   onSelectImage,
   collections,
   characters,
+  models = [],
   onClose,
   onReuseSettings,
   onUpscaleImage,
@@ -125,7 +130,7 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
     if (!image) return;
     setTagDraft("");
     setIsPromoting(false);
-    setCompareMode(Boolean(image.sourceImagePath));
+    setCompareMode(false);
     setCustomCompareSrc(null);
     const defaultCharacter =
       characters.find((c) => c.id === image.characterId) ?? characters[0] ?? null;
@@ -235,6 +240,24 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
     });
   };
 
+  const handleDownloadOriginal = async (): Promise<void> => {
+    setIsExporting(true);
+    try {
+      const savedPath = await window.kirea.exportImage(
+        image.id,
+        image.format,
+        false
+      );
+      if (savedPath) {
+        onToast(`Original saved to ${savedPath}`);
+      }
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : String(err), "error");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handleExport = async (): Promise<void> => {
     setIsExporting(true);
     try {
@@ -277,9 +300,15 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
             <span className="hidden sm:inline-block font-mono text-xs text-white/70 uppercase tracking-wider">
               {image.format} · {formatBytes(image.sizeBytes)}
             </span>
-            <Badge tone="accent" className="hidden md:inline-flex uppercase text-[10px] tracking-wider">
-              {image.mode}
-            </Badge>
+            {imageWorkflowLabels(image).map((label, index) => (
+              <Badge
+                key={`${label.label}-${index}`}
+                tone={label.tone}
+                className="hidden md:inline-flex uppercase text-[10px] tracking-wider bg-white/10 border-white/15 text-white"
+              >
+                {label.label}
+              </Badge>
+            ))}
 
             {/* Comparison Slider Toggle */}
             {canCompare && (
@@ -330,6 +359,17 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
                 <span className="hidden sm:inline">Upscale</span>
               </Button>
             )}
+
+            <button
+              type="button"
+              onClick={() => void handleDownloadOriginal()}
+              disabled={isExporting}
+              aria-label="Download original image"
+              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white border border-white/15 transition-colors cursor-pointer disabled:opacity-50"
+              title="Download original unmodified file"
+            >
+              <Download className="w-4 h-4" />
+            </button>
 
             <button
               type="button"
@@ -393,13 +433,12 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
               />
             </div>
           ) : (
-            <div className="relative w-full h-full flex items-center justify-center">
-              <MediaImage
-                src={toMediaUrl(image.filePath)}
-                alt={image.prompt}
-                className="max-w-[100vw] max-h-[100vh] w-auto h-auto object-contain object-center rounded-lg shadow-2xl transition-transform"
-              />
-            </div>
+            <ZoomableImage
+              src={toMediaUrl(image.filePath)}
+              alt={image.prompt}
+              naturalWidth={image.width}
+              naturalHeight={image.height}
+            />
           )}
 
           {/* FLOATING PREVIOUS / NEXT NAVIGATION BUTTONS */}
@@ -525,10 +564,32 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
             <div className="space-y-2">
               <span className="label-mono text-fg-subtle">Parameters</span>
               <div className="grid grid-cols-2 gap-2 text-xs bg-bg border border-border rounded-xl p-3">
+                <div className="col-span-2">
+                  <div className="text-fg-subtle text-[11px]">Provenance</div>
+                  <div className="mt-1 space-y-1">
+                    {imageWorkflowLabels(image).map((label, index) => (
+                      <div
+                        key={`${label.label}-${index}`}
+                        className="flex items-center gap-2"
+                      >
+                        <Badge tone={label.tone}>{label.label}</Badge>
+                        <span className="text-[10px] text-fg-subtle">
+                          {index === 0 ? "Original generation" : `Stage ${index + 1}`}
+                        </span>
+                        <span
+                          className="font-mono text-[10px] text-fg-subtle truncate max-w-[190px]"
+                          title={label.workflowId ?? undefined}
+                        >
+                          {label.workflowId ?? "—"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
                 <div>
                   <div className="text-fg-subtle text-[11px]">Checkpoint</div>
                   <div className="font-medium text-fg truncate" title={image.checkpoint}>
-                    {shortModelLabel(image.checkpoint)}
+                    {getModelRefDisplayName(models, image.checkpoint)}
                   </div>
                 </div>
                 <div>
@@ -553,7 +614,7 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {image.loras.map((l) => (
                     <Badge key={l.name} tone="accent">
-                      {shortModelLabel(l.name)} ({l.strengthModel})
+                      {getModelRefDisplayName(models, l.name)} ({l.strengthModel})
                     </Badge>
                   ))}
                 </div>

@@ -2,9 +2,11 @@ import { ipcMain, type IpcMainInvokeEvent } from "electron";
 import { isTrustedIpcSender } from "../security";
 import { registerAppRuntimeHandlers } from "./handlers/app-runtime-handlers";
 import { registerGenerationHandlers } from "./handlers/generation-handlers";
+import { registerHuggingFaceHandlers } from "./handlers/huggingface-handlers";
 import { registerModelsHandlers } from "./handlers/models-handlers";
 import { registerPixelHandlers } from "./handlers/pixel-handlers";
 import { registerStoriesHandlers } from "./handlers/stories-handlers";
+import { registerUpdateHandlers } from "./handlers/update-handlers";
 import { registerWorkflowsHandlers } from "./handlers/workflows-handlers";
 import type { HandlerContext, IpcRegistrarHandle } from "./schemas";
 
@@ -34,7 +36,9 @@ export function registerIpcHandlers(ctx: HandlerContext): void {
   registerAppRuntimeHandlers(ctx, handle);
   registerWorkflowsHandlers(ctx, handle);
   registerModelsHandlers(ctx, handle);
+  registerHuggingFaceHandlers(ctx, handle);
   registerStoriesHandlers(ctx, handle);
   registerGenerationHandlers(ctx, handle);
   registerPixelHandlers(ctx, handle);
+  registerUpdateHandlers(ctx, handle);
 }

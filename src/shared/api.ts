@@ -6,6 +6,15 @@ import type {
   CivitaiSearchResult,
 } from "./civitai";
 import type {
+  HuggingFaceCompatibilityReport,
+  HuggingFaceCompatibilityRequest,
+  HuggingFaceConnectionTest,
+  HuggingFaceRepoDetails,
+  HuggingFaceSearchQuery,
+  HuggingFaceSearchResult,
+  HuggingFaceStartRequest,
+} from "./huggingface";
+import type {
   PixelAiBackendStatus,
   PixelAiConnectionTest,
   PixelAiGenerateInput,
@@ -53,6 +62,7 @@ import type {
   GpuStats,
   LoraRecipe,
   LoraRecipeInput,
+  ModelArchitecture,
   ModelCategory,
   ModelMetadataPatch,
   ModelRecord,
@@ -81,6 +91,11 @@ import type {
   WorkflowInstallResult,
   WorkflowRevalidationResult,
 } from "./workflow-import";
+import type {
+  UpdateChannel,
+  UpdateInstallResult,
+  UpdateState,
+} from "./update-types";
 import type {
   CivitaiWorkflowImportPreview,
   CivitaiWorkflowImportRequest,
@@ -129,6 +144,16 @@ export interface KireaDesktopApi {
   getSettings(): Promise<AppSettings>;
   updateSettings(partial: Partial<AppSettings>): Promise<AppSettings>;
 
+  // Application updates
+  getUpdateState(): Promise<UpdateState>;
+  checkForUpdates(): Promise<UpdateState>;
+  downloadUpdate(): Promise<UpdateState>;
+  cancelUpdateDownload(): Promise<UpdateState>;
+  dismissUpdate(): Promise<UpdateState>;
+  setUpdateChannel(channel: UpdateChannel): Promise<UpdateState>;
+  installUpdate(force?: boolean): Promise<UpdateInstallResult>;
+  onUpdateStateChanged(cb: (state: UpdateState) => void): () => void;
+
   // Hardware & runtime
   getHardwareStats(): Promise<GpuStats>;
   getRuntimeState(): Promise<RuntimeState>;
@@ -146,7 +171,7 @@ export interface KireaDesktopApi {
   deleteModel(filePath: string): Promise<void>;
   updateModelMetadata(modelId: string, patch: ModelMetadataPatch): Promise<ModelRecord>;
   getModelPreview(modelId: string): Promise<string | null>;
-  importModelPreview(modelId: string): Promise<ModelRecord | null>;
+  importModelPreview(modelId: string, sourceFilePath?: string): Promise<ModelRecord | null>;
   getCuratedCatalog(): Promise<CuratedModelCatalogItem[]>;
 
   // LoRA recipes
@@ -227,12 +252,24 @@ export interface KireaDesktopApi {
   // Civitai Hub
   searchCivitaiModels(query: CivitaiSearchQuery): Promise<CivitaiSearchResult>;
   getCivitaiModelDetails(modelId: number): Promise<CivitaiModelSummary>;
-  startCivitaiDownload(modelId: number, versionId: number): Promise<CivitaiDownloadTask>;
+  startCivitaiDownload(modelId: number, versionId: number, targetArchitecture?: ModelArchitecture): Promise<CivitaiDownloadTask>;
+  pauseCivitaiDownload(id: string): Promise<boolean>;
+  resumeCivitaiDownload(id: string): Promise<CivitaiDownloadTask | null>;
   cancelCivitaiDownload(id: string): Promise<boolean>;
   retryCivitaiDownload(id: string): Promise<CivitaiDownloadTask | null>;
   listCivitaiDownloads(): Promise<CivitaiDownloadTask[]>;
   setCivitaiApiKey(apiKey: string): Promise<{ hasApiKey: boolean }>;
   testCivitaiConnection(): Promise<CivitaiConnectionTest>;
+
+  // Hugging Face Hub
+  searchHuggingFaceModels(query: HuggingFaceSearchQuery): Promise<HuggingFaceSearchResult>;
+  getHuggingFaceRepo(repoId: string, revision?: string): Promise<HuggingFaceRepoDetails>;
+  checkHuggingFaceCompatibility(
+    request: HuggingFaceCompatibilityRequest
+  ): Promise<HuggingFaceCompatibilityReport>;
+  startHuggingFaceDownloads(request: HuggingFaceStartRequest): Promise<DownloadTask[]>;
+  setHuggingFaceToken(token: string): Promise<{ hasToken: boolean }>;
+  testHuggingFaceConnection(): Promise<HuggingFaceConnectionTest>;
   searchCivitaiWorkflows(
     query: CivitaiWorkflowSearchQuery
   ): Promise<CivitaiWorkflowSearchResult>;

@@ -12,6 +12,15 @@ export const IPC_CHANNELS = {
   SETTINGS_GET: "settings:get",
   SETTINGS_UPDATE: "settings:update",
 
+  // Application updates
+  UPDATE_GET_STATE: "update:getState",
+  UPDATE_CHECK: "update:check",
+  UPDATE_DOWNLOAD: "update:download",
+  UPDATE_CANCEL_DOWNLOAD: "update:cancelDownload",
+  UPDATE_DISMISS: "update:dismiss",
+  UPDATE_SET_CHANNEL: "update:setChannel",
+  UPDATE_INSTALL: "update:install",
+
   // Hardware & Runtime
   HARDWARE_GET_STATS: "hardware:getStats",
   RUNTIME_GET_STATE: "runtime:getState",
@@ -85,6 +94,8 @@ export const IPC_CHANNELS = {
   CIVITAI_SEARCH_MODELS: "civitai:searchModels",
   CIVITAI_GET_MODEL_DETAILS: "civitai:getModelDetails",
   CIVITAI_START_DOWNLOAD: "civitai:startDownload",
+  CIVITAI_PAUSE_DOWNLOAD: "civitai:pauseDownload",
+  CIVITAI_RESUME_DOWNLOAD: "civitai:resumeDownload",
   CIVITAI_CANCEL_DOWNLOAD: "civitai:cancelDownload",
   CIVITAI_RETRY_DOWNLOAD: "civitai:retryDownload",
   CIVITAI_LIST_DOWNLOADS: "civitai:listDownloads",
@@ -93,6 +104,14 @@ export const IPC_CHANNELS = {
   CIVITAI_SEARCH_WORKFLOWS: "civitai:searchWorkflows",
   CIVITAI_GET_WORKFLOW_DETAILS: "civitai:getWorkflowDetails",
   CIVITAI_PREPARE_WORKFLOW_IMPORT: "civitai:prepareWorkflowImport",
+
+  // Hugging Face Hub
+  HUGGINGFACE_SEARCH: "huggingface:search",
+  HUGGINGFACE_GET_REPO: "huggingface:getRepo",
+  HUGGINGFACE_CHECK_COMPATIBILITY: "huggingface:checkCompatibility",
+  HUGGINGFACE_START_DOWNLOADS: "huggingface:startDownloads",
+  HUGGINGFACE_SET_TOKEN: "huggingface:setToken",
+  HUGGINGFACE_TEST_CONNECTION: "huggingface:testConnection",
 
   // Workflows & Generation
   WORKFLOWS_LIST: "workflows:list",
@@ -185,4 +204,5 @@ export const IPC_CHANNELS = {
   EVENT_VIDEO_CREATED: "event:videoCreated",
   EVENT_PIXEL_AI_JOB_UPDATED: "event:pixelAiJobUpdated",
   EVENT_PIXEL_PACKAGE_PROGRESS: "event:pixelPackageProgress",
+  EVENT_UPDATE_STATE_CHANGED: "event:updateStateChanged",
 } as const;

@@ -4,6 +4,13 @@ copyright: Copyright © 2026 kaellabsstudio
 directories:
   output: release
   buildResources: build
+publish:
+  provider: github
+  owner: kaelharris
+  repo: kirea-studio
+  # Upload as a draft so a maintainer reviews the artifacts and explicitly
+  # publishes (or marks prerelease) before any client sees the update.
+  releaseType: draft
 files:
   - dist/**/*
   - dist-electron/**/*

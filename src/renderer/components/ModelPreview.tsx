@@ -6,6 +6,7 @@ interface ModelPreviewProps {
   model: ModelRecord;
   className?: string;
   iconSizeClass?: string;
+  fitMode?: "cover" | "contain";
 }
 
 /**
@@ -14,8 +15,9 @@ interface ModelPreviewProps {
  */
 export const ModelPreview: React.FC<ModelPreviewProps> = ({
   model,
-  className = "h-36",
+  className = "aspect-[2/3]",
   iconSizeClass = "w-5 h-5",
+  fitMode = "cover",
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [visible, setVisible] = useState(false);
@@ -74,21 +76,27 @@ export const ModelPreview: React.FC<ModelPreviewProps> = ({
   return (
     <div
       ref={containerRef}
-      className={`relative w-full overflow-hidden rounded-xl border border-border bg-well flex items-center justify-center p-1.5 ${className}`}
+      className={`relative w-full overflow-hidden rounded-xl border border-border bg-well flex items-center justify-center ${
+        fitMode === "cover" ? "p-0" : "p-1.5"
+      } ${className}`}
     >
       {src ? (
         <img
           src={src}
           alt={`${model.name} preview`}
-          className="w-full h-full object-contain object-center"
+          className={`w-full h-full ${
+            fitMode === "cover" ? "object-cover object-center" : "object-contain object-center"
+          }`}
           draggable={false}
         />
       ) : loading ? (
         <Loader2 className={`${iconSizeClass} text-fg-subtle animate-spin`} />
       ) : (
-        <div className="flex flex-col items-center gap-1 text-fg-subtle">
-          <ImageOff className={iconSizeClass} />
-          <span className="text-[11px] uppercase tracking-wider">No preview</span>
+        <div className="flex flex-col items-center gap-2 text-fg-subtle p-3">
+          <div className="p-2.5 rounded-full bg-surface border border-border shadow-xs">
+            <ImageOff className={iconSizeClass} />
+          </div>
+          <span className="text-[11px] font-medium tracking-wide text-fg-muted">No preview artwork</span>
         </div>
       )}
     </div>

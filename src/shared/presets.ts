@@ -1,4 +1,5 @@
 import type { CuratedModelCatalogItem, StudioPreset } from "./types";
+import { MOSS_MODEL_VARIANTS } from "./moss-image";
 
 export const STUDIO_PRESETS: StudioPreset[] = [
   {
@@ -165,5 +166,27 @@ export const CURATED_MODEL_CATALOG: CuratedModelCatalogItem[] = [
     description: "General photographic 4x upscaler model.",
     targetSubdir: "upscale_models",
   },
+  ...MOSS_MODEL_VARIANTS.map<CuratedModelCatalogItem>((variant) => ({
+    id: variant.id,
+    name: variant.label,
+    fileName: variant.fileName,
+    category: variant.category,
+    architecture: variant.architecture,
+    sizeBytes: variant.sizeBytes,
+    sha256: variant.sha256,
+    sourceName: "Hugging Face (Comfy-Org/MOSS-Image)",
+    sourceUrl: variant.sourceUrl,
+    downloadUrl: variant.downloadUrl,
+    licenseName: "Apache-2.0",
+    licenseUrl: variant.sourceUrl,
+    description: variant.description,
+    targetSubdir: variant.targetSubdir,
+    componentId: variant.componentId,
+    variantLabel: variant.recommended ? "Recommended" : undefined,
+    optional:
+      variant.componentId === "moss-edit-lora" ||
+      variant.componentId === "moss-color-depth-lora",
+    workflowIds: [...variant.workflowIds],
+  })),
 ];
 

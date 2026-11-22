@@ -16,12 +16,16 @@ afterEach(async () => {
   }
 });
 
-function createRangeTestServer(payload: Buffer): Promise<{
+function createRangeTestServer(
+  payload: Buffer,
+  onRequest?: (req: http.IncomingMessage) => void
+): Promise<{
   port: number;
   close: () => Promise<void>;
 }> {
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
+      onRequest?.(req);
       if (req.url === "/slow-file") {
         const range = req.headers.range;
         let start = 0;
@@ -146,6 +150,76 @@ describe("DownloadManager", () => {
     expect(failed?.error).toContain("SHA-256");
     expect(fs.existsSync(targetBad)).toBe(false);
     expect(fs.existsSync(`${targetBad}.part`)).toBe(false);
+
+    // Check declared-size mismatch rejection
+    const targetWrongSize = path.join(tempDir, "models", "wrong-size.safetensors");
+    await mgr.startDownload({
+      id: "dl_wrong_size",
+      kind: "model",
+      title: "Truncated Model",
+      url: `http://127.0.0.1:${server.port}/fast-file`,
+      targetPath: targetWrongSize,
+      category: "diffusion_model",
+      sourceName: "Local Mock",
+      licenseName: "Apache-2.0",
+      expectedBytes: payload.length + 1,
+    });
+    const sizeFailed = await mgr.waitForTask("dl_wrong_size");
+    expect(sizeFailed?.status).toBe("failed");
+    expect(sizeFailed?.error).toContain("File-size verification failed");
+    expect(fs.existsSync(targetWrongSize)).toBe(false);
+    expect(fs.existsSync(`${targetWrongSize}.part`)).toBe(false);
+  });
+
+  it("sends provider headers on the initial request and on Range resume", async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "kirea-hf-dl-"));
+    const db = new StudioDatabase(path.join(tempDir, "dl.db"));
+    const repo = new StudioRepository(db);
+
+    const payload = crypto.randomBytes(384 * 1024);
+    const expectedSha = crypto.createHash("sha256").update(payload).digest("hex");
+    const seenAuthorization: Array<string | undefined> = [];
+    const server = await createRangeTestServer(payload, (req) => {
+      seenAuthorization.push(req.headers.authorization);
+    });
+
+    cleanups.push(async () => {
+      await server.close();
+      db.close();
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    const mgr = new DownloadManager(repo, undefined, {
+      allowLoopbackHttpForTests: true,
+      headerProvider: (task) =>
+        task.sourceName === "huggingface"
+          ? { Authorization: "Bearer hf_test_token" }
+          : null,
+    });
+
+    const target = path.join(tempDir, "models", "hf-model.safetensors");
+    await mgr.startDownload({
+      id: "dl_hf_headers",
+      kind: "model",
+      title: "Hugging Face Model",
+      url: `http://127.0.0.1:${server.port}/slow-file`,
+      targetPath: target,
+      category: "checkpoint",
+      sourceName: "huggingface",
+      licenseName: "apache-2.0",
+      expectedSha256: expectedSha,
+      expectedBytes: payload.length,
+    });
+
+    await new Promise((r) => setTimeout(r, 80));
+    expect(mgr.pauseDownload("dl_hf_headers")).toBe(true);
+    await mgr.waitForTask("dl_hf_headers");
+    mgr.resumeDownload("dl_hf_headers");
+    const completed = await mgr.waitForTask("dl_hf_headers");
+
+    expect(completed?.status).toBe("completed");
+    expect(seenAuthorization.length).toBeGreaterThanOrEqual(2);
+    expect(seenAuthorization.every((value) => value === "Bearer hf_test_token")).toBe(true);
   });
 });
 

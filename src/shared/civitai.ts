@@ -1,26 +1,69 @@
 import type { ModelArchitecture } from "./types";
 
-export type CivitaiModelType = "Checkpoint" | "LORA" | "VAE" | "Upscaler";
-export type CivitaiSort = "Most Downloaded" | "Highest Rated" | "Newest";
+export type CivitaiModelType =
+  | "Checkpoint"
+  | "LORA"
+  | "TextualInversion"
+  | "VAE"
+  | "Controlnet"
+  | "Upscaler"
+  | "MotionModel"
+  | "Other"
+  | (string & {});
+export type CivitaiSort =
+  | "Most Downloaded"
+  | "Most Liked"
+  | "Most Discussed"
+  | "Highest Rated"
+  | "Newest";
+export type CivitaiPeriod = "Day" | "Week" | "Month" | "AllTime";
 export type CivitaiBaseModel =
   | "SD 1.5"
   | "SDXL 1.0"
   | "Illustrious"
   | "Pony"
   | "Anima"
-  | "Flux.1 D";
+  | "Flux.1 D"
+  | "MOSS Image"
+  | "MOSS-Image"
+  | "Krea 2"
+  | (string & {});
 
 export const CIVITAI_MODEL_TYPES: CivitaiModelType[] = [
   "Checkpoint",
   "LORA",
+  "TextualInversion",
   "VAE",
+  "Controlnet",
   "Upscaler",
+  "MotionModel",
+  "Other",
 ];
+
+export const CIVITAI_MODEL_TYPE_LABELS: Record<CivitaiModelType, string> = {
+  Checkpoint: "Checkpoint",
+  LORA: "LoRA",
+  TextualInversion: "Embedding",
+  VAE: "VAE",
+  Controlnet: "ControlNet",
+  Upscaler: "Upscaler",
+  MotionModel: "Motion Model",
+  Other: "Other",
+};
 
 export const CIVITAI_SORTS: CivitaiSort[] = [
   "Most Downloaded",
+  "Most Liked",
+  "Most Discussed",
   "Highest Rated",
   "Newest",
+];
+
+export const CIVITAI_PERIODS: CivitaiPeriod[] = [
+  "Day",
+  "Week",
+  "Month",
+  "AllTime",
 ];
 
 export const CIVITAI_BASE_MODELS: CivitaiBaseModel[] = [
@@ -30,6 +73,8 @@ export const CIVITAI_BASE_MODELS: CivitaiBaseModel[] = [
   "SD 1.5",
   "Anima",
   "Flux.1 D",
+  "MOSS Image",
+  "Krea 2",
 ];
 
 export interface CivitaiVersion {
@@ -74,6 +119,7 @@ export interface CivitaiSearchQuery {
   type?: CivitaiModelType | null;
   baseModel?: CivitaiBaseModel | null;
   sort?: CivitaiSort;
+  period?: CivitaiPeriod;
   nsfw?: boolean;
   cursor?: string | null;
   limit?: number;
@@ -98,6 +144,7 @@ export interface CivitaiStartDownloadRequest {
 export type CivitaiDownloadStatus =
   | "queued"
   | "downloading"
+  | "paused"
   | "verifying"
   | "finalizing"
   | "completed"

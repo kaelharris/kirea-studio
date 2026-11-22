@@ -18,8 +18,12 @@ const USER_AGENT = "KireaStudio/1.0.1 (Windows Desktop)";
 export const CIVITAI_TYPE_FOLDERS: Record<CivitaiModelType, string> = {
   Checkpoint: "checkpoints",
   LORA: "loras",
+  TextualInversion: "embeddings",
   VAE: "vae",
+  Controlnet: "controlnet",
   Upscaler: "upscale_models",
+  MotionModel: "diffusion_models",
+  Other: "checkpoints",
 };
 
 const MODEL_EXTENSIONS = new Set([
@@ -36,6 +40,7 @@ export interface CivitaiDownloadManagerOptions {
   previewCacheDir?: string;
   allowLoopbackHttpForTests?: boolean;
   fetcher?: typeof fetch;
+  persistPath?: string;
 }
 
 export interface CivitaiStartDownloadInput {
@@ -90,9 +95,15 @@ export function resolveCivitaiTargetPath(
   architecture: ModelArchitecture,
   fileName: string
 ): string {
-  const folder = CIVITAI_TYPE_FOLDERS[type];
+  let folder = CIVITAI_TYPE_FOLDERS[type] ?? "checkpoints";
+  if (
+    type === "Checkpoint" &&
+    (architecture === "moss_image" || architecture === "anima" || architecture === "z_image")
+  ) {
+    folder = "diffusion_models";
+  }
   const useArchitectureFolder =
-    (type === "Checkpoint" || type === "LORA") && architecture !== "unknown";
+    (type === "Checkpoint" || type === "LORA" || type === "TextualInversion") && architecture !== "unknown";
   return path.join(
     modelsRoot,
     folder,
@@ -248,6 +259,96 @@ export class CivitaiDownloadManager extends EventEmitter {
 
   constructor(private readonly options: CivitaiDownloadManagerOptions = {}) {
     super();
+    this.loadPersisted();
+  }
+
+  private savePersisted(): void {
+    if (!this.options.persistPath) return;
+    try {
+      const data = Array.from(this.entries.values()).map((entry) => ({
+        task: entry.task,
+        request: entry.request,
+      }));
+      const dir = path.dirname(this.options.persistPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      writeFileAtomic(this.options.persistPath, JSON.stringify(data, null, 2));
+    } catch (err) {
+      this.options.logger?.warn("civitai", "Failed to save persisted downloads", String(err));
+    }
+  }
+
+  private loadPersisted(): void {
+    if (!this.options.persistPath || !fs.existsSync(this.options.persistPath)) return;
+    try {
+      const raw = fs.readFileSync(this.options.persistPath, "utf8");
+      const data = JSON.parse(raw) as Array<{ task: CivitaiDownloadTask; request: CivitaiStartDownloadInput }>;
+      if (!Array.isArray(data)) return;
+      for (const item of data) {
+        if (!item?.task?.id || !item?.request) continue;
+        const task = { ...item.task };
+        const partPath = `${task.targetPath}.part`;
+        const partBytes = fs.existsSync(partPath) ? fs.statSync(partPath).size : 0;
+        const targetBytes = fs.existsSync(task.targetPath) ? fs.statSync(task.targetPath).size : 0;
+
+        if (targetBytes > 0 && (task.totalBytes <= 0 || targetBytes >= task.totalBytes - 4096)) {
+          task.status = "completed";
+          task.downloadedBytes = targetBytes;
+          task.totalBytes = targetBytes;
+          task.speedBytesPerSec = 0;
+          task.etaSeconds = null;
+        } else if (
+          task.status === "queued" ||
+          task.status === "downloading" ||
+          task.status === "verifying" ||
+          task.status === "finalizing"
+        ) {
+          task.downloadedBytes = partBytes;
+          task.speedBytesPerSec = 0;
+          task.etaSeconds = null;
+          task.status = partBytes > 0 ? "paused" : "failed";
+          task.error =
+            partBytes > 0
+              ? "Interrupted by application exit — ready to resume."
+              : "Interrupted before data was saved.";
+        }
+        this.entries.set(task.id, {
+          task,
+          request: item.request,
+          controller: null,
+          promise: null,
+          cancelRequested: false,
+        });
+      }
+    } catch (err) {
+      this.options.logger?.warn("civitai", "Failed to load persisted downloads", String(err));
+    }
+  }
+
+  prepareShutdown(): void {
+    for (const entry of this.entries.values()) {
+      if (
+        entry.task.status === "queued" ||
+        entry.task.status === "downloading" ||
+        entry.task.status === "verifying" ||
+        entry.task.status === "finalizing"
+      ) {
+        entry.controller?.abort();
+        const partPath = `${entry.task.targetPath}.part`;
+        const partBytes = fs.existsSync(partPath) ? fs.statSync(partPath).size : 0;
+        entry.task = {
+          ...entry.task,
+          status: partBytes > 0 ? "paused" : "failed",
+          downloadedBytes: partBytes,
+          speedBytesPerSec: 0,
+          etaSeconds: null,
+          error:
+            partBytes > 0
+              ? "Interrupted by application exit — ready to resume."
+              : "Interrupted before data was saved.",
+        };
+      }
+    }
+    this.savePersisted();
   }
 
   private get fetcher(): typeof fetch {
@@ -371,8 +472,33 @@ export class CivitaiDownloadManager extends EventEmitter {
     };
     this.entries.set(id, entry);
     this.emitTask(task);
+    this.savePersisted();
     this.launch(entry);
     return { ...task };
+  }
+
+  pauseDownload(id: string): boolean {
+    const entry = this.entries.get(id);
+    if (!entry) return false;
+    if (entry.task.status !== "queued" && entry.task.status !== "downloading") {
+      return false;
+    }
+    const partPath = `${entry.task.targetPath}.part`;
+    const partBytes = fs.existsSync(partPath) ? fs.statSync(partPath).size : 0;
+    entry.controller?.abort();
+    this.updateTask(entry, {
+      status: "paused",
+      downloadedBytes: partBytes,
+      speedBytesPerSec: 0,
+      etaSeconds: null,
+      error: "Paused by user.",
+    });
+    this.savePersisted();
+    return true;
+  }
+
+  resumeDownload(id: string): CivitaiDownloadTask | null {
+    return this.retryDownload(id);
   }
 
   cancelDownload(id: string): boolean {
@@ -392,6 +518,7 @@ export class CivitaiDownloadManager extends EventEmitter {
     if (!entry.promise) {
       this.finalizeCancelled(entry);
     }
+    this.savePersisted();
     return true;
   }
 
@@ -420,6 +547,7 @@ export class CivitaiDownloadManager extends EventEmitter {
       completedAt: null,
     };
     this.emitTask(entry.task);
+    this.savePersisted();
     this.launch(entry);
     return { ...entry.task };
   }
@@ -428,12 +556,16 @@ export class CivitaiDownloadManager extends EventEmitter {
     entry.promise = this.transfer(entry).finally(() => {
       entry.controller = null;
       entry.promise = null;
+      this.savePersisted();
     });
   }
 
   private updateTask(entry: ManagedEntry, patch: Partial<CivitaiDownloadTask>): void {
     entry.task = { ...entry.task, ...patch };
     this.emitTask(entry.task);
+    if (patch.status && patch.status !== "downloading") {
+      this.savePersisted();
+    }
   }
 
   private emitTask(task: CivitaiDownloadTask): void {
@@ -450,6 +582,7 @@ export class CivitaiDownloadManager extends EventEmitter {
       etaSeconds: null,
       error: "Cancelled by user.",
     });
+    this.savePersisted();
   }
 
   private async transfer(entry: ManagedEntry): Promise<CivitaiDownloadTask> {
@@ -585,7 +718,7 @@ export class CivitaiDownloadManager extends EventEmitter {
             windowBytes += chunk.length;
 
             const now = Date.now();
-            if (now - lastEmitAt >= 250) {
+            if (now - lastEmitAt >= 250 || downloaded === chunk.length) {
               const elapsedMs = now - windowStart;
               if (elapsedMs >= 200) {
                 const instantRate = (windowBytes * 1000) / elapsedMs;
@@ -701,6 +834,20 @@ export class CivitaiDownloadManager extends EventEmitter {
     } catch (err) {
       if (writeStream && !writeStream.closed) {
         await new Promise<void>((resolve) => writeStream!.close(() => resolve()));
+      }
+
+      if (entry.task.status === "paused") {
+        const partBytes = fs.existsSync(partPath)
+          ? fs.statSync(partPath).size
+          : entry.task.downloadedBytes;
+        this.updateTask(entry, {
+          status: "paused",
+          downloadedBytes: partBytes,
+          speedBytesPerSec: 0,
+          etaSeconds: null,
+          error: "Paused by user.",
+        });
+        return { ...entry.task };
       }
 
       if (entry.cancelRequested || controller.signal.aborted) {

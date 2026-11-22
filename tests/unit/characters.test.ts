@@ -318,7 +318,8 @@ describe("Character identity composition and execution plan", () => {
   it("selects the stock text workflow for each architecture", () => {
     expect(characterTextWorkflowId("sd15")).toBe("t2i_sd15_base");
     expect(characterTextWorkflowId("sdxl")).toBe("t2i_sdxl_base");
-    expect(characterTextWorkflowId("illustrious")).toBe("t2i_sdxl_base");
+    expect(characterTextWorkflowId("illustrious")).toBe("t2i_illustrious_base");
+    expect(characterTextWorkflowId("moss_image")).toBe("t2i_moss_image");
     expect(characterTextWorkflowId("z_image")).toBe("t2i_z_image_turbo");
   });
 
@@ -326,7 +327,8 @@ describe("Character identity composition and execution plan", () => {
     const mapping: Array<[ModelArchitecture, string | null]> = [
       ["sd15", "i2i_sd15_base"],
       ["sdxl", "i2i_sdxl_base"],
-      ["illustrious", "i2i_sdxl_base"],
+      ["illustrious", "i2i_illustrious_base"],
+      ["moss_image", "i2i_moss_image_edit"],
       ["pony", "i2i_sdxl_base"],
       ["unknown", "i2i_sdxl_base"],
       ["z_image", null],

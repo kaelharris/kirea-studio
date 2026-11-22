@@ -25,12 +25,14 @@ import {
 import {
   CIVITAI_BASE_MODELS,
   CIVITAI_MODEL_TYPES,
+  CIVITAI_PERIODS,
   CIVITAI_SORTS,
   type CivitaiBaseModel,
   type CivitaiDownloadStatus,
   type CivitaiDownloadTask,
   type CivitaiModelSummary,
   type CivitaiModelType,
+  type CivitaiPeriod,
   type CivitaiSearchQuery,
   type CivitaiSort,
   type CivitaiVersion,
@@ -45,6 +47,7 @@ import type {
   AppSettings,
   CuratedModelCatalogItem,
   DownloadTask,
+  GeneratedImageRecord,
   GpuStats,
   ModelArchitecture,
   ModelCategory,
@@ -77,6 +80,7 @@ import {
 } from "../components/models/models-helpers";
 import { CivitaiHubView } from "../components/models/CivitaiHubView";
 import { DownloadsQueueView } from "../components/models/DownloadsQueueView";
+import { HuggingFaceHubView } from "../components/models/HuggingFaceHubView";
 import {
   CivitaiDetailsModal,
   ModelEditorModal,
@@ -85,6 +89,7 @@ import { ModelVaultView } from "../components/models/ModelVaultView";
 
 interface ModelsPageProps {
   models: ModelRecord[];
+  images?: GeneratedImageRecord[];
   catalog: CuratedModelCatalogItem[];
   downloads: DownloadTask[];
   civitaiDownloads: CivitaiDownloadTask[];
@@ -99,12 +104,15 @@ interface ModelsPageProps {
     modelId: string,
     patch: ModelMetadataPatch
   ) => Promise<ModelRecord>;
-  onImportPreview: (modelId: string) => Promise<ModelRecord | null>;
+  onImportPreview: (modelId: string, sourceFilePath?: string) => Promise<ModelRecord | null>;
+  onUpdateSettings: (patch: Partial<AppSettings>) => Promise<void>;
+  onOpenSettings: () => void;
   onToast: (msg: string, tone?: "info" | "error") => void;
 }
 
 export const ModelsPage: React.FC<ModelsPageProps> = ({
   models,
+  images,
   catalog,
   downloads,
   civitaiDownloads,
@@ -117,6 +125,8 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
   onDeleteModel,
   onUpdateModelMetadata,
   onImportPreview,
+  onUpdateSettings,
+  onOpenSettings,
   onToast,
 }) => {
   const [mode, setMode] = useState<PageMode>("vault");
@@ -137,6 +147,14 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
   const [hubType, setHubType] = useState<"all" | CivitaiModelType>("all");
   const [hubBase, setHubBase] = useState<"all" | CivitaiBaseModel>("all");
   const [hubSort, setHubSort] = useState<CivitaiSort>("Most Downloaded");
+  const [hubPeriod, setHubPeriod] = useState<CivitaiPeriod>("Week");
+  const [hubTab, setHubTab] = useState<
+    "hot" | "trending" | "checkpoints" | "loras" | "recent"
+  >("hot");
+  const [hubProvider, setHubProvider] = useState<
+    "civitai" | "huggingface" | "seaart"
+  >("civitai");
+  const [hubUpdatedAt, setHubUpdatedAt] = useState<string | null>(null);
   const [hubItems, setHubItems] = useState<CivitaiModelSummary[]>([]);
   const [hubCursor, setHubCursor] = useState<string | null>(null);
   const [hubLoading, setHubLoading] = useState(false);
@@ -217,6 +235,35 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
     [versionSelection]
   );
 
+  const modelForVersion = useCallback(
+    (version: CivitaiVersion): ModelRecord | null => {
+      const fileName = version.fileName.toLowerCase();
+      return (
+        models.find(
+          (model) =>
+            model.installed &&
+            model.filePath.split(/[\\/]/).pop()?.toLowerCase() === fileName
+        ) ?? null
+      );
+    },
+    [models]
+  );
+
+  const handleUseVersionInCreate = useCallback(
+    (version: CivitaiVersion): void => {
+      const model = modelForVersion(version);
+      if (!model) {
+        onToast(
+          "This version is not scanned into the vault yet. Rescan models and try again.",
+          "error"
+        );
+        return;
+      }
+      onUseModel(model);
+    },
+    [modelForVersion, onToast, onUseModel]
+  );
+
   const activeDownloads = useMemo(
     () => civitaiDownloads.filter((task) => isActiveDownload(task.status)),
     [civitaiDownloads]
@@ -240,21 +287,36 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
         setHubLoading(true);
       }
       setHubError(null);
+      if (hubProvider === "seaart" || hubProvider === "huggingface") {
+        setHubItems([]);
+        setHubCursor(null);
+        setHubLoaded(true);
+        setHubLoading(false);
+        setHubLoadingMore(false);
+        return;
+      }
       try {
         const query: CivitaiSearchQuery = {
           query: hubDebounced || undefined,
           type: hubType === "all" ? undefined : hubType,
           baseModel: hubBase === "all" ? undefined : hubBase,
           sort: hubSort,
+          period: hubPeriod,
           nsfw: !settings.nsfwFilter,
           limit: HUB_PAGE_SIZE,
           cursor: cursor ?? undefined,
         };
         const result = await window.kirea.searchCivitaiModels(query);
         if (requestId !== hubRequestRef.current) return;
-        setHubItems((prev) => (append ? [...prev, ...result.items] : result.items));
+        setHubItems((prev) => {
+          if (!append) return result.items;
+          const existingIds = new Set(prev.map((item) => item.id));
+          const uniqueItems = result.items.filter((item) => !existingIds.has(item.id));
+          return [...prev, ...uniqueItems];
+        });
         setHubCursor(result.nextCursor);
         setHubLoaded(true);
+        setHubUpdatedAt(new Date().toISOString());
       } catch (err) {
         if (requestId !== hubRequestRef.current) return;
         setHubError(err instanceof Error ? err.message : String(err));
@@ -267,7 +329,7 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
         }
       }
     },
-    [hubDebounced, hubType, hubBase, hubSort, settings.nsfwFilter]
+    [hubDebounced, hubType, hubBase, hubSort, hubPeriod, hubProvider, settings.nsfwFilter]
   );
 
   useEffect(() => {
@@ -282,7 +344,6 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
     try {
       await window.kirea.startCivitaiDownload(model.id, version.id);
       onToast(`Downloading ${model.name} — ${version.name}`);
-      setMode("downloads");
     } catch (err) {
       onToast(err instanceof Error ? err.message : String(err), "error");
     }
@@ -293,6 +354,16 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
   ): Promise<void> => {
     try {
       await window.kirea.cancelCivitaiDownload(task.id);
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : String(err), "error");
+    }
+  };
+
+  const handlePauseCivitaiDownload = async (
+    task: CivitaiDownloadTask
+  ): Promise<void> => {
+    try {
+      await window.kirea.pauseCivitaiDownload(task.id);
     } catch (err) {
       onToast(err instanceof Error ? err.message : String(err), "error");
     }
@@ -403,6 +474,7 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
         triggerWords: splitList(editDraft.triggerWords),
         tags: splitList(editDraft.tags),
         notes: editDraft.notes.trim(),
+        previewPath: editTarget.metadata?.previewPath ?? undefined,
       };
       const updated = await onUpdateModelMetadata(editTarget.id, patch);
       setEditTarget(updated);
@@ -414,15 +486,15 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
     }
   };
 
-  const importPreview = async (): Promise<void> => {
+  const importPreview = async (sourceFilePath?: string): Promise<void> => {
     if (!editTarget) return;
     setImportingPreview(true);
     try {
-      const updated = await onImportPreview(editTarget.id);
+      const updated = await onImportPreview(editTarget.id, sourceFilePath);
       if (updated) {
         setEditTarget(updated);
         setEditDraft((prev) => (prev ? { ...prev, previewMode: "custom" } : prev));
-        onToast("Custom preview image imported.");
+        onToast(sourceFilePath ? "Preview assigned from generation." : "Custom preview image imported.");
       }
     } catch (err) {
       onToast(err instanceof Error ? err.message : String(err), "error");
@@ -440,6 +512,51 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
       onToast(err instanceof Error ? err.message : String(err), "error");
     }
   };
+  const selectHubTab = useCallback(
+    (tab: "hot" | "trending" | "checkpoints" | "loras" | "recent" | "installed") => {
+      if (tab === "installed") {
+        setMode("vault");
+        return;
+      }
+      setHubTab(tab);
+      setHubBase("all");
+      if (tab === "hot") {
+        setHubSort("Most Downloaded");
+        setHubPeriod("Week");
+        setHubType("all");
+      } else if (tab === "trending") {
+        setHubSort("Most Liked");
+        setHubPeriod("Week");
+        setHubType("all");
+      } else if (tab === "checkpoints") {
+        setHubSort("Most Downloaded");
+        setHubPeriod("Month");
+        setHubType("Checkpoint");
+      } else if (tab === "loras") {
+        setHubSort("Most Downloaded");
+        setHubPeriod("Month");
+        setHubType("LORA");
+      } else {
+        setHubSort("Newest");
+        setHubPeriod("Month");
+        setHubType("all");
+      }
+      setHubProvider("civitai");
+    },
+    []
+  );
+
+  const selectHubProvider = useCallback(
+    (provider: "civitai" | "huggingface" | "seaart" | "local") => {
+      if (provider === "local") {
+        setMode("vault");
+        return;
+      }
+      setHubProvider(provider);
+    },
+    []
+  );
+
   const details = detailsData ?? detailsTarget;
   const detailVersions = details?.versions ?? [];
   const sampleImages = Array.from(
@@ -462,7 +579,7 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
                 <RefreshCw className="w-4 h-4" />
                 Rescan Models
               </Button>
-            ) : mode === "hub" ? (
+            ) : mode === "hub" && hubProvider !== "huggingface" ? (
               <Button
                 variant="secondary"
                 loading={hubLoading}
@@ -536,12 +653,24 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
           onRequestDelete={setDeleteTarget}
           onStartCatalogDownload={(item) => void handleStartCatalogDownload(item)}
           onOpenHub={() => setMode("hub")}
+          onSwitchToQueue={() => setMode("downloads")}
           onScan={() => void handleScan()}
           onOpenPath={(p) => void window.kirea.openPath(p)}
         />
       )}
 
-      {mode === "hub" && (
+      {mode === "hub" && hubProvider === "huggingface" && (
+        <HuggingFaceHubView
+          tokenSet={Boolean(settings.huggingfaceTokenSet)}
+          hfDownloads={downloads.filter((task) => task.sourceName === "huggingface")}
+          onSelectProvider={selectHubProvider}
+          onOpenDownloads={() => setMode("downloads")}
+          onOpenSettings={onOpenSettings}
+          onToast={onToast}
+        />
+      )}
+
+      {mode === "hub" && hubProvider !== "huggingface" && (
         <CivitaiHubView
           hubQuery={hubQuery}
           setHubQuery={setHubQuery}
@@ -551,6 +680,15 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
           setHubBase={setHubBase}
           hubSort={hubSort}
           setHubSort={setHubSort}
+          hubPeriod={hubPeriod}
+          setHubPeriod={setHubPeriod}
+          hubTab={hubTab}
+          selectHubTab={selectHubTab}
+          hubProvider={hubProvider}
+          selectHubProvider={selectHubProvider}
+          hubUpdatedAt={hubUpdatedAt}
+          matureEnabled={!settings.nsfwFilter}
+          onSetMature={(enabled) => void onUpdateSettings({ nsfwFilter: !enabled })}
           hubItems={hubItems}
           hubCursor={hubCursor}
           hubLoading={hubLoading}
@@ -567,6 +705,12 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
           onStartDownload={(m, v) => void handleStartCivitaiDownload(m, v)}
           onCancelDownload={(t) => void handleCancelCivitaiDownload(t)}
           onOpenDownloads={() => setMode("downloads")}
+          onUseInCreate={handleUseVersionInCreate}
+          onOpenExternal={(u) => void window.kirea.openExternalUrl(u)}
+          onScanLocal={() => {
+            setMode("vault");
+            void handleScan();
+          }}
         />
       )}
 
@@ -575,10 +719,15 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
           civitaiDownloads={civitaiDownloads}
           activeDownloads={activeDownloads}
           completedDownloads={completedDownloads}
+          hfDownloads={downloads.filter((task) => task.sourceName === "huggingface")}
           onSwitchToHub={() => setMode("hub")}
           onSwitchToVault={() => setMode("vault")}
           onCancelDownload={(t) => void handleCancelCivitaiDownload(t)}
+          onPauseDownload={(t) => void handlePauseCivitaiDownload(t)}
           onRetryDownload={(t) => void handleRetryCivitaiDownload(t)}
+          onPauseHfDownload={(t) => void window.kirea.pauseDownload(t.id)}
+          onResumeHfDownload={(t) => void window.kirea.resumeDownload(t.id)}
+          onCancelHfDownload={(t) => void window.kirea.cancelDownload(t.id)}
           onOpenPath={(p) => void window.kirea.openPath(p)}
         />
       )}
@@ -621,8 +770,9 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
         importingPreview={importingPreview}
         onClose={closeEditor}
         onToggleFavorite={(model) => void toggleFavorite(model)}
-        onImportPreview={() => void importPreview()}
+        onImportPreview={(sourceFilePath?: string) => void importPreview(sourceFilePath)}
         onSaveMetadata={() => void saveMetadata()}
+        images={images}
       />
     </div>
   );

@@ -1,6 +1,9 @@
 import React from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { getEffectiveArchitecture } from "../../../shared/model-utils";
+import {
+  getEffectiveArchitecture,
+  getEffectiveModelInfo,
+} from "../../../shared/model-utils";
 import { STORY_CAST_ROLE_LABELS } from "../../../shared/story-utils";
 import type {
   CharacterProfile,
@@ -9,7 +12,6 @@ import type {
   Story,
   StoryCastRole,
 } from "../../../shared/types";
-import { shortModelLabel } from "../../utils/format";
 import { Button, Input, Modal, Select, Textarea } from "../ui/Primitives";
 import { CAST_ROLES, type StoryFormState } from "./story-form-types";
 
@@ -129,7 +131,7 @@ export const StoryEditorModal: React.FC<StoryEditorModalProps> = ({
                 <option value="">Inherit from lead character</option>
                 {checkpointModels.map((model) => (
                   <option key={model.id} value={model.relativePath}>
-                    {shortModelLabel(model.relativePath)} ·{" "}
+                    {getEffectiveModelInfo(model).name} ·{" "}
                     {getEffectiveArchitecture(model)}
                   </option>
                 ))}

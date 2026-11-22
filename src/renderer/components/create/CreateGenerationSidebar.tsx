@@ -1,9 +1,11 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   AlertCircle,
   AlertTriangle,
   BookmarkPlus,
   Check,
+  ChevronDown,
+  ChevronUp,
   Dices,
   Eraser,
   FolderOpen,
@@ -39,10 +41,13 @@ import {
   evaluateLoraCompatibility,
   getEffectiveArchitecture,
   getEffectiveModelInfo,
+  getModelDisplayName,
+  getModelRefDisplayName,
   isGenerationSupportedArchitecture,
   UPSCALE_PRESETS,
   VAE_AUTO,
 } from "../../../shared/model-utils";
+import { isMossWorkflow, isMossWorkflowReady } from "../../../shared/moss-image";
 import { ModelPreview } from "../ModelPreview";
 import {
   Badge,
@@ -54,7 +59,7 @@ import {
   Textarea,
 } from "../ui/Primitives";
 import { MediaImage } from "../ui/MediaImage";
-import { shortModelLabel, toMediaUrl } from "../../utils/format";
+import { toMediaUrl } from "../../utils/format";
 import { DEFAULT_HIRES_CONFIG, describeUpscalerLabel } from "./create-helpers";
 import type { CreateController } from "./useCreateController";
 
@@ -79,6 +84,7 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
     onInspectImage,
     onToggleFavorite,
     onToast,
+    onUpdateSettings,
     validationIssues,
     submitting,
     sourceImageDims,
@@ -150,11 +156,180 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
     warnings,
     progressPercent,
   } = ctrl;
+  const [coreExpanded, setCoreExpanded] = useState(true);
+  const [paramsExpanded, setParamsExpanded] = useState(true);
+  const [advancedExpanded, setAdvancedExpanded] = useState(false);
 
   return (
-    <>
-            <>
-              {/* Character Identity */}
+    <div className="space-y-3.5">
+      {/* 1. Core Model & Recipe */}
+      <div className="rounded-xl border border-border bg-surface p-3 space-y-2.5">
+        <button
+          type="button"
+          onClick={() => setCoreExpanded((p) => !p)}
+          className="flex w-full items-center justify-between text-xs font-semibold text-fg hover:text-accent transition-colors cursor-pointer select-none"
+        >
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[11px] uppercase tracking-wider text-label">
+              1. Core Model & Recipe
+            </span>
+            {currentArch !== "unknown" && (
+              <Badge tone={architectureBadgeTone(currentArch)}>
+                {ARCHITECTURE_LABELS[currentArch]}
+              </Badge>
+            )}
+          </div>
+          {coreExpanded ? (
+            <ChevronUp className="w-3.5 h-3.5 text-fg-subtle" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5 text-fg-subtle" />
+          )}
+        </button>
+
+        {coreExpanded && (
+          <div className="space-y-3 pt-2 border-t border-border/60">
+            {/* Model & Workflow */}
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-fg-muted">
+                  Checkpoint / Base Model
+                </label>
+                {currentArch !== "unknown" && (
+                  <Badge tone={architectureBadgeTone(currentArch)}>
+                    {ARCHITECTURE_LABELS[currentArch]}
+                  </Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {currentCheckpointModel && currentCheckpointInfo?.previewPath && (
+                  <div className="w-14 shrink-0">
+                    <ModelPreview
+                      model={currentCheckpointModel}
+                      className="h-14 rounded-lg"
+                      iconSizeClass="w-4 h-4"
+                    />
+                  </div>
+                )}
+                <Select
+                  value={draft.checkpoint}
+                  onChange={(e) => handleCheckpointChange(e.target.value)}
+                >
+                  {primaryModels.length === 0 ? (
+                    <option value="">No checkpoints scanned yet</option>
+                  ) : (
+                    checkpointGroups.map(([label, group]) => (
+                      <optgroup key={label} label={label}>
+                        {group.map((m) => (
+                          <option key={m.id} value={m.relativePath}>
+                            {getModelDisplayName(m)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))
+                  )}
+                </Select>
+              </div>
+              {currentArch !== "unknown" && (
+                <p className="text-[11px] text-fg-subtle leading-relaxed">
+                  {ARCHITECTURE_HINTS[currentArch]}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-fg-muted">
+                Workflow Pipeline
+              </label>
+              <Select
+                value={draft.workflowId}
+                onChange={(e) => handleWorkflowChange(e.target.value)}
+              >
+                {compatibleWorkflows.map((wf) => (
+                  <option key={wf.id} value={wf.id}>
+                    {wf.name} (v{wf.version})
+                  </option>
+                ))}
+              </Select>
+              {currentArch === "moss_image" &&
+                !isMossWorkflowReady(models, draft.workflowId) && (
+                  <div className="p-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-200 text-xs space-y-1">
+                    <div className="font-semibold text-amber-300">Missing MOSS Requirements</div>
+                    <p className="text-[11px] text-amber-200/90 leading-snug">
+                      To generate with MOSS-Image, install the <strong>Qwen3.5-9B text encoder</strong> and <strong>FLUX.2 small VAE</strong> in your Model Vault.
+                    </p>
+                  </div>
+              )}
+            </div>
+
+            {isMossWorkflow(draft.workflowId) &&
+              draft.workflowId === "t2i_moss_image_layout" && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-semibold text-fg-muted">
+                      Layout boxes (JSON)
+                    </label>
+                    <button
+                      type="button"
+                      className="text-[10px] text-accent hover:underline cursor-pointer"
+                      onClick={() =>
+                        setDraft((p) => ({
+                          ...p,
+                          layoutJson: JSON.stringify(
+                            [
+                              {
+                                x: 128,
+                                y: 128,
+                                width: 768,
+                                height: 384,
+                                metadata: {
+                                  type: "text",
+                                  text: "MOSS",
+                                  desc: "Large display title across the top of the image",
+                                  palette: [],
+                                },
+                              },
+                              {
+                                x: 256,
+                                y: 512,
+                                width: 512,
+                                height: 384,
+                                metadata: {
+                                  type: "obj",
+                                  text: "",
+                                  desc: "Main subject centered in the lower half",
+                                  palette: [],
+                                },
+                              },
+                            ],
+                            null,
+                            2
+                          ),
+                        }))
+                      }
+                    >
+                      Insert sample
+                    </button>
+                  </div>
+                  <Textarea
+                    value={draft.layoutJson ?? ""}
+                    onChange={(e) =>
+                      setDraft((p) => ({ ...p, layoutJson: e.target.value }))
+                    }
+                    placeholder='[{"x":128,"y":128,"width":768,"height":384,"metadata":{"type":"text","text":"MOSS","desc":"Title","palette":[]}}]'
+                    rows={7}
+                    spellCheck={false}
+                    className="font-mono text-[11px]"
+                  />
+                  <p className="text-[10px] text-fg-subtle leading-snug">
+                    Pixel-space boxes on a {draft.width}×{draft.height} canvas.
+                    Text boxes render their exact text; object boxes use the
+                    description.
+                  </p>
+                </div>
+              )}
+          </div>
+            {/* Character Identity */}
               <div className="p-2.5 rounded-xl bg-bg border border-border space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-label">
@@ -219,8 +394,10 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
                       ) && (
                         <p className="text-[11px] text-warning leading-relaxed">
                           Checkpoint '
-                          {activeCharacter.checkpointName ??
-                            shortModelLabel(activeCharacter.checkpointPath)}
+                          {getModelRefDisplayName(
+                            models,
+                            activeCharacter.checkpointPath
+                          ) || activeCharacter.checkpointName}
                           ' is not installed; kept the current checkpoint.
                         </p>
                       )}
@@ -233,8 +410,7 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
                   </div>
                 )}
               </div>
-
-              {/* LoRA Recipe Bar */}
+            {/* LoRA Recipe Bar */}
               <div className="p-2.5 rounded-xl bg-bg border border-border space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-label">
@@ -284,158 +460,7 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
                   </p>
                 )}
               </div>
-
-              {/* Model & Workflow */}
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-fg-muted">
-                  Checkpoint / Base Model
-                </label>
-                {currentArch !== "unknown" && (
-                  <Badge tone={architectureBadgeTone(currentArch)}>
-                    {ARCHITECTURE_LABELS[currentArch]}
-                  </Badge>
-                )}
-              </div>
-              <div className="flex items-start gap-2">
-                {currentCheckpointModel && currentCheckpointInfo?.previewPath && (
-                  <div className="w-11 shrink-0">
-                    <ModelPreview
-                      model={currentCheckpointModel}
-                      className="h-11 rounded-lg"
-                      iconSizeClass="w-3.5 h-3.5"
-                    />
-                  </div>
-                )}
-                <Select
-                  value={draft.checkpoint}
-                  onChange={(e) => handleCheckpointChange(e.target.value)}
-                >
-                  {primaryModels.length === 0 ? (
-                    <option value="">No checkpoints scanned yet</option>
-                  ) : (
-                    checkpointGroups.map(([label, group]) => (
-                      <optgroup key={label} label={label}>
-                        {group.map((m) => (
-                          <option key={m.id} value={m.relativePath}>
-                            {getEffectiveModelInfo(m).name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))
-                  )}
-                </Select>
-              </div>
-              {currentCheckpointInfo?.description && (
-                <p className="text-[11px] text-fg-subtle leading-relaxed">
-                  {currentCheckpointInfo.description}
-                </p>
-              )}
-              {currentArch !== "unknown" && (
-                <p className="text-[11px] text-fg-subtle leading-relaxed">
-                  {ARCHITECTURE_HINTS[currentArch]}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-fg-muted">
-                Workflow Pipeline
-              </label>
-              <Select
-                value={draft.workflowId}
-                onChange={(e) => handleWorkflowChange(e.target.value)}
-              >
-                {compatibleWorkflows.map((wf) => (
-                  <option key={wf.id} value={wf.id}>
-                    {wf.name} (v{wf.version})
-                  </option>
-                ))}
-              </Select>
-            </div>
-
-            {vaeModels.length > 0 && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-fg-muted">
-                  VAE
-                </label>
-                <Select
-                  value={draft.vae ?? VAE_AUTO}
-                  onChange={(e) =>
-                    setDraft((p) => ({ ...p, vae: e.target.value }))
-                  }
-                >
-                  <option value={VAE_AUTO}>
-                    Auto (Recommended)
-                    {autoVaeName
-                      ? ` — ${shortModelLabel(autoVaeName)}`
-                      : " — checkpoint default"}
-                  </option>
-                  <option value="">Checkpoint Built-in VAE</option>
-                  {vaeModels.map((v) => (
-                    <option key={v.id} value={v.relativePath}>
-                      [{ARCHITECTURE_LABELS[getEffectiveArchitecture(v)]}]{" "}
-                      {getEffectiveModelInfo(v).name}
-                    </option>
-                  ))}
-                </Select>
-                <p className="text-[11px] text-fg-subtle leading-relaxed">
-                  Auto resolves the correct decoder per architecture (SDXL → sdxl_vae_fp16fix,
-                  SD 1.5 → vae-ft-mse, Anima → qwen_image_vae).
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Img2Img Input Panel */}
-          {draft.mode === "img2img" && (
-            <div className="p-3 rounded-xl bg-bg border border-border space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-fg">
-                  Reference Image
-                </span>
-                <Button size="sm" variant="secondary" onClick={() => void handlePickInputImage()}>
-                  <ImagePlus className="w-3.5 h-3.5" />
-                  Choose Image
-                </Button>
-              </div>
-              {draft.inputImagePath ? (
-                <div className="relative rounded-lg overflow-hidden border border-border bg-well h-32 flex items-center justify-center">
-                  <MediaImage
-                    src={toMediaUrl(draft.inputImagePath)}
-                    alt="Img2Img reference"
-                    className="max-h-full max-w-full object-contain"
-                  />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setDraft((p) => ({ ...p, inputImagePath: null }))
-                    }
-                    aria-label="Clear reference image"
-                    className="absolute top-1.5 right-1.5 p-1 rounded-md bg-black/70 text-white hover:bg-danger cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ) : (
-                <div className="text-xs text-fg-subtle py-4 text-center border border-dashed border-border rounded-lg">
-                  Select a PNG, JPEG, or WebP input image.
-                </div>
-              )}
-
-              <SliderField
-                label="Denoise Strength"
-                value={draft.denoise}
-                min={0.1}
-                max={1.0}
-                step={0.05}
-                onChange={(v) => setDraft((p) => ({ ...p, denoise: v }))}
-              />
-            </div>
-          )}
-
-          {/* LoRA Stack */}
+            {/* LoRA Stack */}
           <div className="space-y-2 pt-2 border-t border-border">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
@@ -598,8 +623,120 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
               );
             })}
           </div>
+            {/* Img2Img Input Panel */}
+          {draft.mode === "img2img" && (
+            <div className="p-3 rounded-xl bg-bg border border-border space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-fg">
+                  Reference Image
+                </span>
+                <Button size="sm" variant="secondary" onClick={() => void handlePickInputImage()}>
+                  <ImagePlus className="w-3.5 h-3.5" />
+                  Choose Image
+                </Button>
+              </div>
+              {draft.inputImagePath ? (
+                <div className="relative rounded-lg overflow-hidden border border-border bg-well h-32 flex items-center justify-center">
+                  <MediaImage
+                    src={toMediaUrl(draft.inputImagePath)}
+                    alt="Img2Img reference"
+                    className="max-h-full max-w-full object-contain"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDraft((p) => ({ ...p, inputImagePath: null }))
+                    }
+                    aria-label="Clear reference image"
+                    className="absolute top-1.5 right-1.5 p-1 rounded-md bg-black/70 text-white hover:bg-danger cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="text-xs text-fg-subtle py-4 text-center border border-dashed border-border rounded-lg">
+                  Select a PNG, JPEG, or WebP input image.
+                </div>
+              )}
 
-          {/* Aspect Ratio & Dimensions */}
+              {ctrl.workflowMode === "inpaint" && (
+                <div className="rounded-lg bg-accent-soft/30 p-2 text-[11px] text-accent border border-accent/20">
+                  <span className="font-semibold">Inpaint active:</span> Brush directly on the canvas preview to mark the area to regenerate.
+                </div>
+              )}
+              {ctrl.workflowMode === "outpaint" && (
+                <div className="rounded-lg bg-accent-soft/30 p-2 text-[11px] text-accent border border-accent/20">
+                  <span className="font-semibold">Outpaint active:</span> Use the directional padding buttons on the canvas to extend borders.
+                </div>
+              )}
+              {ctrl.workflowMode === "variations" && (
+                <div className="rounded-lg bg-surface-subtle p-2 text-[11px] text-fg-muted border border-border">
+                  <span className="font-semibold">Variations active:</span> Generates diverse interpretations with randomized seed.
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <SliderField
+                  label="Denoise Strength"
+                  value={draft.denoise}
+                  min={0.1}
+                  max={1.0}
+                  step={0.05}
+                  onChange={(v) => setDraft((p) => ({ ...p, denoise: v }))}
+                />
+                <div className="flex items-center gap-1.5 pt-1">
+                  <span className="text-[10px] text-fg-subtle">Presets:</span>
+                  {[
+                    { label: "Subtle (0.35)", val: 0.35 },
+                    { label: "Balanced (0.55)", val: 0.55 },
+                    { label: "Creative (0.75)", val: 0.75 },
+                  ].map((p) => (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={() => setDraft((d) => ({ ...d, denoise: p.val }))}
+                      className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer border ${
+                        Math.abs(draft.denoise - p.val) < 0.03
+                          ? "bg-accent text-white border-accent"
+                          : "bg-surface text-fg-muted border-border hover:text-fg"
+                      }`}
+                    >
+                      {p.label.split(" ")[0]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          </div>
+        )}
+      </div>
+
+      {/* 2. Generation Parameters */}
+      <div className="rounded-xl border border-border bg-surface p-3 space-y-2.5">
+        <button
+          type="button"
+          onClick={() => setParamsExpanded((p) => !p)}
+          className="flex w-full items-center justify-between text-xs font-semibold text-fg hover:text-accent transition-colors cursor-pointer select-none"
+        >
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[11px] uppercase tracking-wider text-label">
+              2. Generation Parameters
+            </span>
+            <span className="font-mono text-[11px] text-fg-subtle tabular-nums">
+              {draft.width}×{draft.height} · {draft.steps} steps
+            </span>
+          </div>
+          {paramsExpanded ? (
+            <ChevronUp className="w-3.5 h-3.5 text-fg-subtle" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5 text-fg-subtle" />
+          )}
+        </button>
+
+        {paramsExpanded && (
+          <div className="space-y-3 pt-2 border-t border-border/60">
+            {/* Aspect Ratio & Dimensions */}
           <div className="space-y-2.5 pt-2 border-t border-border">
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold text-fg-muted">
@@ -690,8 +827,168 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
               </div>
             )}
           </div>
+            {/* Sampling Controls */}
+          <div className="space-y-3 pt-2 border-t border-border">
+            <SliderField
+              label="Sampling Steps"
+              value={draft.steps}
+              min={1}
+              max={60}
+              step={1}
+              onChange={(v) => setDraft((p) => ({ ...p, steps: v }))}
+            />
+            <SliderField
+              label="CFG Guidance"
+              value={draft.cfg}
+              min={1}
+              max={15}
+              step={0.5}
+              onChange={(v) => setDraft((p) => ({ ...p, cfg: v }))}
+            />
 
-          {/* High-Res Fix (2-Pass Detail) */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-[11px] text-fg-subtle">Sampler</label>
+                <Select
+                  value={draft.sampler}
+                  onChange={(e) =>
+                    setDraft((p) => ({ ...p, sampler: e.target.value }))
+                  }
+                  className="h-8 text-xs"
+                >
+                  {samplersAndSchedulers.samplers.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] text-fg-subtle">Scheduler</label>
+                <Select
+                  value={draft.scheduler}
+                  onChange={(e) =>
+                    setDraft((p) => ({ ...p, scheduler: e.target.value }))
+                  }
+                  className="h-8 text-xs"
+                >
+                  {samplersAndSchedulers.schedulers.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+
+            {/* Seed */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-fg-muted font-medium">Seed</span>
+                <label className="inline-flex items-center gap-1.5 text-[11px] text-fg-muted cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={draft.randomSeed}
+                    onChange={(e) =>
+                      setDraft((p) => ({ ...p, randomSeed: e.target.checked }))
+                    }
+                    className="accent-accent"
+                  />
+                  Randomize each run
+                </label>
+              </div>
+              <div className="flex gap-1.5">
+                <Input
+                  type="number"
+                  min={0}
+                  max={2147483647}
+                  value={draft.seed}
+                  disabled={draft.randomSeed}
+                  onChange={(e) =>
+                    setDraft((p) => ({
+                      ...p,
+                      seed: Math.max(0, Number(e.target.value) || 0),
+                    }))
+                  }
+                  className="h-8 text-xs tabular-nums"
+                />
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  title="Generate new fixed seed"
+                  onClick={() =>
+                    setDraft((p) => ({
+                      ...p,
+                      randomSeed: false,
+                      seed: Math.floor(Math.random() * 2_147_483_647),
+                    }))
+                  }
+                >
+                  <Dices className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            </div>
+          </div>
+          </div>
+        )}
+      </div>
+
+      {/* 3. Advanced Conditioning */}
+      <div className="rounded-xl border border-border bg-surface p-3 space-y-2.5">
+        <button
+          type="button"
+          onClick={() => setAdvancedExpanded((p) => !p)}
+          className="flex w-full items-center justify-between text-xs font-semibold text-fg hover:text-accent transition-colors cursor-pointer select-none"
+        >
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[11px] uppercase tracking-wider text-label">
+              3. Advanced Conditioning
+            </span>
+            <span className="text-[11px] text-fg-subtle">
+              VAE · Hires · Batch
+            </span>
+          </div>
+          {advancedExpanded ? (
+            <ChevronUp className="w-3.5 h-3.5 text-fg-subtle" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5 text-fg-subtle" />
+          )}
+        </button>
+
+        {advancedExpanded && (
+          <div className="space-y-3 pt-2 border-t border-border/60">
+            <div className="p-2.5 rounded-xl bg-bg border border-border space-y-2">{vaeModels.length > 0 && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-fg-muted">
+                  VAE
+                </label>
+                <Select
+                  value={draft.vae ?? VAE_AUTO}
+                  onChange={(e) =>
+                    setDraft((p) => ({ ...p, vae: e.target.value }))
+                  }
+                >
+                  <option value={VAE_AUTO}>
+                    Auto (Recommended)
+                    {autoVaeName
+                      ? ` — ${getModelRefDisplayName(models, autoVaeName)}`
+                      : " — checkpoint default"}
+                  </option>
+                  <option value="">Checkpoint Built-in VAE</option>
+                  {vaeModels.map((v) => (
+                    <option key={v.id} value={v.relativePath}>
+                      [{ARCHITECTURE_LABELS[getEffectiveArchitecture(v)]}]{" "}
+                      {getEffectiveModelInfo(v).name}
+                    </option>
+                  ))}
+                </Select>
+                <p className="text-[11px] text-fg-subtle leading-relaxed">
+                  Auto resolves the correct decoder per architecture (SDXL → sdxl_vae_fp16fix,
+                  SD 1.5 → vae-ft-mse, Anima → qwen_image_vae).
+                </p>
+              </div>
+            )}</div>
+            {/* High-Res Fix (2-Pass Detail) */}
           <div className="p-3 rounded-xl bg-bg border border-border space-y-3">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
@@ -887,109 +1184,6 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
               </p>
             )}
           </div>
-
-          {/* Sampling Controls */}
-          <div className="space-y-3 pt-2 border-t border-border">
-            <SliderField
-              label="Sampling Steps"
-              value={draft.steps}
-              min={1}
-              max={60}
-              step={1}
-              onChange={(v) => setDraft((p) => ({ ...p, steps: v }))}
-            />
-            <SliderField
-              label="CFG Guidance"
-              value={draft.cfg}
-              min={1}
-              max={15}
-              step={0.5}
-              onChange={(v) => setDraft((p) => ({ ...p, cfg: v }))}
-            />
-
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="text-[11px] text-fg-subtle">Sampler</label>
-                <Select
-                  value={draft.sampler}
-                  onChange={(e) =>
-                    setDraft((p) => ({ ...p, sampler: e.target.value }))
-                  }
-                  className="h-8 text-xs"
-                >
-                  {samplersAndSchedulers.samplers.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[11px] text-fg-subtle">Scheduler</label>
-                <Select
-                  value={draft.scheduler}
-                  onChange={(e) =>
-                    setDraft((p) => ({ ...p, scheduler: e.target.value }))
-                  }
-                  className="h-8 text-xs"
-                >
-                  {samplersAndSchedulers.schedulers.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-            </div>
-
-            {/* Seed */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-fg-muted font-medium">Seed</span>
-                <label className="inline-flex items-center gap-1.5 text-[11px] text-fg-muted cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={draft.randomSeed}
-                    onChange={(e) =>
-                      setDraft((p) => ({ ...p, randomSeed: e.target.checked }))
-                    }
-                    className="accent-accent"
-                  />
-                  Randomize each run
-                </label>
-              </div>
-              <div className="flex gap-1.5">
-                <Input
-                  type="number"
-                  min={0}
-                  max={2147483647}
-                  value={draft.seed}
-                  disabled={draft.randomSeed}
-                  onChange={(e) =>
-                    setDraft((p) => ({
-                      ...p,
-                      seed: Math.max(0, Number(e.target.value) || 0),
-                    }))
-                  }
-                  className="h-8 text-xs tabular-nums"
-                />
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  title="Generate new fixed seed"
-                  onClick={() =>
-                    setDraft((p) => ({
-                      ...p,
-                      randomSeed: false,
-                      seed: Math.floor(Math.random() * 2_147_483_647),
-                    }))
-                  }
-                >
-                  <Dices className="w-3.5 h-3.5" />
-                </Button>
-              </div>
-            </div>
-
             {/* Batch, Output Format, Performance Profile */}
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
@@ -1044,8 +1238,38 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
                 <option value="memory_saver">Memory Saver (Low VRAM)</option>
               </Select>
             </div>
+
+            <label className="flex items-center justify-between gap-3 p-2 rounded-lg bg-surface border border-border cursor-pointer">
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5 text-[11px] font-medium text-fg">
+                  Mature Content (18+)
+                  <span
+                    className={`px-1 py-0.5 rounded-sm font-mono text-[9px] font-semibold uppercase tracking-[0.08em] border ${
+                      settings.nsfwFilter
+                        ? "bg-surface-subtle text-fg-subtle border-border"
+                        : "bg-warning-soft text-warning border-warning/30"
+                    }`}
+                  >
+                    {settings.nsfwFilter ? "Off" : "On"}
+                  </span>
+                </span>
+                <span className="block text-[10px] text-fg-subtle leading-snug mt-0.5">
+                  Provider safe-browsing plus local blur. Off by default.
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={!settings.nsfwFilter}
+                onChange={(e) =>
+                  void onUpdateSettings({ nsfwFilter: !e.target.checked })
+                }
+                className="accent-accent shrink-0"
+                aria-label="Show mature model content"
+              />
+            </label>
           </div>
-            </>
-    </>
+        )}
+      </div>
+    </div>
   );
 };

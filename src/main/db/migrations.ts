@@ -1,4 +1,6 @@
 import type Database from "better-sqlite3";
+import { classifyImageOperation } from "../../shared/image-labels";
+import type { GenerationMode } from "../../shared/types";
 
 export interface Migration {
   version: number;
@@ -673,6 +675,120 @@ export const MIGRATIONS: Migration[] = [
 
         CREATE INDEX IF NOT EXISTS idx_videos_created
           ON generated_videos(created_at DESC);
+      `);
+    },
+  },
+  {
+    version: 11,
+    name: "image_operation_lineage",
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE generated_images
+          ADD COLUMN parent_image_id TEXT REFERENCES generated_images(id) ON DELETE SET NULL;
+
+        CREATE TABLE IF NOT EXISTS image_operations (
+          id TEXT PRIMARY KEY,
+          image_id TEXT NOT NULL REFERENCES generated_images(id) ON DELETE CASCADE,
+          sequence INTEGER NOT NULL,
+          operation TEXT NOT NULL,
+          workflow_id TEXT NOT NULL,
+          workflow_version TEXT,
+          checkpoint TEXT NOT NULL,
+          prompt TEXT NOT NULL,
+          seed INTEGER NOT NULL,
+          parameters_json TEXT NOT NULL DEFAULT '{}',
+          parent_image_id TEXT REFERENCES generated_images(id) ON DELETE SET NULL,
+          created_at TEXT NOT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_image_operations_image
+          ON image_operations(image_id);
+        CREATE INDEX IF NOT EXISTS idx_image_operations_parent
+          ON image_operations(parent_image_id);
+
+        UPDATE generated_images AS child
+        SET parent_image_id = (
+          SELECT parent.id
+          FROM generated_images parent
+          JOIN generation_jobs job ON job.id = child.job_id
+          WHERE parent.file_path = json_extract(job.settings_json, '$.inputImagePath')
+          LIMIT 1
+        )
+        WHERE parent_image_id IS NULL;
+      `);
+
+      const rows = db
+        .prepare(
+          `SELECT g.id, g.mode, g.workflow_id, g.checkpoint, g.prompt, g.seed,
+                  g.created_at, g.parent_image_id, j.workflow_version, j.settings_json
+           FROM generated_images g
+           LEFT JOIN generation_jobs j ON j.id = g.job_id`
+        )
+        .all() as Array<{
+        id: string;
+        mode: string;
+        workflow_id: string;
+        checkpoint: string;
+        prompt: string;
+        seed: number;
+        created_at: string;
+        parent_image_id: string | null;
+        workflow_version: string | null;
+        settings_json: string | null;
+      }>;
+
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      const sequenceCache = new Map<string, number>();
+      const sequenceFor = (id: string, depth = 0): number => {
+        const cached = sequenceCache.get(id);
+        if (cached !== undefined) return cached;
+        const row = byId.get(id);
+        if (!row || depth > 32) return 0;
+        const parent = row.parent_image_id ? byId.get(row.parent_image_id) : null;
+        const value = parent ? sequenceFor(parent.id, depth + 1) + 1 : 0;
+        sequenceCache.set(id, value);
+        return value;
+      };
+
+      const insert = db.prepare(
+        `INSERT OR IGNORE INTO image_operations (
+          id, image_id, sequence, operation, workflow_id, workflow_version,
+          checkpoint, prompt, seed, parameters_json, parent_image_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      for (const row of rows) {
+        let parameters: Record<string, unknown> = {};
+        if (row.settings_json) {
+          try {
+            parameters = JSON.parse(row.settings_json) as Record<string, unknown>;
+          } catch {
+            parameters = {};
+          }
+        }
+        insert.run(
+          `${row.id}:op`,
+          row.id,
+          sequenceFor(row.id),
+          classifyImageOperation(row.mode as GenerationMode, row.workflow_id),
+          row.workflow_id,
+          row.workflow_version,
+          row.checkpoint,
+          row.prompt,
+          row.seed,
+          JSON.stringify(parameters),
+          row.parent_image_id,
+          row.created_at
+        );
+      }
+    },
+  },
+  {
+    version: 12,
+    name: "model_discovery_source_metadata",
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE model_discovery ADD COLUMN source_json TEXT;
+        ALTER TABLE model_discovery ADD COLUMN embedded_title TEXT;
       `);
     },
   },

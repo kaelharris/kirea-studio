@@ -8,10 +8,10 @@ import {
   getEffectiveArchitecture,
   getEffectiveModelInfo,
 } from "../shared/model-utils";
-import type { PerformanceProfile } from "../shared/types";
+import type { GeneratedImageRecord, PerformanceProfile } from "../shared/types";
 import { ImagePreviewModal } from "./components/ImagePreviewModal";
 import { RuntimeSetupBanner } from "./components/RuntimeSetupBanner";
-import { Badge, Button } from "./components/ui/Primitives";
+import { Badge, Button, ContextMenuProvider } from "./components/ui/Primitives";
 import { CharactersPage } from "./pages/CharactersPage";
 import { CreatePage } from "./pages/CreatePage";
 import { ExplorePage } from "./pages/ExplorePage";
@@ -27,6 +27,7 @@ import { WorkflowsPage } from "./pages/WorkflowsPage";
 import { SidebarNav } from "./app/SidebarNav";
 import { ToastStack } from "./app/ToastStack";
 import { JobStatusAnnouncer } from "./app/JobStatusAnnouncer";
+import { UpdateNotice } from "./components/UpdateNotice";
 import { useAppController } from "./app/useAppController";
 
 export const App: React.FC = () => {
@@ -37,6 +38,7 @@ export const App: React.FC = () => {
     setSettings,
     resolvedTheme,
     runtime,
+    updateState,
     hardware,
     models,
     setModels,
@@ -70,12 +72,19 @@ export const App: React.FC = () => {
     pushToast,
     activeWorkCount,
     handleUpdateSettings,
+    handleCheckForUpdates,
+    handleDownloadUpdate,
+    handleCancelUpdateDownload,
+    handleDismissUpdate,
+    handleSetUpdateChannel,
+    handleInstallUpdate,
     handleStartRuntime,
     handleStopRuntime,
     handleTestConnection,
     handleApplyPreset,
     handleUpscaleImage,
     handleReuseImageSettings,
+    handleSendImageToWorkflow,
     handleToggleFavorite,
     handleUpdateImageMeta,
     handleDeleteImage,
@@ -115,6 +124,31 @@ export const App: React.FC = () => {
   } | null>(null);
   const clearLibraryFocus = React.useCallback(() => setLibraryFocus(null), []);
 
+  // The viewer navigates within the collection that launched it. Pages that
+  // show a filtered list pass that list so arrow keys cannot escape the filter.
+  const [viewerImageIds, setViewerImageIds] = React.useState<string[] | null>(
+    null
+  );
+  const openImageInspector = React.useCallback(
+    (img: GeneratedImageRecord, collection?: GeneratedImageRecord[]) => {
+      setViewerImageIds(collection ? collection.map((item) => item.id) : null);
+      setInspectedImage(img);
+    },
+    [setInspectedImage]
+  );
+  const closeImageInspector = React.useCallback(() => {
+    setViewerImageIds(null);
+    setInspectedImage(null);
+  }, [setInspectedImage]);
+  const viewerImages = React.useMemo(() => {
+    if (!viewerImageIds) return null;
+    const byId = new Map(images.map((img) => [img.id, img]));
+    return viewerImageIds.flatMap((id) => {
+      const match = byId.get(id);
+      return match ? [match] : [];
+    });
+  }, [viewerImageIds, images]);
+
   // The setup banner carries its own Start Engine action, so the header copy
   // is only shown on pages where the banner is not rendered.
   const showRuntimeBanner =
@@ -125,7 +159,8 @@ export const App: React.FC = () => {
       activePage === "workflows");
 
   return (
-    <div className="h-screen w-screen overflow-hidden flex bg-bg text-fg">
+    <ContextMenuProvider>
+      <div className="h-screen w-screen overflow-hidden flex bg-bg text-fg">
       <SidebarNav
         activePage={activePage}
         activeWorkCount={activeWorkCount}
@@ -237,7 +272,7 @@ export const App: React.FC = () => {
               downloads={downloads}
               onNavigate={setActivePage}
               onApplyPreset={handleApplyPreset}
-              onInspectImage={setInspectedImage}
+              onInspectImage={openImageInspector}
               onStartMode={(mode) => {
                 setDraft((p) => ({
                   ...p,
@@ -302,7 +337,7 @@ export const App: React.FC = () => {
               onChangeProfile={async (profile: PerformanceProfile) => {
                 await handleUpdateSettings({ performanceProfile: profile });
               }}
-              onInspectImage={setInspectedImage}
+              onInspectImage={openImageInspector}
               onToggleFavorite={handleToggleFavorite}
               onSavePrompt={async (rec) => {
                 const saved = await window.kirea.savePrompt(rec);
@@ -311,6 +346,7 @@ export const App: React.FC = () => {
                   ...prev.filter((p) => p.id !== saved.id),
                 ]);
               }}
+              onUpdateSettings={handleUpdateSettings}
               onToast={pushToast}
             />
           )}
@@ -334,8 +370,9 @@ export const App: React.FC = () => {
               images={images}
               collections={collections}
               density={settings.galleryLayout}
-              onInspectImage={setInspectedImage}
+              onInspectImage={openImageInspector}
               onReuseSettings={handleReuseImageSettings}
+              onSendToWorkflow={handleSendImageToWorkflow}
               onToggleFavorite={handleToggleFavorite}
               onDeleteImage={handleDeleteImage}
               onRemoveMissing={handleRemoveMissingImages}
@@ -435,7 +472,7 @@ export const App: React.FC = () => {
               onExportCanvasPng={handleExportCanvasPng}
               onExportCanvasPdf={handleExportCanvasPdf}
               onOpenCanvasExportFolder={handleOpenCanvasExportFolder}
-              onInspectImage={setInspectedImage}
+              onInspectImage={openImageInspector}
               onToast={pushToast}
             />
           )}
@@ -449,8 +486,10 @@ export const App: React.FC = () => {
             />
           )}
 
-          {activePage === "models" && (            <ModelsPage
+          {activePage === "models" && (
+            <ModelsPage
               models={models}
+              images={images}
               catalog={catalog}
               downloads={downloads}
               civitaiDownloads={civitaiDownloads}
@@ -476,8 +515,8 @@ export const App: React.FC = () => {
                 );
                 return updated;
               }}
-              onImportPreview={async (modelId) => {
-                const updated = await window.kirea.importModelPreview(modelId);
+              onImportPreview={async (modelId, sourceFilePath) => {
+                const updated = await window.kirea.importModelPreview(modelId, sourceFilePath);
                 if (updated) {
                   setModels((prev) =>
                     prev.map((m) => (m.id === updated.id ? updated : m))
@@ -485,12 +524,18 @@ export const App: React.FC = () => {
                 }
                 return updated;
               }}
+              onUpdateSettings={handleUpdateSettings}
+              onOpenSettings={() => setActivePage("settings")}
               onUseModel={(model) => {
                 if (model.category === "lora") {
                   const info = getEffectiveModelInfo(model);
-                  const maxLoras =
-                    workflows.find((w) => w.id === draft.workflowId)?.maxLoras ??
-                    4;
+                  const activeWf = workflows.find((w) => w.id === draft.workflowId);
+                  const isIllustrious =
+                    activeWf?.id === "t2i_illustrious_base" ||
+                    activeWf?.id === "i2i_illustrious_base" ||
+                    (models.find((m) => m.relativePath === draft.checkpoint)?.architecture === "illustrious" &&
+                      (draft.workflowId === "t2i_sdxl_base" || draft.workflowId === "i2i_sdxl_base"));
+                  const maxLoras = isIllustrious ? 10 : (activeWf?.maxLoras ?? 4);
                   if (draft.loras.some((l) => l.name === model.relativePath)) {
                     pushToast(`${info.name} is already in the LoRA stack.`);
                     return;
@@ -529,17 +574,26 @@ export const App: React.FC = () => {
                     },
                   }));
                   setActivePage("create");
-                  pushToast(`Selected ${model.name} in Upscale Studio.`);
+                  pushToast(`Selected ${getEffectiveModelInfo(model).name} in Upscale Studio.`);
                   return;
                 }
 
                 const arch = getEffectiveArchitecture(model);
+                const isBase = model.relativePath.toLowerCase().includes("moss_image_base_");
                 const wfId =
                   arch === "z_image"
                     ? "t2i_z_image_turbo"
-                    : arch === "sd15"
-                      ? "t2i_sd15_base"
-                      : "t2i_sdxl_base";
+                    : arch === "anima"
+                      ? "t2i_anima_base"
+                      : arch === "illustrious"
+                        ? "t2i_illustrious_base"
+                        : arch === "moss_image"
+                          ? isBase
+                            ? "t2i_moss_image_base"
+                            : "t2i_moss_image"
+                          : arch === "sd15"
+                            ? "t2i_sd15_base"
+                            : "t2i_sdxl_base";
                 const wf = workflows.find((w) => w.id === wfId);
                 const dims = resolveDimensionsForAspect(
                   draft.aspectRatio,
@@ -554,7 +608,7 @@ export const App: React.FC = () => {
                   checkpoint: model.relativePath,
                   width: dims.width,
                   height: dims.height,
-                  ...(wf && arch === "z_image"
+                  ...(wf && (arch === "z_image" || arch === "moss_image" || arch === "anima")
                     ? {
                         steps: wf.defaults.steps,
                         cfg: wf.defaults.cfg,
@@ -564,7 +618,7 @@ export const App: React.FC = () => {
                     : {}),
                 }));
                 setActivePage("create");
-                pushToast(`Selected ${model.name} in Create Studio.`);
+                pushToast(`Selected ${getEffectiveModelInfo(model).name} in Create Studio.`);
               }}
               onDeleteModel={async (filePath) => {
                 await window.kirea.deleteModel(filePath);
@@ -618,6 +672,7 @@ export const App: React.FC = () => {
           {activePage === "queue" && (
             <QueuePage
               jobs={jobs}
+              models={models}
               downloads={downloads}
               onNavigate={setActivePage}
               onToast={pushToast}
@@ -631,10 +686,16 @@ export const App: React.FC = () => {
               hardware={hardware}
               downloads={downloads}
               samplersAndSchedulers={samplersAndSchedulers}
+              updateState={updateState}
               onUpdateSettings={handleUpdateSettings}
               onStartRuntime={handleStartRuntime}
               onStopRuntime={handleStopRuntime}
               onTestConnection={handleTestConnection}
+              onCheckForUpdates={handleCheckForUpdates}
+              onDownloadUpdate={handleDownloadUpdate}
+              onCancelUpdateDownload={handleCancelUpdateDownload}
+              onInstallUpdate={handleInstallUpdate}
+              onSetUpdateChannel={handleSetUpdateChannel}
               onToast={pushToast}
             />
           )}
@@ -645,11 +706,12 @@ export const App: React.FC = () => {
       {/* GLOBAL IMAGE METADATA LIGHTBOX */}
       <ImagePreviewModal
         image={inspectedImage}
-        images={images}
+        images={viewerImages ?? images}
         onSelectImage={setInspectedImage}
         collections={collections}
         characters={characters}
-        onClose={() => setInspectedImage(null)}
+        models={models}
+        onClose={closeImageInspector}
         onReuseSettings={handleReuseImageSettings}
         onUpscaleImage={handleUpscaleImage}
         onToggleFavorite={handleToggleFavorite}
@@ -659,8 +721,17 @@ export const App: React.FC = () => {
         onToast={pushToast}
       />
 
+      <UpdateNotice
+        state={updateState}
+        onDownload={() => void handleDownloadUpdate()}
+        onCancel={() => void handleCancelUpdateDownload()}
+        onLater={() => void handleDismissUpdate()}
+        onInstall={handleInstallUpdate}
+      />
+
       <ToastStack toasts={toasts} />
       <JobStatusAnnouncer jobs={jobs} />
     </div>
-  );
+  </ContextMenuProvider>
+);
 };

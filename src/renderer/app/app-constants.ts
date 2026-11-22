@@ -19,6 +19,7 @@ import type {
   NavSection,
   RuntimeState,
 } from "../../shared/types";
+import type { UpdateState } from "../../shared/update-types";
 
 export interface ToastItem {
   id: string;
@@ -56,6 +57,21 @@ export const DEFAULT_SETTINGS: AppSettings = {
   checkUpdatesAutomatically: true,
   nsfwFilter: true,
   civitaiApiKeySet: false,
+  huggingfaceTokenSet: false,
+};
+
+export const DEFAULT_UPDATE_STATE: UpdateState = {
+  phase: "disabled",
+  currentVersion: "",
+  availableVersion: null,
+  releaseNotes: null,
+  releaseDate: null,
+  progress: null,
+  error: null,
+  lastCheckedAt: null,
+  channel: "stable",
+  canCheck: false,
+  dismissed: false,
 };
 
 export const DEFAULT_RUNTIME: RuntimeState = {
@@ -99,6 +115,7 @@ export const INITIAL_DRAFT: GenerationRequest = {
   outputFormat: "png",
   inputImagePath: null,
   denoise: 0.55,
+  layoutJson: null,
   hiresFix: {
     enabled: false,
     upscaler: "latent_bislerp",

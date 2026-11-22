@@ -52,7 +52,7 @@ import {
   Textarea,
 } from "../ui/Primitives";
 import { MediaImage } from "../ui/MediaImage";
-import { shortModelLabel, toMediaUrl } from "../../utils/format";
+import { toMediaUrl } from "../../utils/format";
 import { describeUpscalerLabel } from "./create-helpers";
 import type { CreateController } from "./useCreateController";
 

@@ -16,6 +16,7 @@ export const ACTIVE_DOWNLOAD_STATUSES: CivitaiDownloadStatus[] = [
 export const DOWNLOAD_STATUS_LABELS: Record<CivitaiDownloadStatus, string> = {
   queued: "Queued",
   downloading: "Downloading",
+  paused: "Paused",
   verifying: "Verifying SHA-256",
   finalizing: "Finalizing",
   completed: "Installed",
@@ -25,6 +26,7 @@ export const DOWNLOAD_STATUS_LABELS: Record<CivitaiDownloadStatus, string> = {
 export const DOWNLOAD_STATUS_TONES: Record<CivitaiDownloadStatus, Tone> = {
   queued: "neutral",
   downloading: "accent",
+  paused: "warning",
   verifying: "warning",
   finalizing: "warning",
   completed: "success",
@@ -91,10 +93,16 @@ export const RemotePreview: React.FC<{
 
   if (!url || failed) {
     return (
-      <div className={`flex items-center justify-center bg-well ${className}`}>
-        <div className="flex flex-col items-center gap-1 text-fg-subtle">
-          <ImageOff className={iconClass} />
-          <span className="text-[11px] uppercase tracking-wider">No preview</span>
+      <div
+        className={`flex flex-col items-center justify-center bg-surface-subtle border-b border-border/40 ${className}`}
+      >
+        <div className="flex flex-col items-center gap-2 text-fg-subtle">
+          <div className="p-3 rounded-xl bg-well border border-border shadow-xs">
+            <ImageOff className={iconClass} />
+          </div>
+          <span className="text-[11px] font-medium tracking-wide text-fg-muted">
+            No preview artwork
+          </span>
         </div>
       </div>
     );
@@ -107,7 +115,7 @@ export const RemotePreview: React.FC<{
       loading="lazy"
       draggable={false}
       onError={() => setFailed(true)}
-      className={`w-full h-full object-contain object-center ${className}`}
+      className={`w-full h-full object-cover object-center ${className}`}
     />
   );
 };

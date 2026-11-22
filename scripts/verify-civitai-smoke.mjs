@@ -567,7 +567,7 @@ async function main() {
   }
   notes.push("Civitai details modal rendered prompt copy, trigger words, and versions");
   await screenshot("03-civitai-details");
-  await evaluate(`document.querySelector('[aria-label="Close modal"]')?.click()`);
+  await evaluate(`document.querySelector('[aria-label="Close dialog"]')?.click()`);
   await waitFor(
     async () => !(await bodyIncludes("Civitai Details")),
     "details modal closed"
@@ -580,7 +580,7 @@ async function main() {
   );
   await waitFor(async () => (await cardText("Pony Dusk LoRA")) !== null, "download task card");
   await waitFor(
-    async () => ((await cardText("Pony Dusk LoRA")) ?? "").includes("Installed"),
+    async () => ((await cardText("Pony Dusk LoRA")) ?? "").toLowerCase().includes("installed"),
     "first Civitai download to complete",
     40000
   );
@@ -620,7 +620,7 @@ async function main() {
   await click("02 // CIVITAI HUB");
   await waitFor(() => bodyIncludes("Pony Dusk LoRA"), "hub after completed download");
   await waitFor(
-    async () => ((await cardText("Pony Dusk LoRA")) ?? "").includes("Installed in Vault"),
+    async () => ((await cardText("Pony Dusk LoRA")) ?? "").toLowerCase().includes("installed in vault"),
     "installed badge in the Civitai Hub",
     20000
   );
@@ -633,7 +633,7 @@ async function main() {
     "downloads queue for the cancel test"
   );
   await waitFor(
-    async () => ((await cardText("Pony Line Art LoRA")) ?? "").includes("Downloading"),
+    async () => ((await cardText("Pony Line Art LoRA")) ?? "").toLowerCase().includes("downloading"),
     "second download to start streaming",
     20000
   );
@@ -647,12 +647,12 @@ async function main() {
   );
   await screenshot("06-download-active");
   await waitFor(
-    async () => ((await cardText("Pony Line Art LoRA")) ?? "").includes("Cancel"),
+    async () => ((await cardText("Pony Line Art LoRA")) ?? "").toLowerCase().includes("cancel"),
     "cancel control while downloading"
   );
   await clickCardButton("Pony Line Art LoRA", "Cancel");
   await waitFor(
-    async () => ((await cardText("Pony Line Art LoRA")) ?? "").includes("Cancelled"),
+    async () => ((await cardText("Pony Line Art LoRA")) ?? "").toLowerCase().includes("cancelled"),
     "cancelled queue state",
     20000
   );
@@ -673,7 +673,7 @@ async function main() {
 
   await clickCardButton("Pony Line Art LoRA", "Retry");
   await waitFor(
-    async () => ((await cardText("Pony Line Art LoRA")) ?? "").includes("Installed"),
+    async () => ((await cardText("Pony Line Art LoRA")) ?? "").toLowerCase().includes("installed"),
     "retried download to complete",
     40000
   );
@@ -701,6 +701,17 @@ main()
   })
   .catch(async (error) => {
     log(`FAIL: ${error instanceof Error ? error.message : String(error)}`);
+    try {
+      log(`queue text: ${JSON.stringify(await cardText("Pony Dusk LoRA"))}`);
+    } catch (ignored) {
+      // renderer already gone
+    }
+    log(
+      `target exists: ${fs.existsSync(
+        path.join(MODELS_ROOT, "loras", "pony", "PonyDusk_v2.safetensors")
+      )}`
+    );
+    for (const entry of errors) log(`ERROR ${entry}`);
     await shutdown();
     await removeTempDir(PROFILE_DIR);
     await removeTempDir(VAULT_DIR);

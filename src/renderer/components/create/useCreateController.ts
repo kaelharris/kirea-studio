@@ -25,11 +25,16 @@ import {
   findPresetUpscaler,
   getEffectiveArchitecture,
   getEffectiveModelInfo,
+  getModelDisplayName,
   isGenerationSupportedArchitecture,
   resolveAutoVaeName,
   UPSCALE_PRESETS,
   VAE_AUTO,
 } from "../../../shared/model-utils";
+import {
+  isMossWorkflow,
+  isMossWorkflowReady,
+} from "../../../shared/moss-image";
 import type {
   CharacterProfile,
   GenerationMode,
@@ -42,6 +47,7 @@ import type {
   ValidationIssue,
 } from "../../../shared/types";
 import { shortModelLabel } from "../../utils/format";
+import type { StudioWorkflowMode } from "./WorkflowSelector";
 import {
   type CreatePageProps,
   DEFAULT_HIRES_CONFIG,
@@ -90,6 +96,52 @@ export function useCreateController(props: CreatePageProps) {
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [inspectorTab, setInspectorTab] = useState<"result" | "history">("result");
+  const [workflowMode, setWorkflowMode] = useState<StudioWorkflowMode>(() => {
+    if (draft.mode === "upscale") return "upscale";
+    if (draft.mode === "img2img") return "edit";
+    return "generate";
+  });
+
+  // Keep workflowMode in sync when draft.mode is altered externally
+  useEffect(() => {
+    if (draft.mode === "upscale" && workflowMode !== "upscale") {
+      setWorkflowMode("upscale");
+    } else if (draft.mode === "txt2img" && workflowMode !== "generate") {
+      setWorkflowMode("generate");
+    } else if (
+      draft.mode === "img2img" &&
+      workflowMode !== "edit" &&
+      workflowMode !== "inpaint" &&
+      workflowMode !== "outpaint" &&
+      workflowMode !== "variations"
+    ) {
+      setWorkflowMode("edit");
+    }
+  }, [draft.mode]);
+
+  const [currentMaskDataUrl, setCurrentMaskDataUrl] = useState<string | null>(null);
+  const [outpaintPadding, setOutpaintPadding] = useState<{
+    top: number;
+    bottom: number;
+    left: number;
+    right: number;
+  }>({ top: 0, bottom: 0, left: 0, right: 0 });
+
+  const handleMaskChange = useCallback(
+    (maskDataUrl: string | null) => {
+      setCurrentMaskDataUrl(maskDataUrl);
+      setDraft((prev) => ({ ...prev, maskDataUrl }));
+    },
+    [setDraft]
+  );
+
+  const handleOutpaintParamsChange = useCallback(
+    (padding: { top: number; bottom: number; left: number; right: number }) => {
+      setOutpaintPadding(padding);
+      setDraft((prev) => ({ ...prev, outpaintPadding: padding }));
+    },
+    [setDraft]
+  );
 
   const primaryModels = useMemo(
     () =>
@@ -98,7 +150,9 @@ export function useCreateController(props: CreatePageProps) {
           m.installed &&
           (m.category === "checkpoint" ||
             (m.category === "diffusion_model" &&
-              ["z_image", "anima"].includes(getEffectiveArchitecture(m)))) &&
+              ["z_image", "anima", "moss_image"].includes(
+                getEffectiveArchitecture(m)
+              ))) &&
           isGenerationSupportedArchitecture(getEffectiveArchitecture(m))
       ),
     [models]
@@ -177,14 +231,40 @@ export function useCreateController(props: CreatePageProps) {
   const upscaleConfig: UpscaleConfig = draft.upscale ?? DEFAULT_UPSCALE_CONFIG;
 
   const compatibleWorkflows = useMemo(
-    () => workflows.filter((w) => w.mode === draft.mode),
-    [workflows, draft.mode]
+    () =>
+      workflows.filter(
+        (w) =>
+          w.mode === draft.mode &&
+          (currentArch === "unknown" ||
+            w.supportedArchitectures.includes(currentArch) ||
+            w.supportedArchitectures.includes("unknown"))
+      ),
+    [workflows, draft.mode, currentArch]
   );
 
-  const activeWorkflow = useMemo(
-    () => workflows.find((w) => w.id === draft.workflowId) ?? compatibleWorkflows[0],
-    [workflows, compatibleWorkflows, draft.workflowId]
-  );
+  const activeWorkflow = useMemo(() => {
+    const candidate =
+      compatibleWorkflows.find((w) => w.id === draft.workflowId) ??
+      compatibleWorkflows[0] ??
+      workflows.find((w) => w.id === draft.workflowId);
+    if (!candidate) return candidate;
+    if (
+      currentArch === "illustrious" &&
+      (candidate.id === "t2i_sdxl_base" || candidate.id === "i2i_sdxl_base")
+    ) {
+      return { ...candidate, maxLoras: 10 };
+    }
+    return candidate;
+  }, [workflows, compatibleWorkflows, draft.workflowId, currentArch]);
+
+  useEffect(() => {
+    if (
+      compatibleWorkflows.length > 0 &&
+      !compatibleWorkflows.some((w) => w.id === draft.workflowId)
+    ) {
+      setDraft((prev) => ({ ...prev, workflowId: compatibleWorkflows[0]!.id }));
+    }
+  }, [compatibleWorkflows, draft.workflowId, setDraft]);
 
   const dimensionBounds = useMemo(
     () => dimensionBoundsFromWorkflow(activeWorkflow),
@@ -504,6 +584,63 @@ export function useCreateController(props: CreatePageProps) {
     });
   };
 
+  const handleSelectWorkflowMode = useCallback(
+    (mode: StudioWorkflowMode, sourceImage?: { filePath: string } | null): void => {
+      setWorkflowMode(mode);
+      const chosenImagePath =
+        sourceImage?.filePath || draft.inputImagePath || (images[0]?.filePath ?? null);
+
+      if (mode === "generate") {
+        handleModeSwitch("txt2img");
+        setDraft((p) => ({
+          ...p,
+          inputImagePath: null,
+        }));
+      } else if (mode === "edit") {
+        handleModeSwitch("img2img");
+        if (chosenImagePath && !draft.inputImagePath) {
+          setDraft((p) => ({
+            ...p,
+            inputImagePath: chosenImagePath,
+            denoise: Math.min(0.75, p.denoise || 0.55),
+          }));
+        }
+      } else if (mode === "variations") {
+        handleModeSwitch("img2img");
+        setDraft((p) => ({
+          ...p,
+          inputImagePath: chosenImagePath || p.inputImagePath,
+          randomSeed: true,
+          denoise: 0.55,
+        }));
+      } else if (mode === "inpaint") {
+        handleModeSwitch("img2img");
+        setDraft((p) => ({
+          ...p,
+          inputImagePath: chosenImagePath || p.inputImagePath,
+          denoise: 0.75,
+        }));
+      } else if (mode === "outpaint") {
+        handleModeSwitch("img2img");
+        setDraft((p) => ({
+          ...p,
+          inputImagePath: chosenImagePath || p.inputImagePath,
+          denoise: 0.85,
+        }));
+      } else if (mode === "upscale") {
+        handleModeSwitch("upscale");
+        if (chosenImagePath && !draft.inputImagePath) {
+          setDraft((p) => ({
+            ...p,
+            inputImagePath: chosenImagePath,
+          }));
+        }
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [draft.inputImagePath, images]
+  );
+
   const handleWorkflowChange = (wfId: string): void => {
     const wf = workflows.find((w) => w.id === wfId);
     if (!wf) return;
@@ -538,7 +675,26 @@ export function useCreateController(props: CreatePageProps) {
     let nextWfId = draft.workflowId;
     let extraOverrides: Partial<GenerationRequest> = {};
 
-    if (arch === "anima") {
+    if (arch === "moss_image") {
+      const isBase = relPath.toLowerCase().includes("moss_image_base_");
+      const preferred =
+        draft.mode === "img2img"
+          ? "i2i_moss_image_edit"
+          : isBase
+            ? "t2i_moss_image_base"
+            : "t2i_moss_image";
+      const mossWf = workflows.find((w) => w.id === preferred);
+      if (mossWf) {
+        nextWfId = mossWf.id;
+        extraOverrides = {
+          steps: mossWf.defaults.steps,
+          cfg: mossWf.defaults.cfg,
+          sampler: mossWf.defaults.sampler,
+          scheduler: mossWf.defaults.scheduler,
+          denoise: mossWf.defaults.denoise,
+        };
+      }
+    } else if (arch === "anima") {
       const animaWf = workflows.find(
         (w) => w.id === (draft.mode === "img2img" ? "i2i_anima_base" : "t2i_anima_base")
       );
@@ -560,6 +716,19 @@ export function useCreateController(props: CreatePageProps) {
           cfg: zWf.defaults.cfg,
           sampler: zWf.defaults.sampler,
           scheduler: zWf.defaults.scheduler,
+        };
+      }
+    } else if (arch === "illustrious") {
+      const illWf = workflows.find(
+        (w) => w.id === (draft.mode === "img2img" ? "i2i_illustrious_base" : "t2i_illustrious_base")
+      );
+      if (illWf) {
+        nextWfId = illWf.id;
+        extraOverrides = {
+          steps: illWf.defaults.steps,
+          cfg: illWf.defaults.cfg,
+          sampler: illWf.defaults.sampler,
+          scheduler: illWf.defaults.scheduler,
         };
       }
     } else if (arch === "sd15") {
@@ -584,6 +753,13 @@ export function useCreateController(props: CreatePageProps) {
     });
 
     const nextWf = workflows.find((w) => w.id === nextWfId);
+    const maxAllowed =
+      arch === "illustrious" ||
+      nextWf?.id === "t2i_illustrious_base" ||
+      nextWf?.id === "i2i_illustrious_base"
+        ? 10
+        : (nextWf?.maxLoras ?? 4);
+
     const dims = resolveDimensionsForAspect(
       draft.aspectRatio,
       arch,
@@ -591,23 +767,36 @@ export function useCreateController(props: CreatePageProps) {
       dimensionBoundsFromWorkflow(nextWf)
     );
 
-    setDraft((prev) => ({
-      ...prev,
-      checkpoint: relPath,
-      workflowId: nextWfId,
-      width: dims.width,
-      height: dims.height,
-      ...extraOverrides,
-      loras: prev.loras.filter(
+    let trimmedDueToCapacity = 0;
+    setDraft((prev) => {
+      const compatibleLoras = prev.loras.filter(
         (sel) => !incompatible.some((dropped) => dropped.name === sel.name)
-      ),
-    }));
+      );
+      const finalLoras = compatibleLoras.slice(0, maxAllowed);
+      trimmedDueToCapacity = compatibleLoras.length - finalLoras.length;
+      return {
+        ...prev,
+        checkpoint: relPath,
+        workflowId: nextWfId,
+        width: dims.width,
+        height: dims.height,
+        ...extraOverrides,
+        loras: finalLoras,
+      };
+    });
 
     if (incompatible.length > 0) {
       onToast(
         `${incompatible.length} incompatible LoRA${
           incompatible.length === 1 ? "" : "s"
         } removed for ${ARCHITECTURE_LABELS[arch]}.`
+      );
+    }
+    if (trimmedDueToCapacity > 0) {
+      onToast(
+        `${trimmedDueToCapacity} excess LoRA${
+          trimmedDueToCapacity === 1 ? "" : "s"
+        } trimmed to fit workflow capacity (${maxAllowed}).`
       );
     }
   };
@@ -857,7 +1046,7 @@ export function useCreateController(props: CreatePageProps) {
     () =>
       primaryModels.map((model) => ({
         path: model.relativePath,
-        label: getEffectiveModelInfo(model).name,
+        label: getModelDisplayName(model),
       })),
     [primaryModels]
   );
@@ -986,9 +1175,33 @@ export function useCreateController(props: CreatePageProps) {
   };
 
   const handleGenerate = async (): Promise<void> => {
+    if (workflowMode !== "generate" && !draft.inputImagePath) {
+      onToast(`Please load or select a source image to begin ${workflowMode}.`, "error");
+      return;
+    }
+    if (workflowMode === "inpaint" && !draft.maskDataUrl && !currentMaskDataUrl) {
+      onToast("Please brush an inpaint mask over the area you want to regenerate.", "error");
+      return;
+    }
+    if (
+      workflowMode === "outpaint" &&
+      (!draft.outpaintPadding ||
+        (draft.outpaintPadding.top === 0 &&
+          draft.outpaintPadding.bottom === 0 &&
+          draft.outpaintPadding.left === 0 &&
+          draft.outpaintPadding.right === 0))
+    ) {
+      onToast("Please expand at least one border (+64px) to outpaint.", "error");
+      return;
+    }
     setSubmitting(true);
     try {
-      await window.kirea.submitJob(draft);
+      const payload: GenerationRequest = {
+        ...draft,
+        maskDataUrl: workflowMode === "inpaint" ? (draft.maskDataUrl ?? currentMaskDataUrl) : null,
+        outpaintPadding: workflowMode === "outpaint" ? draft.outpaintPadding : null,
+      };
+      await window.kirea.submitJob(payload);
       if (draft.mode === "upscale") {
         onToast("Upscale job queued.");
       } else {
@@ -1070,6 +1283,9 @@ export function useCreateController(props: CreatePageProps) {
     activeCharacter,
     activeCharacterPlan,
     appendToPrompt,
+    workflowMode,
+    setWorkflowMode,
+    handleSelectWorkflowMode,
     handleModeSwitch,
     handleWorkflowChange,
     handleCheckpointChange,
@@ -1097,6 +1313,10 @@ export function useCreateController(props: CreatePageProps) {
     setUpscalePipeline,
     applyUpscalePreset,
     setHiresPipeline,
+    currentMaskDataUrl,
+    outpaintPadding,
+    handleMaskChange,
+    handleOutpaintParamsChange,
     handleGenerate,
     blockingErrors,
     visibleBlockingErrors,

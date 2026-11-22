@@ -15,6 +15,7 @@ import {
   validateGenerationRequest,
 } from "../../src/main/comfy/workflow-registry";
 import {
+  evaluateEmbeddingCompatibility,
   evaluateLoraCompatibility,
   resolveAutoVaeName,
 } from "../../src/shared/model-utils";
@@ -353,6 +354,119 @@ describe("Workflow validation & prompt graph compilation", () => {
     expect(zBuilt.graph["30"]?.class_type).toBe("CLIPLoader");
     expect(zBuilt.graph["11"]?.class_type).toBe("ModelSamplingAuraFlow");
     expect(zBuilt.graph["33"]?.class_type).toBe("ConditioningZeroOut");
+    // Scanned models are named without their extension; the AE VAE must still resolve.
+    expect(zBuilt.graph["29"]?.class_type).toBe("VAELoader");
+    expect(zBuilt.graph["29"]?.inputs.vae_name).toBe("ae.safetensors");
+    expect(zBuilt.graph["30"]?.inputs.clip_name).toBe("qwen_3_4b.safetensors");
+
+    const zRequest = makeBaseReq({
+      workflowId: "t2i_z_image_turbo",
+      checkpoint: "z_image_turbo_bf16.safetensors",
+      width: 1024,
+      height: 1024,
+      steps: 8,
+      cfg: 1.0,
+      sampler: "res_multistep",
+      scheduler: "simple",
+    });
+    const zIssues = validateGenerationRequest(zRequest, SAMPLE_MODELS, "quality", 16384);
+    expect(zIssues.some((issue) => issue.severity === "error")).toBe(false);
+
+    const zNoVaeIssues = validateGenerationRequest(
+      zRequest,
+      SAMPLE_MODELS.filter((model) => model.category !== "vae"),
+      "quality",
+      16384
+    );
+    expect(
+      zNoVaeIssues.some(
+        (issue) =>
+          issue.severity === "error" &&
+          issue.message.includes("Z-Image Turbo requires")
+      )
+    ).toBe(true);
+  });
+
+  it("builds the native MOSS-Image split pipeline and blocks it until deps exist", () => {
+    const mossRequest = makeBaseReq({
+      workflowId: "t2i_moss_image",
+      checkpoint: "moss_image_sft_bf16.safetensors",
+      steps: 25,
+      cfg: 2.5,
+      sampler: "er_sde",
+      scheduler: "simple",
+    });
+    const mossBuilt = buildComfyPromptGraph({
+      request: mossRequest,
+      availableModels: SAMPLE_MODELS,
+      filenamePrefix: "test_moss",
+    });
+
+    expect(mossBuilt.graph["28"]?.class_type).toBe("UNETLoader");
+    expect(mossBuilt.graph["30"]?.class_type).toBe("CLIPLoader");
+    expect(mossBuilt.graph["30"]?.inputs.type).toBe("moss_image");
+    expect(mossBuilt.graph["31"]?.class_type).toBe("SkipLayerGuidanceDiTSimple");
+    expect(mossBuilt.graph["31"]?.inputs).toMatchObject({
+      double_layers: "",
+      single_layers: "22",
+      start_percent: 0,
+      end_percent: 0.5,
+    });
+    expect(mossBuilt.graph["33"]?.inputs.text).toBe("blurry");
+    expect(mossBuilt.graph["13"]?.class_type).toBe("EmptyFlux2LatentImage");
+    expect(mossBuilt.graph["3"]?.class_type).toBe("KSampler");
+    expect((mossBuilt.graph["3"]?.inputs.model as unknown[])[0]).toBe("31");
+    expect(mossBuilt.graph["29"]?.inputs.vae_name).toBe(
+      "flux2-vae_small.safetensors"
+    );
+    expect(mossBuilt.graph["9"]?.class_type).toBe("SaveImage");
+
+    const mossDefaultNegative = buildComfyPromptGraph({
+      request: { ...mossRequest, negativePrompt: "   " },
+      availableModels: SAMPLE_MODELS,
+      filenamePrefix: "test_moss_defaults",
+    });
+    expect(mossDefaultNegative.graph["33"]?.inputs.text).toBe(
+      "nsfw, worst quality, bad anatomy, watermark, jpeg artifact"
+    );
+
+    const mossIssues = validateGenerationRequest(
+      mossRequest,
+      SAMPLE_MODELS,
+      "quality",
+      16384
+    );
+    expect(
+      mossIssues.some(
+        (issue) =>
+          issue.severity === "error" &&
+          issue.message.includes("MOSS-Image workflow is not ready")
+      )
+    ).toBe(true);
+
+    const layoutJson = JSON.stringify([
+      { x: 0, y: 0, width: 512, height: 512, metadata: { type: "obj", desc: "Subject" } },
+    ]);
+    const layoutBuilt = buildComfyPromptGraph({
+      request: {
+        ...mossRequest,
+        workflowId: "t2i_moss_image_layout",
+        layoutJson,
+      },
+      availableModels: SAMPLE_MODELS,
+      filenamePrefix: "test_moss_layout",
+    });
+    expect(layoutBuilt.graph["50"]?.class_type).toBe("CreateBoundingBoxes");
+    expect(layoutBuilt.graph["50"]?.inputs).toMatchObject({
+      width: 1344,
+      height: 768,
+      bboxes: layoutJson,
+      editor_state: {},
+    });
+    expect(layoutBuilt.graph["51"]?.class_type).toBe("MOSSImageLayoutPrompt");
+    expect(layoutBuilt.graph["51"]?.inputs.element).toEqual(["50", 2]);
+    expect(layoutBuilt.graph["52"]?.class_type).toBe("CLIPTextEncode");
+    expect((layoutBuilt.graph["3"]?.inputs.positive as unknown[])[0]).toBe("52");
   });
 
   it("validates standalone upscale requests and computes hires dimensions cleanly", () => {
@@ -633,6 +747,18 @@ describe("Workflow validation & prompt graph compilation", () => {
     expect(evaluateLoraCompatibility("pony", "sdxl").compatible).toBe(false);
     expect(evaluateLoraCompatibility("anima", "sdxl").compatible).toBe(false);
     expect(evaluateLoraCompatibility("sd15", "sdxl").compatible).toBe(false);
+    expect(evaluateLoraCompatibility("unknown", "sdxl").compatible).toBe(false);
+    expect(evaluateLoraCompatibility("unknown", "sdxl").level).toBe("unknown");
+
+    // Embeddings compatibility enforcement
+    expect(evaluateEmbeddingCompatibility("sdxl", "sdxl").compatible).toBe(true);
+    expect(evaluateEmbeddingCompatibility("sd15", "sd15").compatible).toBe(true);
+    expect(evaluateEmbeddingCompatibility("sdxl", "illustrious").compatible).toBe(true);
+    expect(evaluateEmbeddingCompatibility("illustrious", "sdxl").level).toBe("cross-paired");
+    expect(evaluateEmbeddingCompatibility("sd15", "sdxl").compatible).toBe(false);
+    expect(evaluateEmbeddingCompatibility("sd15", "sdxl").level).toBe("incompatible");
+    expect(evaluateEmbeddingCompatibility("unknown", "sdxl").compatible).toBe(false);
+    expect(evaluateEmbeddingCompatibility("unknown", "sdxl").level).toBe("unknown");
 
     expect(
       resolveAutoVaeName("anima", [

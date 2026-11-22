@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Boxes,
+  Brush,
   Check,
   ChevronLeft,
   ChevronRight,
   Copy,
   Download,
+  Expand,
   ExternalLink,
+  FileText,
   Film,
   FolderOpen,
   FolderPlus,
@@ -14,6 +17,7 @@ import {
   Heart,
   Image as ImageIcon,
   ImageOff,
+  Layers,
   LayoutGrid,
   List,
   Maximize2,
@@ -26,6 +30,7 @@ import {
   Users,
   Volume2,
   VolumeX,
+  Wand2,
   X,
 } from "lucide-react";
 import type {
@@ -45,6 +50,7 @@ import {
   type LibraryMediaResult,
   type LibraryMediaType,
 } from "../../shared/library";
+import { imageWorkflowLabels } from "../../shared/image-labels";
 import {
   Badge,
   Button,
@@ -53,6 +59,8 @@ import {
   Modal,
   SectionHeader,
   Select,
+  useContextMenu,
+  type ContextMenuItem,
 } from "../components/ui/Primitives";
 import { MediaImage } from "../components/ui/MediaImage";
 import {
@@ -68,8 +76,15 @@ interface LibraryPageProps {
   images: GeneratedImageRecord[];
   collections: CollectionRecord[];
   density: "comfortable" | "compact";
-  onInspectImage: (img: GeneratedImageRecord) => void;
+  onInspectImage: (
+    img: GeneratedImageRecord,
+    collection?: GeneratedImageRecord[]
+  ) => void;
   onReuseSettings: (img: GeneratedImageRecord) => void;
+  onSendToWorkflow?: (
+    img: GeneratedImageRecord,
+    workflow: "edit" | "inpaint" | "outpaint" | "variations" | "upscale"
+  ) => void;
   onToggleFavorite: (id: string) => Promise<void>;
   onDeleteImage: (id: string) => Promise<void>;
   /** Removes library entries whose files can no longer be loaded. */
@@ -116,6 +131,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
   density,
   onInspectImage,
   onReuseSettings,
+  onSendToWorkflow,
   onToggleFavorite,
   onDeleteImage,
   onRemoveMissing,
@@ -141,6 +157,12 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
     const stored = localStorage.getItem(VIEW_STORAGE_KEY);
     return stored === "list" ? "list" : "grid";
   });
+  const [galleryMode, setGalleryMode] = useState<"natural" | "square">(() => {
+    const stored = localStorage.getItem("kirea.library.gallery_mode");
+    return stored === "square" ? "square" : "natural";
+  });
+  const [focusedIndex, setFocusedIndex] = useState<number>(-1);
+  const lastSelectedIndexRef = useRef<number | null>(null);
   const [result, setResult] = useState<LibraryMediaResult>(EMPTY_RESULT);
   const [loading, setLoading] = useState(true);
   const [refreshTick, setRefreshTick] = useState(0);
@@ -166,6 +188,10 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
   useEffect(() => {
     localStorage.setItem(VIEW_STORAGE_KEY, view);
   }, [view]);
+
+  useEffect(() => {
+    localStorage.setItem("kirea.library.gallery_mode", galleryMode);
+  }, [galleryMode]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 200);
@@ -246,6 +272,16 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
     [result.items, isAvailable]
   );
 
+  // Images in the order currently rendered, so the viewer's arrows stay inside
+  // the active search, type, collection, model and orientation filters.
+  const visibleImages = useMemo(
+    () =>
+      result.items.flatMap((item) =>
+        item.mediaType === "image" && item.image ? [item.image] : []
+      ),
+    [result.items]
+  );
+
   // Keyboard navigation across library items inside the inspector
   const selectedIndex = useMemo(() => {
     if (!selected) return -1;
@@ -290,6 +326,11 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selected, handlePrevItem, handleNextItem]);
 
+  useEffect(() => {
+    setFocusedIndex(-1);
+    lastSelectedIndexRef.current = null;
+  }, [query]);
+
   // Batch selection handlers
   const handleToggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -310,7 +351,230 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
   const handleDeselectAll = useCallback(() => {
     setSelectedIds(new Set());
     setIsSelectMode(false);
+    lastSelectedIndexRef.current = null;
   }, []);
+
+  const handleCardClick = useCallback(
+    (index: number, item: LibraryMediaItem, e?: React.MouseEvent) => {
+      setFocusedIndex(index);
+      if (e?.shiftKey && lastSelectedIndexRef.current !== null) {
+        const start = Math.min(lastSelectedIndexRef.current, index);
+        const end = Math.max(lastSelectedIndexRef.current, index);
+        const rangeIds = result.items.slice(start, end + 1).map((it) => it.id);
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          for (const id of rangeIds) next.add(id);
+          return next;
+        });
+        setIsSelectMode(true);
+        return;
+      }
+
+      if (isSelectMode || e?.ctrlKey || e?.metaKey) {
+        handleToggleSelect(item.id);
+        lastSelectedIndexRef.current = index;
+        return;
+      }
+
+      lastSelectedIndexRef.current = index;
+      if (item.mediaType === "image" && item.image && onInspectImage) {
+        onInspectImage(item.image, visibleImages);
+      } else {
+        setSelected(item);
+      }
+    },
+    [isSelectMode, result.items, handleToggleSelect, onInspectImage, visibleImages]
+  );
+
+  const handleCheckboxClick = useCallback(
+    (index: number, item: LibraryMediaItem, e?: React.MouseEvent) => {
+      setFocusedIndex(index);
+      if (e?.shiftKey && lastSelectedIndexRef.current !== null) {
+        const start = Math.min(lastSelectedIndexRef.current, index);
+        const end = Math.max(lastSelectedIndexRef.current, index);
+        const rangeIds = result.items.slice(start, end + 1).map((it) => it.id);
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          for (const id of rangeIds) next.add(id);
+          return next;
+        });
+        setIsSelectMode(true);
+        return;
+      }
+      handleToggleSelect(item.id);
+      lastSelectedIndexRef.current = index;
+    },
+    [result.items, handleToggleSelect]
+  );
+
+  // Gallery keyboard navigation (Active when no modal is open)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || target?.isContentEditable) {
+        return;
+      }
+      if (
+        selected ||
+        deleteTarget ||
+        missingRemovalOpen ||
+        newColOpen ||
+        batchDeleteModalOpen ||
+        batchCollectionModalOpen
+      ) {
+        return;
+      }
+
+      // Alt+A or Ctrl+A (Select All)
+      if ((e.ctrlKey || e.altKey) && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        handleSelectAll();
+        return;
+      }
+
+      // Escape (Deselect All)
+      if (e.key === "Escape") {
+        if (selectedIds.size > 0 || isSelectMode) {
+          e.preventDefault();
+          handleDeselectAll();
+          return;
+        }
+      }
+
+      if (result.items.length === 0) return;
+
+      // Home & End
+      if (e.key === "Home") {
+        e.preventDefault();
+        setFocusedIndex(0);
+        lastSelectedIndexRef.current = 0;
+        return;
+      }
+      if (e.key === "End") {
+        e.preventDefault();
+        const lastIdx = result.items.length - 1;
+        setFocusedIndex(lastIdx);
+        lastSelectedIndexRef.current = lastIdx;
+        return;
+      }
+
+      // Space: Toggle selection
+      if (e.key === " ") {
+        if (focusedIndex >= 0 && focusedIndex < result.items.length) {
+          e.preventDefault();
+          const item = result.items[focusedIndex];
+          if (item) {
+            handleToggleSelect(item.id);
+            lastSelectedIndexRef.current = focusedIndex;
+          }
+        }
+        return;
+      }
+
+      // Enter: Inspect / Open
+      if (e.key === "Enter") {
+        if (focusedIndex >= 0 && focusedIndex < result.items.length) {
+          e.preventDefault();
+          const item = result.items[focusedIndex];
+          if (item) {
+            if (item.mediaType === "image" && onInspectImage) {
+              onInspectImage(item.image, visibleImages);
+            } else {
+              setSelected(item);
+            }
+          }
+        }
+        return;
+      }
+
+      // Delete / Backspace: Delete with confirmation
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (selectedIds.size > 0) {
+          e.preventDefault();
+          setBatchDeleteModalOpen(true);
+          return;
+        } else if (focusedIndex >= 0 && focusedIndex < result.items.length) {
+          e.preventDefault();
+          const item = result.items[focusedIndex];
+          if (item && item.mediaType !== "animation") {
+            setDeleteTarget(item);
+          }
+          return;
+        }
+      }
+
+      // Arrow keys navigation
+      let nextIndex = focusedIndex;
+      const total = result.items.length;
+      const columns = density === "compact" ? 5 : 3;
+
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        nextIndex = focusedIndex < 0 ? 0 : Math.min(total - 1, focusedIndex + 1);
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        nextIndex = focusedIndex < 0 ? 0 : Math.max(0, focusedIndex - 1);
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        nextIndex = focusedIndex < 0 ? 0 : Math.min(total - 1, focusedIndex + columns);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        nextIndex = focusedIndex < 0 ? 0 : Math.max(0, focusedIndex - columns);
+      } else {
+        return;
+      }
+
+      if (nextIndex !== focusedIndex) {
+        setFocusedIndex(nextIndex);
+        if (e.shiftKey && lastSelectedIndexRef.current !== null) {
+          const start = Math.min(lastSelectedIndexRef.current, nextIndex);
+          const end = Math.max(lastSelectedIndexRef.current, nextIndex);
+          const rangeIds = result.items.slice(start, end + 1).map((it) => it.id);
+          setSelectedIds((prev) => {
+            const next = new Set(prev);
+            for (const id of rangeIds) next.add(id);
+            return next;
+          });
+          setIsSelectMode(true);
+        } else if (!e.shiftKey) {
+          lastSelectedIndexRef.current = nextIndex;
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    selected,
+    deleteTarget,
+    missingRemovalOpen,
+    newColOpen,
+    batchDeleteModalOpen,
+    batchCollectionModalOpen,
+    result.items,
+    focusedIndex,
+    density,
+    selectedIds,
+    isSelectMode,
+    handleSelectAll,
+    handleDeselectAll,
+    handleToggleSelect,
+    onInspectImage,
+    visibleImages,
+  ]);
+
+  useEffect(() => {
+    if (focusedIndex >= 0 && focusedIndex < result.items.length) {
+      const item = result.items[focusedIndex];
+      if (item) {
+        const el = document.querySelector(`[data-library-card-id="${item.id}"]`);
+        if (el) {
+          el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        }
+      }
+    }
+  }, [focusedIndex, result.items]);
 
   const handleBatchFavorite = async (favorite: boolean) => {
     if (selectedIds.size === 0) return;
@@ -523,11 +787,311 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
     setNewColOpen(false);
   };
 
+  const { showContextMenu } = useContextMenu();
+
+  const handleAssignItemCollection = async (itemId: string, collectionId: string | null) => {
+    try {
+      await window.kirea.batchSetLibraryCollection([itemId], collectionId);
+      onToast("Updated collection.");
+      refresh();
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : "Failed to update collection.", "error");
+    }
+  };
+
+  const handleItemContextMenu = useCallback(
+    (e: React.MouseEvent, item: LibraryMediaItem) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const isItemInMultiSelection = selectedIds.has(item.id) && selectedIds.size > 1;
+
+      if (isItemInMultiSelection) {
+        const items: ContextMenuItem[] = [
+          {
+            id: "bulk-collection",
+            label: `Add ${selectedIds.size} items to collection...`,
+            icon: <FolderPlus className="w-3.5 h-3.5" />,
+            onClick: () => setBatchCollectionModalOpen(true),
+          },
+          {
+            id: "bulk-favorite",
+            label: `Favorite ${selectedIds.size} items`,
+            icon: <Heart className="w-3.5 h-3.5" />,
+            onClick: () => void handleBatchFavorite(true),
+          },
+          {
+            id: "bulk-unfavorite",
+            label: `Unfavorite ${selectedIds.size} items`,
+            icon: <Heart className="w-3.5 h-3.5" />,
+            onClick: () => void handleBatchFavorite(false),
+          },
+          {
+            id: "bulk-export",
+            label: `Export ${selectedIds.size} items...`,
+            icon: <Download className="w-3.5 h-3.5" />,
+            onClick: () => void handleBatchExport(),
+            separator: true,
+          },
+          {
+            id: "bulk-select-all",
+            label: "Select All",
+            shortcut: "Ctrl+A",
+            onClick: handleSelectAll,
+          },
+          {
+            id: "bulk-deselect",
+            label: "Deselect All",
+            shortcut: "Esc",
+            onClick: handleDeselectAll,
+            separator: true,
+          },
+          {
+            id: "bulk-delete",
+            label: `Delete ${selectedIds.size} items`,
+            icon: <Trash2 className="w-3.5 h-3.5" />,
+            destructive: true,
+            onClick: () => setBatchDeleteModalOpen(true),
+          },
+        ];
+
+        showContextMenu({
+          x: e.clientX,
+          y: e.clientY,
+          title: `${selectedIds.size} items selected`,
+          items,
+        });
+        return;
+      }
+
+      // Single item context menu
+      const isImage = item.mediaType === "image" && item.image;
+      const menuItems: ContextMenuItem[] = [
+        {
+          id: "open-item",
+          label: isImage ? "Open in Fullscreen Preview" : "Open Asset",
+          icon: <Maximize2 className="w-3.5 h-3.5" />,
+          onClick: () => {
+            if (isImage && item.image) {
+              onInspectImage(item.image, visibleImages);
+            } else {
+              setSelected(item);
+            }
+          },
+        },
+        {
+          id: "show-details",
+          label: "Show Details & Metadata",
+          icon: <FileText className="w-3.5 h-3.5" />,
+          onClick: () => setSelected(item),
+          separator: Boolean(isImage),
+        },
+      ];
+
+      if (isImage && item.image) {
+        const img = item.image;
+        menuItems.push(
+          {
+            id: "create-edit",
+            label: "Edit Image / Img2Img",
+            icon: <Wand2 className="w-3.5 h-3.5" />,
+            onClick: () => {
+              if (onSendToWorkflow) onSendToWorkflow(img, "edit");
+              else onReuseSettings(img);
+            },
+          },
+          {
+            id: "create-inpaint",
+            label: "Inpaint (Brush Mask)",
+            icon: <Brush className="w-3.5 h-3.5" />,
+            onClick: () => {
+              if (onSendToWorkflow) onSendToWorkflow(img, "inpaint");
+              else onReuseSettings(img);
+            },
+          },
+          {
+            id: "create-outpaint",
+            label: "Outpaint (Expand Canvas)",
+            icon: <Expand className="w-3.5 h-3.5" />,
+            onClick: () => {
+              if (onSendToWorkflow) onSendToWorkflow(img, "outpaint");
+              else onReuseSettings(img);
+            },
+          },
+          {
+            id: "create-variations",
+            label: "Generate Variations",
+            icon: <Layers className="w-3.5 h-3.5" />,
+            onClick: () => {
+              if (onSendToWorkflow) onSendToWorkflow(img, "variations");
+              else onReuseSettings(img);
+            },
+          },
+          {
+            id: "create-upscale",
+            label: "Upscale 4×",
+            icon: <Maximize2 className="w-3.5 h-3.5" />,
+            onClick: () => {
+              if (onSendToWorkflow) onSendToWorkflow(img, "upscale");
+              else onReuseSettings(img);
+            },
+            separator: true,
+          }
+        );
+      }
+
+      // Manage group
+      if (item.favoriteSupported) {
+        menuItems.push({
+          id: "toggle-fav",
+          label: item.favorite ? "Remove from Favorites" : "Add to Favorites",
+          icon: <Heart className="w-3.5 h-3.5" />,
+          onClick: () => void toggleFavorite(item),
+        });
+      }
+
+      if (collections.length > 0) {
+        menuItems.push({
+          id: "add-to-collection",
+          label: "Add to Collection...",
+          icon: <FolderPlus className="w-3.5 h-3.5" />,
+          children: [
+            ...collections.map((col) => ({
+              id: `col-${col.id}`,
+              label: col.name,
+              onClick: () => {
+                void handleAssignItemCollection(item.id, col.id);
+              },
+            })),
+            {
+              id: "col-none",
+              label: "Remove from Collections",
+              onClick: () => {
+                void handleAssignItemCollection(item.id, null);
+              },
+            },
+          ],
+        });
+      }
+
+      if (isImage && item.image?.prompt) {
+        menuItems.push({
+          id: "copy-prompt",
+          label: "Copy Prompt",
+          icon: <Copy className="w-3.5 h-3.5" />,
+          onClick: () => {
+            void navigator.clipboard.writeText(item.image!.prompt);
+            onToast("Prompt copied to clipboard.");
+          },
+        });
+      }
+
+      if (item.mediaPath) {
+        menuItems.push({
+          id: "copy-path",
+          label: "Copy File Path",
+          icon: <Copy className="w-3.5 h-3.5" />,
+          onClick: () => {
+            void navigator.clipboard.writeText(item.mediaPath!);
+            onToast("File path copied to clipboard.");
+          },
+        });
+        menuItems.push({
+          id: "reveal-path",
+          label: "Reveal in File Explorer",
+          icon: <FolderOpen className="w-3.5 h-3.5" />,
+          onClick: () => {
+            void window.kirea.openPath(item.mediaPath!);
+          },
+          separator: item.mediaType !== "animation",
+        });
+      }
+
+      if (item.mediaType !== "animation") {
+        menuItems.push({
+          id: "delete-item",
+          label: "Delete Asset",
+          icon: <Trash2 className="w-3.5 h-3.5" />,
+          destructive: true,
+          onClick: () => setDeleteTarget(item),
+        });
+      }
+
+      showContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        title: item.title,
+        items: menuItems,
+      });
+    },
+    [
+      selectedIds,
+      visibleImages,
+      onInspectImage,
+      onSendToWorkflow,
+      onReuseSettings,
+      toggleFavorite,
+      collections,
+      onToast,
+      showContextMenu,
+    ]
+  );
+
+  const handleEmptyAreaContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      if ((e.target as HTMLElement).closest("[data-library-card-id]")) {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+
+      const items: ContextMenuItem[] = [
+        {
+          id: "empty-refresh",
+          label: "Refresh Library",
+          icon: <RotateCcw className="w-3.5 h-3.5" />,
+          onClick: refresh,
+        },
+        {
+          id: "empty-new-col",
+          label: "New Collection...",
+          icon: <FolderPlus className="w-3.5 h-3.5" />,
+          onClick: () => setNewColOpen(true),
+          separator: true,
+        },
+        {
+          id: "empty-select-all",
+          label: "Select All",
+          shortcut: "Ctrl+A",
+          disabled: result.items.length === 0,
+          onClick: handleSelectAll,
+        },
+      ];
+
+      if (selectedIds.size > 0) {
+        items.push({
+          id: "empty-deselect",
+          label: "Deselect All",
+          shortcut: "Esc",
+          onClick: handleDeselectAll,
+        });
+      }
+
+      showContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        title: "Library Workspace",
+        items,
+      });
+    },
+    [refresh, result.items.length, selectedIds.size, handleSelectAll, handleDeselectAll, showContextMenu]
+  );
+
   const isEmptyLibrary =
     result.counts.all === 0 && result.counts.animation === 0 && !debouncedSearch;
 
   return (
-    <div className="relative space-y-5 pb-16">
+    <div className="relative space-y-5 pb-16" onContextMenu={handleEmptyAreaContextMenu}>
       <div className="sticky -top-6 z-10 -mx-6 space-y-3 border-b border-border bg-bg px-6 pb-3 pt-6">
         <SectionHeader
           title="Media Library"
@@ -575,6 +1139,43 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
                   <List className="h-3.5 w-3.5" />
                 </button>
               </div>
+              {view === "grid" && (
+                <div
+                  className="flex items-center rounded-md border border-border p-0.5"
+                  title="Gallery thumbnail aspect ratio mode"
+                >
+                  <button
+                    type="button"
+                    aria-label="Original natural aspect ratio"
+                    title="Natural (original aspect ratio)"
+                    aria-pressed={galleryMode === "natural"}
+                    onClick={() => setGalleryMode("natural")}
+                    className={`flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors ${
+                      galleryMode === "natural"
+                        ? "bg-surface-subtle text-fg font-medium"
+                        : "text-fg-muted hover:text-fg"
+                    }`}
+                  >
+                    <Maximize2 className="h-3 w-3" />
+                    <span>Natural</span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="1:1 Square thumbnail mode"
+                    title="Square (1:1 uniform thumbnail grid)"
+                    aria-pressed={galleryMode === "square"}
+                    onClick={() => setGalleryMode("square")}
+                    className={`flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors ${
+                      galleryMode === "square"
+                        ? "bg-surface-subtle text-fg font-medium"
+                        : "text-fg-muted hover:text-fg"
+                    }`}
+                  >
+                    <Grid className="h-3 w-3" />
+                    <span>Square</span>
+                  </button>
+                </div>
+              )}
               <Button variant="secondary" onClick={() => setNewColOpen(true)}>
                 <FolderPlus className="h-4 w-4" />
                 New Collection
@@ -767,23 +1368,17 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
               : "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4"
           }`}
         >
-          {result.items.map((item) => (
+          {result.items.map((item, index) => (
             <MediaCard
               key={item.id}
               item={item}
               available={isAvailable(item)}
               isSelected={selectedIds.has(item.id)}
+              isFocused={focusedIndex === index}
               isSelectMode={isSelectMode || selectedIds.size > 0}
-              onToggleSelect={() => handleToggleSelect(item.id)}
-              onOpen={() => {
-                if (isSelectMode) {
-                  handleToggleSelect(item.id);
-                } else if (item.mediaType === "image" && item.image && onInspectImage) {
-                  onInspectImage(item.image);
-                } else {
-                  setSelected(item);
-                }
-              }}
+              galleryMode={galleryMode}
+              onToggleSelect={(e) => handleCheckboxClick(index, item, e)}
+              onOpen={(e) => handleCardClick(index, item, e)}
               onFavorite={() => void toggleFavorite(item)}
               onOpenWorkspace={() => openWorkspace(item)}
               onReveal={() => {
@@ -793,32 +1388,27 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
               }}
               onDelete={() => setDeleteTarget(item)}
               onLoadFailure={() => markFailed(item.id)}
+              onContextMenu={(e) => handleItemContextMenu(e, item)}
             />
           ))}
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-border">
-          {result.items.map((item) => (
+          {result.items.map((item, index) => (
             <MediaRow
               key={item.id}
               item={item}
               available={isAvailable(item)}
               isSelected={selectedIds.has(item.id)}
+              isFocused={focusedIndex === index}
               isSelectMode={isSelectMode || selectedIds.size > 0}
-              onToggleSelect={() => handleToggleSelect(item.id)}
-              onOpen={() => {
-                if (isSelectMode) {
-                  handleToggleSelect(item.id);
-                } else if (item.mediaType === "image" && item.image && onInspectImage) {
-                  onInspectImage(item.image);
-                } else {
-                  setSelected(item);
-                }
-              }}
+              onToggleSelect={(e) => handleCheckboxClick(index, item, e)}
+              onOpen={(e) => handleCardClick(index, item, e)}
               onFavorite={() => void toggleFavorite(item)}
               onOpenWorkspace={() => openWorkspace(item)}
               onDelete={() => setDeleteTarget(item)}
               onLoadFailure={() => markFailed(item.id)}
+              onContextMenu={(e) => handleItemContextMenu(e, item)}
             />
           ))}
         </div>
@@ -917,7 +1507,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
               )
             );
         }}
-        onInspectImage={onInspectImage}
+        onInspectImage={(img) => onInspectImage(img, visibleImages)}
         onReuseSettings={onReuseSettings}
         onReveal={() => {
           if (selected?.mediaPath) void window.kirea.openPath(selected.mediaPath);
@@ -1169,19 +1759,24 @@ const MediaCard: React.FC<{
   item: LibraryMediaItem;
   available: boolean;
   isSelected: boolean;
+  isFocused?: boolean;
   isSelectMode: boolean;
-  onToggleSelect: () => void;
-  onOpen: () => void;
+  galleryMode: "natural" | "square";
+  onToggleSelect: (e?: React.MouseEvent) => void;
+  onOpen: (e?: React.MouseEvent) => void;
   onFavorite: () => void;
   onOpenWorkspace: () => void;
   onReveal: () => void;
   onDelete: () => void;
   onLoadFailure: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }> = ({
   item,
   available,
   isSelected,
+  isFocused = false,
   isSelectMode,
+  galleryMode,
   onToggleSelect,
   onOpen,
   onFavorite,
@@ -1189,18 +1784,23 @@ const MediaCard: React.FC<{
   onReveal,
   onDelete,
   onLoadFailure,
+  onContextMenu,
 }) => {
   const canFavorite = item.favoriteSupported;
   const canDelete = item.mediaType !== "animation";
 
   return (
     <div
+      data-library-card-id={item.id}
+      onContextMenu={onContextMenu}
       className={`group relative flex flex-col overflow-hidden rounded-xl border bg-surface transition-all ${
         isSelected
-          ? "border-accent ring-2 ring-accent/30"
-          : available
-            ? "border-border hover:border-accent"
-            : "border-dashed border-border-strong"
+          ? "border-accent ring-2 ring-accent/40 shadow-md"
+          : isFocused
+            ? "border-accent ring-2 ring-accent/60 shadow-lg"
+            : available
+              ? "border-border hover:border-accent hover:shadow-md"
+              : "border-dashed border-border-strong opacity-80"
       }`}
     >
       {/* SELECTION CHECKBOX OVERLAY */}
@@ -1208,7 +1808,7 @@ const MediaCard: React.FC<{
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          onToggleSelect();
+          onToggleSelect(e);
         }}
         aria-label={isSelected ? `Deselect ${item.title}` : `Select ${item.title}`}
         aria-pressed={isSelected}
@@ -1226,11 +1826,24 @@ const MediaCard: React.FC<{
       {available ? (
         <button
           type="button"
-          onClick={onOpen}
-          className="relative aspect-square cursor-pointer overflow-hidden bg-well flex items-center justify-center p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          onClick={(e) => onOpen(e)}
+          style={{
+            aspectRatio:
+              galleryMode === "square"
+                ? "1 / 1"
+                : item.width && item.height
+                  ? `${item.width} / ${item.height}`
+                  : "1 / 1",
+            maxHeight: galleryMode === "square" ? undefined : "540px",
+          }}
+          className="relative w-full cursor-pointer overflow-hidden bg-surface-subtle flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           aria-label={`Inspect ${item.title}`}
         >
-          <MediaPreview item={item} onLoadFailure={onLoadFailure} />
+          <MediaPreview
+            item={item}
+            fitMode="cover"
+            onLoadFailure={onLoadFailure}
+          />
           <span className="absolute right-2 top-2">
             <TypeBadge item={item} />
           </span>
@@ -1258,7 +1871,7 @@ const MediaCard: React.FC<{
           <p className="text-caption font-semibold text-fg">File missing</p>
           <p className="line-clamp-2 max-w-full text-[11px] text-fg-muted">{item.title}</p>
           <div className="flex items-center gap-1.5">
-            <Button size="sm" variant="secondary" onClick={onOpen}>
+            <Button size="sm" variant="secondary" onClick={(e) => onOpen(e)}>
               Details
             </Button>
             {canDelete && (
@@ -1273,10 +1886,10 @@ const MediaCard: React.FC<{
 
       <div className="flex flex-1 flex-col justify-between space-y-1.5 p-2.5">
         <div className="space-y-1">
-          <p className="line-clamp-2 text-xs text-fg">{cardPrimaryText(item)}</p>
+          <p className="line-clamp-2 text-xs font-medium text-fg">{cardPrimaryText(item)}</p>
           <p className="truncate text-[11px] text-fg-subtle">{cardSecondaryText(item)}</p>
         </div>
-        <div className="flex items-center justify-between gap-1 border-t border-border/60 pt-1">
+        <div className="flex items-center justify-between gap-1 border-t border-border/60 pt-1.5">
           <div className="min-w-0">
             <div className="truncate text-[11px] font-medium text-fg-muted">
               {cardModelText(item)}
@@ -1331,17 +1944,20 @@ const MediaRow: React.FC<{
   item: LibraryMediaItem;
   available: boolean;
   isSelected: boolean;
+  isFocused?: boolean;
   isSelectMode: boolean;
-  onToggleSelect: () => void;
-  onOpen: () => void;
+  onToggleSelect: (e?: React.MouseEvent) => void;
+  onOpen: (e?: React.MouseEvent) => void;
   onFavorite: () => void;
   onOpenWorkspace: () => void;
   onDelete: () => void;
   onLoadFailure: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }> = ({
   item,
   available,
   isSelected,
+  isFocused = false,
   isSelectMode,
   onToggleSelect,
   onOpen,
@@ -1349,15 +1965,25 @@ const MediaRow: React.FC<{
   onOpenWorkspace,
   onDelete,
   onLoadFailure,
+  onContextMenu,
 }) => (
   <div
+    data-library-card-id={item.id}
+    onContextMenu={onContextMenu}
     className={`flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0 hover:bg-surface-subtle/60 transition-colors ${
-      isSelected ? "bg-accent-soft/30" : ""
+      isSelected
+        ? "bg-accent-soft/40 ring-1 ring-accent/30"
+        : isFocused
+          ? "bg-surface-subtle ring-1 ring-accent/50"
+          : ""
     }`}
   >
     <button
       type="button"
-      onClick={onToggleSelect}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggleSelect(e);
+      }}
       aria-label={isSelected ? `Deselect ${item.title}` : `Select ${item.title}`}
       className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
         isSelected
@@ -1365,16 +1991,16 @@ const MediaRow: React.FC<{
           : "border-border-strong bg-surface text-transparent hover:border-accent hover:text-accent/40"
       }`}
     >
-      <Check className="h-3 w-3 stroke-[2.5]" />
+      <Check className="h-3.5 w-3.5 stroke-[2.5]" />
     </button>
     <button
       type="button"
-      onClick={onOpen}
-      className="relative h-12 w-16 shrink-0 overflow-hidden rounded-md border border-border bg-well flex items-center justify-center p-0.5"
+      onClick={(e) => onOpen(e)}
+      className="relative h-12 w-16 shrink-0 overflow-hidden rounded-md border border-border bg-surface-subtle flex items-center justify-center"
       aria-label={`Inspect ${item.title}`}
     >
       {available ? (
-        <MediaPreview item={item} onLoadFailure={onLoadFailure} compact />
+        <MediaPreview item={item} fitMode="cover" onLoadFailure={onLoadFailure} compact />
       ) : (
         <span className="flex h-full w-full items-center justify-center text-fg-subtle">
           <ImageOff className="h-4 w-4" />
@@ -1427,8 +2053,9 @@ const MediaRow: React.FC<{
 const MediaPreview: React.FC<{
   item: LibraryMediaItem;
   compact?: boolean;
+  fitMode?: "cover" | "contain";
   onLoadFailure?: () => void;
-}> = ({ item, compact = false, onLoadFailure }) => {
+}> = ({ item, compact = false, fitMode = "cover", onLoadFailure }) => {
   if (!item.thumbnailPath && !item.mediaPath) {
     return (
       <span className="flex h-full w-full items-center justify-center text-fg-subtle">
@@ -1443,7 +2070,7 @@ const MediaPreview: React.FC<{
         preload="metadata"
         muted
         playsInline
-        className="pointer-events-none h-full w-full object-contain object-center"
+        className={`pointer-events-none h-full w-full ${fitMode === "cover" ? "object-cover" : "object-contain"} object-center`}
         aria-hidden="true"
       />
     );
@@ -1463,7 +2090,7 @@ const MediaPreview: React.FC<{
       loading="lazy"
       compact={compact}
       onLoadFailure={onLoadFailure}
-      className={`h-full w-full object-contain ${
+      className={`h-full w-full ${fitMode === "cover" ? "object-cover object-center" : "object-contain object-center"} ${
         item.mediaType === "pixel" || item.mediaType === "animation"
           ? "[image-rendering:pixelated]"
           : ""
@@ -1711,6 +2338,12 @@ const MediaInspector: React.FC<{
           )}
           {item.mediaType === "image" && (
             <>
+              <DetailRow
+                label="Operations"
+                value={imageWorkflowLabels(item.image)
+                  .map((label) => label.label)
+                  .join(" → ")}
+              />
               <DetailRow label="Sampler" value={item.image.sampler} />
               <DetailRow label="Scheduler" value={item.image.scheduler} />
               <DetailRow label="Steps" value={`${item.image.steps}`} />

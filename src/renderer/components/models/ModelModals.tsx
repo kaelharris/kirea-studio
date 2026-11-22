@@ -1,12 +1,18 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 import {
+  Check,
   CheckCircle2,
   CloudDownload,
   Download,
   ExternalLink,
+  FolderOpen,
+  History,
+  Images,
   Loader2,
   Plus,
   RefreshCw,
+  Search,
+  Sparkles,
   Star,
   ThumbsUp,
   X,
@@ -19,10 +25,20 @@ import type {
 import {
   ARCHITECTURE_LABELS,
   architectureBadgeTone,
+  getEffectiveModelInfo,
 } from "../../../shared/model-utils";
-import type { ModelArchitecture, ModelRecord } from "../../../shared/types";
-import { formatBytes } from "../../utils/format";
+import type {
+  GeneratedImageRecord,
+  ModelArchitecture,
+  ModelRecord,
+} from "../../../shared/types";
+import {
+  formatBytes,
+  formatRelativeTime,
+  toMediaUrl,
+} from "../../utils/format";
 import { ModelPreview } from "../ModelPreview";
+import { MediaImage } from "../ui/MediaImage";
 import {
   Badge,
   Button,
@@ -82,7 +98,7 @@ export const CivitaiDetailsModal: React.FC<CivitaiDetailsModalProps> = ({
           <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
             <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-4">
               <div className="space-y-2">
-                <div className="h-48 rounded-xl overflow-hidden border border-border bg-well flex items-center justify-center p-1.5">
+                <div className="aspect-[2/3] rounded-xl overflow-hidden border border-border bg-well flex items-center justify-center p-1.5">
                   <RemotePreview
                     url={details.primaryPreviewUrl}
                     alt={`${details.name} preview`}
@@ -282,7 +298,7 @@ export const CivitaiDetailsModal: React.FC<CivitaiDetailsModalProps> = ({
                       key={url}
                       type="button"
                       onClick={() => void window.kirea.openExternalUrl(url)}
-                      className="h-24 rounded-lg overflow-hidden border border-border bg-well flex items-center justify-center cursor-pointer hover:border-border-strong transition-colors p-1"
+                      className="aspect-[2/3] rounded-lg overflow-hidden border border-border bg-well flex items-center justify-center cursor-pointer hover:border-border-strong transition-colors p-1"
                       title="Open sample image on Civitai"
                     >
                       <RemotePreview
@@ -309,8 +325,9 @@ interface ModelEditorModalProps {
   importingPreview: boolean;
   onClose: () => void;
   onToggleFavorite: (model: ModelRecord) => void;
-  onImportPreview: () => void;
+  onImportPreview: (sourceFilePath?: string) => void;
   onSaveMetadata: () => void;
+  images?: GeneratedImageRecord[];
 }
 
 export const ModelEditorModal: React.FC<ModelEditorModalProps> = ({
@@ -323,31 +340,184 @@ export const ModelEditorModal: React.FC<ModelEditorModalProps> = ({
   onToggleFavorite,
   onImportPreview,
   onSaveMetadata,
-}) => (
+  images,
+}) => {
+  const [recentPickerOpen, setRecentPickerOpen] = useState(false);
+  const [recentSearch, setRecentSearch] = useState("");
+  const [filterMatchedModel, setFilterMatchedModel] = useState(false);
+
+  const latestImage = images && images.length > 0 ? images[0] : null;
+  const recentImages = useMemo(() => (images ? images.slice(0, 48) : []), [images]);
+
+  const isModelMatch = React.useCallback(
+    (img: GeneratedImageRecord) => {
+      if (!editTarget) return false;
+      const targetName = editTarget.name.toLowerCase();
+      const targetBase = editTarget.relativePath
+        ? editTarget.relativePath.replace(/\\/g, "/").split("/").pop()?.toLowerCase() ?? targetName
+        : targetName;
+      if (
+        img.checkpoint &&
+        (img.checkpoint.toLowerCase().includes(targetName) ||
+          targetName.includes(img.checkpoint.toLowerCase()) ||
+          img.checkpoint.toLowerCase().includes(targetBase))
+      ) {
+        return true;
+      }
+      if (
+        img.loras &&
+        img.loras.some(
+          (l) =>
+            l.name.toLowerCase().includes(targetName) ||
+            targetName.includes(l.name.toLowerCase()) ||
+            l.name.toLowerCase().includes(targetBase)
+        )
+      ) {
+        return true;
+      }
+      return false;
+    },
+    [editTarget]
+  );
+
+  const matchedCount = useMemo(
+    () => recentImages.filter(isModelMatch).length,
+    [recentImages, isModelMatch]
+  );
+
+  const filteredRecent = useMemo(() => {
+    return recentImages.filter((img) => {
+      if (filterMatchedModel && !isModelMatch(img)) return false;
+      if (!recentSearch.trim()) return true;
+      const q = recentSearch.toLowerCase();
+      return (
+        img.prompt?.toLowerCase().includes(q) ||
+        img.fileName?.toLowerCase().includes(q) ||
+        img.checkpoint?.toLowerCase().includes(q) ||
+        img.loras?.some((l) => l.name.toLowerCase().includes(q))
+      );
+    });
+  }, [recentImages, filterMatchedModel, isModelMatch, recentSearch]);
+
+  return (
+    <>
       <Modal
         open={Boolean(editTarget && editDraft)}
         onClose={onClose}
-        title={`Model Metadata — ${editTarget?.name ?? ""}`}
+        title={`Model Metadata — ${
+          editTarget ? getEffectiveModelInfo(editTarget).name : ""
+        }`}
         maxWidthClass="max-w-2xl"
       >
         {editTarget && editDraft && (
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-4">
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 <ModelPreview model={editTarget} className="h-40" />
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="w-full"
-                  loading={importingPreview}
-                  onClick={() => onImportPreview()}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Import Preview
-                </Button>
-                <p className="text-[11px] text-fg-subtle leading-relaxed">
-                  Custom images are copied into Kirea Studio's app data. External
-                  ComfyUI folders are never modified.
+
+                <div className="space-y-1.5">
+                  {/* Action 1: Use Latest Generated Work (1-click quick assign) */}
+                  {latestImage ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="w-full justify-center text-xs font-semibold border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 hover:border-accent transition-all flex items-center gap-1.5 shadow-xs"
+                      loading={importingPreview}
+                      onClick={() => onImportPreview(latestImage.filePath)}
+                      title={`Assign latest generation: ${latestImage.fileName} (${latestImage.width}×${latestImage.height})`}
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-accent shrink-0" />
+                      <span className="truncate">Use Latest Generated Work</span>
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled
+                      className="w-full justify-center text-xs text-fg-subtle/50 border border-border/40 bg-surface-subtle/40 flex items-center gap-1.5 opacity-60 cursor-not-allowed"
+                      title="No generated images available in library yet"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">Use Latest Generated Work</span>
+                    </Button>
+                  )}
+
+                  {/* Action 2: Choose from Recent Creations Picker */}
+                  {recentImages.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="w-full justify-center text-xs text-fg hover:text-fg hover:bg-surface-subtle border-border flex items-center gap-1.5"
+                      onClick={() => setRecentPickerOpen(true)}
+                      title="Browse all recent creations to assign as model preview"
+                    >
+                      <Images className="w-3.5 h-3.5 text-fg-subtle shrink-0" />
+                      <span className="truncate">Select from Recent Works ({recentImages.length})…</span>
+                    </Button>
+                  )}
+
+                  {/* Action 3: Import from file */}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="w-full justify-center text-xs text-fg-subtle hover:text-fg hover:bg-surface-subtle flex items-center gap-1.5"
+                    loading={importingPreview}
+                    onClick={() => onImportPreview()}
+                  >
+                    <FolderOpen className="w-3.5 h-3.5 shrink-0" />
+                    <span>Import from File…</span>
+                  </Button>
+                </div>
+
+                {/* Quick mini-strip for top 3 recent creations */}
+                {recentImages.length > 0 && (
+                  <div className="space-y-1 pt-1.5 border-t border-border/70">
+                    <div className="flex items-center justify-between text-[10px] text-fg-subtle font-medium">
+                      <span>Recent Works</span>
+                      <button
+                        type="button"
+                        className="text-accent hover:underline cursor-pointer text-[10px]"
+                        onClick={() => setRecentPickerOpen(true)}
+                      >
+                        Browse all
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {recentImages.slice(0, 3).map((img, idx) => (
+                        <button
+                          key={img.id}
+                          type="button"
+                          onClick={() => onImportPreview(img.filePath)}
+                          title={idx === 0 ? `Latest: ${img.prompt.slice(0, 80)}…` : img.prompt.slice(0, 80)}
+                          className="group relative aspect-square rounded-lg overflow-hidden border border-border bg-well hover:border-accent hover:ring-1 hover:ring-accent transition-all cursor-pointer"
+                        >
+                          <MediaImage
+                            src={toMediaUrl(img.filePath)}
+                            alt={img.prompt}
+                            className="w-full h-full object-cover"
+                          />
+                          {idx === 0 && (
+                            <span className="absolute top-1 left-1 px-1 py-0.2 rounded text-[8px] font-bold bg-accent-solid text-white leading-tight shadow-xs">
+                              Latest
+                            </span>
+                          )}
+                          {isModelMatch(img) && idx !== 0 && (
+                            <span className="absolute top-1 left-1 px-1 py-0.2 rounded text-[8px] font-bold bg-emerald-600 text-white leading-tight shadow-xs">
+                              Model
+                            </span>
+                          )}
+                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-0.5 text-white">
+                            <Check className="w-3.5 h-3.5" />
+                            <span className="text-[8px] font-bold uppercase tracking-wider">Use</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-[10px] text-fg-subtle leading-relaxed pt-0.5">
+                  Custom images are copied into Kirea Studio's app data. External ComfyUI folders are never modified.
                 </p>
               </div>
 
@@ -357,7 +527,7 @@ export const ModelEditorModal: React.FC<ModelEditorModalProps> = ({
                     <label className="text-[11px] text-fg-subtle">Display Name</label>
                     <Input
                       value={editDraft.displayName}
-                      placeholder={editTarget.name}
+                      placeholder={getEffectiveModelInfo(editTarget).name}
                       onChange={(e) =>
                         setEditDraft((p) =>
                           p ? { ...p, displayName: e.target.value } : p
@@ -365,6 +535,21 @@ export const ModelEditorModal: React.FC<ModelEditorModalProps> = ({
                       }
                       className="h-8 text-xs"
                     />
+                    {editTarget.discovery?.source && (
+                      <p className="text-[10px] text-fg-subtle truncate">
+                        {[
+                          editTarget.discovery.source.provider,
+                          editTarget.discovery.source.modelId
+                            ? `model #${editTarget.discovery.source.modelId}`
+                            : null,
+                          editTarget.discovery.source.versionId
+                            ? `version #${editTarget.discovery.source.versionId}`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-1">
                     <label className="text-[11px] text-fg-subtle">Base Model</label>
@@ -523,4 +708,121 @@ export const ModelEditorModal: React.FC<ModelEditorModalProps> = ({
           </div>
         )}
       </Modal>
-);
+
+      {/* Recent Generations Selection Dialog */}
+      <Modal
+        open={recentPickerOpen}
+        onClose={() => setRecentPickerOpen(false)}
+        title={
+          <div className="flex items-center gap-2">
+            <Images className="w-4 h-4 text-accent" />
+            <span className="font-semibold text-sm">Select Preview from Recent Works</span>
+          </div>
+        }
+        maxWidthClass="max-w-3xl"
+        zIndexClass="z-50"
+      >
+        <div className="space-y-3.5 p-1">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
+            <div className="flex items-center gap-2 flex-1 min-w-[220px]">
+              <div className="relative flex-1">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-subtle" />
+                <Input
+                  value={recentSearch}
+                  onChange={(e) => setRecentSearch(e.target.value)}
+                  placeholder="Search recent creations by prompt, model or tag…"
+                  className="h-8 pl-8 text-xs"
+                />
+              </div>
+            </div>
+            {matchedCount > 0 && (
+              <Button
+                size="sm"
+                variant={filterMatchedModel ? "primary" : "secondary"}
+                onClick={() => setFilterMatchedModel((p) => !p)}
+                className="text-xs h-8"
+              >
+                <Sparkles className="w-3.5 h-3.5 mr-1" />
+                Used with this model ({matchedCount})
+              </Button>
+            )}
+          </div>
+
+          <div className="max-h-[55vh] overflow-y-auto pr-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+            {filteredRecent.length === 0 ? (
+              <div className="col-span-full py-12 text-center text-fg-subtle text-xs space-y-1">
+                <p>No recent generations matched your filter.</p>
+                {filterMatchedModel && (
+                  <button
+                    type="button"
+                    className="text-accent underline text-xs cursor-pointer"
+                    onClick={() => setFilterMatchedModel(false)}
+                  >
+                    View all recent works
+                  </button>
+                )}
+              </div>
+            ) : (
+              filteredRecent.map((img, idx) => {
+                const isMatched = isModelMatch(img);
+                return (
+                  <button
+                    key={img.id}
+                    type="button"
+                    onClick={() => {
+                      onImportPreview(img.filePath);
+                      setRecentPickerOpen(false);
+                    }}
+                    className="group relative flex flex-col rounded-xl border border-border bg-surface overflow-hidden hover:border-accent hover:ring-2 hover:ring-accent/40 transition-all text-left cursor-pointer shadow-xs"
+                  >
+                    <div className="relative aspect-square w-full bg-well overflow-hidden">
+                      <MediaImage
+                        src={toMediaUrl(img.filePath)}
+                        alt={img.prompt}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                      />
+                      {idx === 0 && (
+                        <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-accent-solid text-white shadow-xs">
+                          Latest Work
+                        </span>
+                      )}
+                      {isMatched && (
+                        <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-600 text-white shadow-xs">
+                          Model match
+                        </span>
+                      )}
+                      <div className="absolute inset-0 bg-black/55 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-white">
+                        <Check className="w-4 h-4 text-accent" />
+                        <span className="px-2 py-0.5 rounded-md bg-accent-solid text-white text-[11px] font-semibold shadow-sm">
+                          Assign as Preview
+                        </span>
+                      </div>
+                    </div>
+                    <div className="p-2 space-y-1">
+                      <p className="text-[11px] text-fg line-clamp-2 leading-snug">
+                        {img.prompt || "No prompt recorded"}
+                      </p>
+                      <div className="flex items-center justify-between text-[10px] text-fg-subtle pt-0.5 border-t border-border/40">
+                        <span>{img.width}×{img.height}</span>
+                        <span>{formatRelativeTime(img.createdAt)}</span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-border text-xs">
+            <span className="text-fg-subtle">
+              Showing {filteredRecent.length} of {recentImages.length} recent creations
+            </span>
+            <Button size="sm" variant="secondary" onClick={() => setRecentPickerOpen(false)}>
+              Close
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </>
+  );
+};

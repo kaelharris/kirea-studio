@@ -31,6 +31,11 @@ export interface StartDownloadInput {
 export interface DownloadManagerOptions {
   allowLoopbackHttpForTests?: boolean;
   sevenZipPath?: string;
+  /**
+   * Resolves non-persisted request headers (for example a provider token) each
+   * time a transfer starts or resumes. Header values are never stored in the DB.
+   */
+  headerProvider?: (task: DownloadTask) => Record<string, string> | null;
 }
 
 function resolve7zaPath(customPath?: string): string {
@@ -294,6 +299,7 @@ export class DownloadManager extends EventEmitter {
     try {
       const headers: Record<string, string> = {
         "User-Agent": "KireaStudio/1.0.1 (Windows Desktop)",
+        ...(this.options.headerProvider?.(current) ?? {}),
       };
       if (existingBytes > 0) {
         headers.Range = `bytes=${existingBytes}-`;
@@ -321,7 +327,8 @@ export class DownloadManager extends EventEmitter {
 
         const contentLength = Number(response.headers.get("content-length") ?? "0");
         const contentRange = response.headers.get("content-range");
-        let resolvedTotal = current.totalBytes;
+        const declaredTotal = current.totalBytes;
+        let resolvedTotal = declaredTotal;
 
         if (contentRange) {
           const match = contentRange.match(/\/(\d+)\s*$/);
@@ -330,6 +337,16 @@ export class DownloadManager extends EventEmitter {
           }
         } else if (contentLength > 0) {
           resolvedTotal = isPartial ? existingBytes + contentLength : contentLength;
+        }
+
+        if (
+          declaredTotal > 0 &&
+          resolvedTotal > 0 &&
+          resolvedTotal !== declaredTotal
+        ) {
+          throw new Error(
+            `File-size verification failed. Expected ${declaredTotal} bytes, source reports ${resolvedTotal}.`
+          );
         }
 
         current.totalBytes = resolvedTotal;
@@ -421,6 +438,12 @@ export class DownloadManager extends EventEmitter {
       current.downloadedBytes = finalPartSize;
       if (current.totalBytes === 0) {
         current.totalBytes = finalPartSize;
+      }
+      if (finalPartSize !== current.totalBytes) {
+        await fs.promises.rm(partPath, { force: true });
+        throw new Error(
+          `File-size verification failed. Expected ${current.totalBytes} bytes, got ${finalPartSize}.`
+        );
       }
 
       // Integrity verification phase

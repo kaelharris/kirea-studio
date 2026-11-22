@@ -22,10 +22,10 @@ import type {
 } from "../../shared/types";
 import { Button, EmptyState } from "../components/ui/Primitives";
 import { MediaImage } from "../components/ui/MediaImage";
+import { getModelRefDisplayName } from "../../shared/model-utils";
 import {
   formatBytes,
   formatRelativeTime,
-  shortModelLabel,
   toMediaUrl,
 } from "../utils/format";
 
@@ -117,7 +117,7 @@ export const HomePage: React.FC<HomePageProps> = ({
       key: `job-${job.id}`,
       title: job.prompt || "Untitled generation",
       dot: JOB_ACTIVITY[job.status].dot,
-      meta: `${JOB_ACTIVITY[job.status].label} · ${shortModelLabel(job.checkpoint)}`,
+      meta: `${JOB_ACTIVITY[job.status].label} · ${getModelRefDisplayName(models, job.checkpoint)}`,
       when: formatRelativeTime(job.submittedAt),
     })),
     ...activeDownloads.slice(0, 2).map((task) => ({

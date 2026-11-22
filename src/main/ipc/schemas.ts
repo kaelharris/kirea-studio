@@ -11,14 +11,18 @@ import type { CivitaiKeyStore } from "../civitai/secure-key-store";
 import type { ComfyRuntimeManager } from "../comfy/runtime-manager";
 import type { StudioRepository } from "../db/repositories";
 import type { DownloadManager } from "../downloads/download-manager";
+import type { HuggingFaceTokenStore } from "../huggingface/token-store";
+import type { HuggingFaceService } from "../huggingface/hf-service";
 import type { JobOrchestrator } from "../jobs/job-orchestrator";
 import type { StudioLogger } from "../logger";
 import type { ModelScanner } from "../models/model-scanner";
 import type { StudioPaths } from "../paths";
 import { PIXEL_ASSET_ID_PATTERN } from "../pixel/pixel-export-path";
 import { isAllowedLoopbackHost } from "../security";
+import type { UpdateService } from "../updater/update-service";
 
 export const RuntimeModeSchema = z.enum(["external", "managed"]);
+export const UpdateChannelSchema = z.enum(["stable", "prerelease"]);
 export const PerformanceProfileSchema = z.enum(["balanced", "quality", "memory_saver"]);
 export const OutputFormatSchema = z.enum(["png", "jpeg", "webp"]);
 export const NavSectionSchema = z.enum([
@@ -54,7 +58,10 @@ export const ModelArchitectureSchema = z.enum([
   "flux",
   "z_image",
   "anima",
+  "moss_image",
+  "krea2",
   "ltx_video",
+  "wan_video",
   "unknown",
 ]);
 
@@ -202,7 +209,7 @@ export const GenerationRequestSchema = z.object({
   negativePrompt: z.string().max(10000),
   checkpoint: z.string().max(512),
   vae: z.string().max(512).nullable(),
-  loras: z.array(LoraSelectionSchema).max(6),
+  loras: z.array(LoraSelectionSchema).max(16),
   aspectRatio: z.string().min(1).max(32),
   width: z.number().int().min(64).max(4096),
   height: z.number().int().min(64).max(4096),
@@ -217,6 +224,19 @@ export const GenerationRequestSchema = z.object({
   outputFormat: OutputFormatSchema,
   inputImagePath: z.string().max(1024).nullable(),
   denoise: z.number().min(0.05).max(1.0),
+  maskDataUrl: z.string().max(20000000).nullable().optional(),
+  maskPath: z.string().max(1024).nullable().optional(),
+  maskGrowBy: z.number().int().min(0).max(64).optional(),
+  outpaintPadding: z
+    .object({
+      top: z.number().int().min(0).max(4096),
+      bottom: z.number().int().min(0).max(4096),
+      left: z.number().int().min(0).max(4096),
+      right: z.number().int().min(0).max(4096),
+    })
+    .nullable()
+    .optional(),
+  layoutJson: z.string().max(100000).nullable().optional(),
   video: VideoGenerationSettingsSchema.optional(),
   hiresFix: HiresFixSchema.optional(),
   upscale: UpscaleConfigSchema.optional(),
@@ -488,12 +508,18 @@ export const StorySceneInputSchema = z
 export const CivitaiSearchSchema = z
   .object({
     query: z.string().max(200).optional(),
-    type: z.enum(["Checkpoint", "LORA", "VAE", "Upscaler"]).nullable().optional(),
-    baseModel: z
-      .enum(["SD 1.5", "SDXL 1.0", "Illustrious", "Pony", "Anima", "Flux.1 D"])
-      .nullable()
+    type: z.string().trim().max(100).nullable().optional(),
+    baseModel: z.string().trim().max(120).nullable().optional(),
+    sort: z
+      .enum([
+        "Most Downloaded",
+        "Most Liked",
+        "Most Discussed",
+        "Highest Rated",
+        "Newest",
+      ])
       .optional(),
-    sort: z.enum(["Most Downloaded", "Highest Rated", "Newest"]).optional(),
+    period: z.enum(["Day", "Week", "Month", "AllTime"]).optional(),
     nsfw: z.boolean().optional(),
     cursor: z.string().max(2048).nullable().optional(),
     limit: z.number().int().min(1).max(50).optional(),
@@ -504,8 +530,57 @@ export const CivitaiStartDownloadSchema = z
   .object({
     modelId: z.number().int().positive(),
     versionId: z.number().int().positive(),
+    targetArchitecture: z.string().optional(),
   })
   .strict();
+
+export const HuggingFaceRepoIdSchema = z.string().trim().min(3).max(220);
+export const HuggingFaceRevisionSchema = z.string().trim().max(120).optional();
+
+export const HuggingFaceSearchSchema = z
+  .object({
+    query: z.string().max(200).optional(),
+    task: z.enum(["all", "text-to-video", "image-to-video"]).optional(),
+    architecture: z.enum(["all", "wan_video", "ltx_video", "other"]).optional(),
+    sort: z.enum(["downloads", "likes", "lastModified"]).optional(),
+    limit: z.number().int().min(1).max(50).optional(),
+    cursor: z.string().max(4096).nullable().optional(),
+  })
+  .strict();
+
+export const HuggingFaceRepoRequestSchema = z
+  .object({
+    repoId: HuggingFaceRepoIdSchema,
+    revision: HuggingFaceRevisionSchema,
+  })
+  .strict();
+
+export const HuggingFaceCompatibilityRequestSchema = z
+  .object({
+    repoId: HuggingFaceRepoIdSchema,
+    revision: HuggingFaceRevisionSchema,
+    selectedPaths: z.array(z.string().min(1).max(512)).min(1).max(64),
+  })
+  .strict();
+
+export const HuggingFaceStartFileSchema = z
+  .object({
+    path: z.string().min(1).max(512),
+    category: ModelCategorySchema,
+  })
+  .strict();
+
+export const HuggingFaceStartRequestSchema = z
+  .object({
+    repoId: HuggingFaceRepoIdSchema,
+    revision: HuggingFaceRevisionSchema,
+    files: z.array(HuggingFaceStartFileSchema).min(1).max(32),
+    acknowledgeConditional: z.boolean().optional(),
+    override: z.boolean().optional(),
+  })
+  .strict();
+
+export const HuggingFaceTokenSchema = z.string().max(512);
 
 export const CivitaiWorkflowSearchSchema = z
   .object({
@@ -522,7 +597,9 @@ export const CivitaiWorkflowSearchSchema = z
       ])
       .nullable()
       .optional(),
-    sort: z.enum(["Most Downloaded", "Highest Rated", "Newest"]).optional(),
+    sort: z
+      .enum(["Most Downloaded", "Highest Rated", "Newest"])
+      .optional(),
     nsfw: z.boolean().optional(),
     cursor: z.string().max(2048).nullable().optional(),
     limit: z.number().int().min(1).max(50).optional(),
@@ -859,7 +936,10 @@ export interface HandlerContext {
   civitaiClient: CivitaiClient;
   civitaiDownloadManager: CivitaiDownloadManager;
   civitaiKeyStore: CivitaiKeyStore;
+  huggingFaceService: HuggingFaceService;
+  huggingFaceTokenStore: HuggingFaceTokenStore;
   jobOrchestrator: JobOrchestrator;
+  updateService: UpdateService;
   logger: StudioLogger;
   getVramTotalMB: () => number;
   setVramTotalMB: (v: number) => void;

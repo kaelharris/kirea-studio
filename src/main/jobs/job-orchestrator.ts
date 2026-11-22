@@ -473,6 +473,7 @@ export class JobOrchestrator extends EventEmitter {
 
       const api = this.runtime.getApiClient();
       let uploadedInputName: string | undefined;
+      let uploadedMaskName: string | undefined;
 
       if (
         job.mode === "img2img" ||
@@ -490,6 +491,42 @@ export class JobOrchestrator extends EventEmitter {
         uploadedInputName = uploadRes.subfolder
           ? `${uploadRes.subfolder}/${uploadRes.name}`
           : uploadRes.name;
+
+        // Upload inpainting mask if present
+        if (job.settings.maskDataUrl) {
+          try {
+            const rawBase64 = job.settings.maskDataUrl.replace(/^data:image\/\w+;base64,/, "");
+            const maskBuf = Buffer.from(rawBase64, "base64");
+            const maskUploadRes = await api.uploadImageBuffer(
+              maskBuf,
+              `kirea_mask_${job.id}.png`,
+              "image/png",
+              true
+            );
+            uploadedMaskName = maskUploadRes.subfolder
+              ? `${maskUploadRes.subfolder}/${maskUploadRes.name}`
+              : maskUploadRes.name;
+          } catch (uploadErr) {
+            failJob(
+              "VALIDATION_FAILED",
+              `Failed to upload inpainting mask: ${uploadErr instanceof Error ? uploadErr.message : String(uploadErr)}`
+            );
+            return;
+          }
+        } else if (job.settings.maskPath && fs.existsSync(job.settings.maskPath)) {
+          try {
+            const maskUploadRes = await api.uploadImage(job.settings.maskPath, true);
+            uploadedMaskName = maskUploadRes.subfolder
+              ? `${maskUploadRes.subfolder}/${maskUploadRes.name}`
+              : maskUploadRes.name;
+          } catch (uploadErr) {
+            failJob(
+              "VALIDATION_FAILED",
+              `Failed to upload inpainting mask file: ${uploadErr instanceof Error ? uploadErr.message : String(uploadErr)}`
+            );
+            return;
+          }
+        }
       }
 
       const videoTemplate = getWorkflowById(job.workflowId)?.video;
@@ -525,6 +562,7 @@ export class JobOrchestrator extends EventEmitter {
       const built = buildComfyPromptGraph({
         request: job.settings,
         uploadedInputFilename: uploadedInputName,
+        uploadedMaskFilename: uploadedMaskName,
         availableModels: models,
         filenamePrefix: `kirea_${jobId}`,
         supportsUpscaleModel,

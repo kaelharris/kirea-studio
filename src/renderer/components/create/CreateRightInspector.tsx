@@ -38,6 +38,7 @@ import {
   evaluateLoraCompatibility,
   getEffectiveArchitecture,
   getEffectiveModelInfo,
+  getModelRefDisplayName,
   isGenerationSupportedArchitecture,
   UPSCALE_PRESETS,
   VAE_AUTO,
@@ -53,7 +54,7 @@ import {
   Textarea,
 } from "../ui/Primitives";
 import { MediaImage } from "../ui/MediaImage";
-import { shortModelLabel, toMediaUrl } from "../../utils/format";
+import { toMediaUrl } from "../../utils/format";
 import { describeUpscalerLabel } from "./create-helpers";
 import type { CreateController } from "./useCreateController";
 
@@ -243,7 +244,7 @@ export const CreateRightInspector: React.FC<{ ctrl: CreateController }> = ({ ctr
                         { k: "Seed", v: String(latestImage.seed) },
                         {
                           k: "Checkpoint",
-                          v: shortModelLabel(latestImage.checkpoint),
+                          v: getModelRefDisplayName(models, latestImage.checkpoint),
                         },
                         { k: "Sampler", v: latestImage.sampler },
                         { k: "Steps", v: String(latestImage.steps) },
@@ -315,16 +316,22 @@ export const CreateRightInspector: React.FC<{ ctrl: CreateController }> = ({ ctr
                       { k: "Workflow", v: activeWorkflow?.name ?? "—" },
                       {
                         k: "Checkpoint",
-                        v: draft.checkpoint ? shortModelLabel(draft.checkpoint) : "None",
+                        v: draft.checkpoint
+                          ? getModelRefDisplayName(models, draft.checkpoint)
+                          : "None",
                       },
                       {
                         k: "VAE",
                         v:
                           !draft.vae || draft.vae === VAE_AUTO
-                            ? `Auto${autoVaeName ? ` · ${shortModelLabel(autoVaeName)}` : ""}`
+                            ? `Auto${
+                                autoVaeName
+                                  ? ` · ${getModelRefDisplayName(models, autoVaeName)}`
+                                  : ""
+                              }`
                             : draft.vae === "embedded"
                               ? "Embedded"
-                              : shortModelLabel(draft.vae),
+                              : getModelRefDisplayName(models, draft.vae),
                       },
                       { k: "Sampler", v: `${draft.sampler} · ${draft.scheduler}` },
                       { k: "Steps / CFG", v: `${draft.steps} · ${draft.cfg}` },
@@ -376,7 +383,7 @@ export const CreateRightInspector: React.FC<{ ctrl: CreateController }> = ({ ctr
                               title={lora.name}
                               className="truncate text-caption font-normal text-fg"
                             >
-                              {shortModelLabel(lora.name)}
+                              {getModelRefDisplayName(models, lora.name)}
                             </span>
                             <span className="shrink-0 font-mono text-tech tabular-nums text-fg-muted">
                               {lora.strengthModel.toFixed(2)}

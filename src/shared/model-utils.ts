@@ -3,6 +3,7 @@ import type {
   ModelRecord,
   ModelMetadata,
   ModelDiscovery,
+  ModelSource,
 } from "./types";
 
 export const ARCHITECTURE_LABELS: Record<ModelArchitecture, string> = {
@@ -13,6 +14,7 @@ export const ARCHITECTURE_LABELS: Record<ModelArchitecture, string> = {
   flux: "Flux",
   z_image: "Z-Image Turbo",
   anima: "Anima",
+  moss_image: "MOSS-Image",
   krea2: "Krea 2",
   ltx_video: "LTX Video",
   wan_video: "Wan Video",
@@ -28,6 +30,8 @@ export const ARCHITECTURE_HINTS: Record<ModelArchitecture, string> = {
   z_image: "Turbo distilled model. Keep steps low (4–8) with CFG near 1.",
   anima:
     "Split DiT (UNET + Qwen3 text encoder + qwen_image_vae). 1024 px, ~30 steps, CFG 4, euler/simple.",
+  moss_image:
+    "MOSS-Image split pipeline: diffusion model + Qwen3.5-9B text encoder + FLUX.2 small VAE. 1024 px, 25 steps, CFG 2.5, er_sde/simple.",
   krea2: "Krea 2 diffusion model. Label and preview only; generation workflow is not shipped yet.",
   ltx_video: "Video checkpoint. Not usable in the image generation studio.",
   wan_video: "Wan video diffusion model. Not usable in the image generation studio.",
@@ -50,6 +54,7 @@ const ARCHITECTURE_FAMILY: Record<ModelArchitecture, string> = {
   flux: "flux",
   z_image: "z_image",
   anima: "anima",
+  moss_image: "moss_image",
   krea2: "krea2",
   ltx_video: "ltx_video",
   wan_video: "wan_video",
@@ -80,13 +85,134 @@ export function getEffectiveArchitecture(model: ModelRecord): ModelArchitecture 
   return model.architecture;
 }
 
+/** Turns a checkpoint filename into a readable label without changing its path. */
+export function humanizeModelName(raw: string): string {
+  const base = raw.replace(/\\/g, "/").split("/").pop() ?? raw;
+  // Chained suffixes also cover partially downloaded files (e.g. `.safetensors.part`).
+  const withoutExt = base.replace(
+    /(?:\.(?:safetensors|ckpt|pt|pth|bin|gguf|part))+$/i,
+    ""
+  );
+  const spaced = withoutExt.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  return spaced || withoutExt;
+}
+
+export function getModelDisplayName(model: {
+  name: string;
+  metadata?: { displayName?: string | null } | null;
+  discovery?: {
+    source?: Pick<ModelSource, "modelName"> | null;
+    embeddedTitle?: string | null;
+  } | null;
+}): string {
+  const displayName = model.metadata?.displayName?.trim();
+  if (displayName) return displayName;
+
+  const sourceName = model.discovery?.source?.modelName?.trim();
+  if (sourceName) return sourceName;
+
+  const embeddedTitle = model.discovery?.embeddedTitle?.trim();
+  if (embeddedTitle) {
+    const humanized = humanizeModelName(model.name);
+    // Embedded titles sometimes carry a typo or drop a version suffix; keep the
+    // filename when the two are effectively the same name.
+    return isNearlySameModelName(embeddedTitle, humanized) ? humanized : embeddedTitle;
+  }
+
+  return humanizeModelName(model.name);
+}
+
+function compactModelName(raw: string): string {
+  return raw.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function isNearlySameModelName(a: string, b: string): boolean {
+  const left = compactModelName(a);
+  const right = compactModelName(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  if (Math.abs(left.length - right.length) > 2) return false;
+  return editDistanceWithin(left, right, 2);
+}
+
+function editDistanceWithin(a: string, b: string, limit: number): boolean {
+  let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      current[j] = Math.min(
+        (current[j - 1] ?? 0) + 1,
+        (previous[j] ?? 0) + 1,
+        (previous[j - 1] ?? 0) + cost
+      );
+    }
+    previous = current;
+  }
+  return (previous[b.length] ?? limit + 1) <= limit;
+}
+
+/** Resolves a checkpoint/LoRA reference stored in a job or draft to its display name. */
+export function getModelRefDisplayName(
+  models: ModelRecord[],
+  ref: string | null | undefined
+): string {
+  if (!ref) return "";
+  const normalized = ref.replace(/\\/g, "/").toLowerCase();
+  const baseStem = pathBasename(normalized).replace(
+    /\.(?:safetensors|ckpt|pt|pth|bin|gguf|part)$/i,
+    ""
+  );
+  const model = models.find((candidate) => {
+    const relative = candidate.relativePath.replace(/\\/g, "/").toLowerCase();
+    return (
+      relative === normalized ||
+      candidate.filePath.replace(/\\/g, "/").toLowerCase() === normalized ||
+      candidate.name.toLowerCase() === baseStem
+    );
+  });
+  return model ? getModelDisplayName(model) : humanizeModelName(ref);
+}
+
+function pathBasename(raw: string): string {
+  return raw.replace(/\\/g, "/").split("/").pop() ?? raw;
+}
+
+const GENERIC_EMBEDDED_TITLES = new Set([
+  "lora",
+  "model",
+  "checkpoint",
+  "unknown",
+  "none",
+  "untitled",
+  "safetensors",
+]);
+
+export function normalizeModelTitle(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const cleaned = raw
+    .replace(/<[^>]+>/g, " ")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/^[\s\-–—:]+|[\s\-–—:]+$/g, "")
+    .trim();
+  if (!cleaned || cleaned.length > 160) return null;
+  const lower = cleaned.toLowerCase();
+  if (GENERIC_EMBEDDED_TITLES.has(lower)) return null;
+  if (/^epoch(?:[ _-]*\d+)?$/i.test(cleaned)) return null;
+  if (/^training[ _-]/i.test(cleaned)) return null;
+  if (/^my[ _-]first[ _-]lora/i.test(cleaned)) return null;
+  if (/^[0-9a-f]{8,}$/i.test(cleaned) || /^\d+$/.test(cleaned)) return null;
+  if (/^copy(?:[ _-]|$)/i.test(cleaned)) return null;
+  return cleaned;
+}
+
 export function getEffectiveModelInfo(model: ModelRecord): EffectiveModelInfo {
   const metadata = pickMetadata(model);
   const discovery = pickDiscovery(model);
   const hasUserMetadata = Boolean(metadata && metadata.updatedAt);
 
-  const displayName = metadata?.displayName?.trim();
-  const name = displayName || model.name;
+  const name = getModelDisplayName(model);
 
   const description =
     (hasUserMetadata ? metadata?.description?.trim() : "") ||
@@ -162,6 +288,7 @@ export function architectureBadgeTone(
     case "sd15":
     case "z_image":
     case "anima":
+    case "moss_image":
       return "success";
     case "flux":
     case "krea2":
@@ -200,8 +327,8 @@ export function evaluateLoraCompatibility(
   if (loraArch === "unknown" || baseArch === "unknown") {
     return {
       level: "unknown",
-      compatible: true,
-      message: "Architecture unknown; compatibility could not be verified.",
+      compatible: false,
+      message: "Architecture unknown; missing metadata to verify LoRA compatibility.",
     };
   }
   if (loraArch === baseArch) {
@@ -224,6 +351,47 @@ export function evaluateLoraCompatibility(
   };
 }
 
+export interface EmbeddingCompatibility {
+  level: "compatible" | "cross-paired" | "unknown" | "incompatible";
+  compatible: boolean;
+  message: string;
+}
+
+/**
+ * Dedicated Embedding / Textual Inversion compatibility check.
+ * Embeddings are architectural token vectors and must strictly match target family.
+ */
+export function evaluateEmbeddingCompatibility(
+  embeddingArch: ModelArchitecture,
+  baseArch: ModelArchitecture
+): EmbeddingCompatibility {
+  if (embeddingArch === "unknown" || baseArch === "unknown") {
+    return {
+      level: "unknown",
+      compatible: false,
+      message: "Architecture unknown; missing metadata to verify Embedding compatibility.",
+    };
+  }
+  if (embeddingArch === baseArch) {
+    return { level: "compatible", compatible: true, message: "Exact architecture match." };
+  }
+  if (
+    (embeddingArch === "sdxl" && baseArch === "illustrious") ||
+    (embeddingArch === "illustrious" && baseArch === "sdxl")
+  ) {
+    return {
+      level: "cross-paired",
+      compatible: true,
+      message: "SDXL-family compatible embedding; vectors align with SDXL text encoders.",
+    };
+  }
+  return {
+    level: "incompatible",
+    compatible: false,
+    message: `${ARCHITECTURE_LABELS[embeddingArch]} embeddings cannot be used with ${ARCHITECTURE_LABELS[baseArch]} models.`,
+  };
+}
+
 export const VAE_AUTO = "auto";
 export const VAE_EMBEDDED = "embedded";
 
@@ -234,6 +402,7 @@ const AUTO_VAE_CANDIDATES: Partial<Record<ModelArchitecture, string[]>> = {
   sd15: ["vae-ft-mse-840000-ema-pruned", "vae-ft-mse", "kl-f8-anime2", "blessed2"],
   anima: ["qwen_image_vae"],
   z_image: ["ae.safetensors"],
+  moss_image: ["flux2-vae_small", "flux2_vae_small", "flux2-vae"],
   flux: ["ae.safetensors"],
   krea2: ["ae.safetensors"],
 };
@@ -274,6 +443,14 @@ export function isVaeCompatibleWithArchitecture(
 ): boolean {
   if (vaeArch === "unknown" || baseArch === "unknown") return true;
   if (vaeArch === baseArch) return true;
+  // Flux-family models (Flux, Z-Image, Krea 2) share the AE autoencoder, which
+  // the scanner labels "flux".
+  if (
+    (vaeArch === "flux" || vaeArch === "z_image" || vaeArch === "krea2") &&
+    (baseArch === "flux" || baseArch === "z_image" || baseArch === "krea2")
+  ) {
+    return true;
+  }
   return (
     (vaeArch === "sdxl" || vaeArch === "illustrious" || vaeArch === "pony") &&
     (baseArch === "sdxl" || baseArch === "illustrious" || baseArch === "pony")

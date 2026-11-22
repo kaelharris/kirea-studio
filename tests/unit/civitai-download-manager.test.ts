@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -600,6 +601,118 @@ describe("CivitaiDownloadManager transfers", () => {
     } finally {
       await closeServer(origin.server);
       await closeServer(cdn.server);
+    }
+  });
+
+  it("persists in-flight download across restart, resumes with Range headers, and completes", async () => {
+    const tempDir = makeTempDir();
+    const modelsRoot = path.join(tempDir, "models");
+    const persistPath = path.join(tempDir, "civitai-downloads.json");
+    const totalSize = 256 * 1024;
+    const chunk1 = Buffer.alloc(64 * 1024, 0x41);
+    const chunk2 = Buffer.alloc(192 * 1024, 0x42);
+    const fullData = Buffer.concat([chunk1, chunk2]);
+    const sha256 = crypto.createHash("sha256").update(fullData).digest("hex");
+
+    const requestedRanges: string[] = [];
+
+    const { baseUrl, server } = await listen((req, res) => {
+      const range = req.headers.range;
+      if (range) {
+        requestedRanges.push(range);
+        const match = range.match(/bytes=(\d+)-/);
+        const start = match?.[1] ? parseInt(match[1], 10) : 0;
+        res.writeHead(206, {
+          "content-type": "application/octet-stream",
+          "content-range": `bytes ${start}-${totalSize - 1}/${totalSize}`,
+          "content-length": totalSize - start,
+        });
+        res.end(fullData.slice(start));
+      } else {
+        res.writeHead(200, {
+          "content-type": "application/octet-stream",
+          "content-length": totalSize,
+        });
+        res.write(chunk1.subarray(0, 32 * 1024));
+        const timer = setInterval(() => {
+          if (!res.writableEnded) {
+            res.write(chunk1.subarray(32 * 1024, 64 * 1024));
+          }
+        }, 50);
+        req.on("close", () => clearInterval(timer));
+      }
+    });
+
+    try {
+      const manager1 = new CivitaiDownloadManager({
+        allowLoopbackHttpForTests: true,
+        persistPath,
+      });
+
+      const version = makeVersion(`${baseUrl}/download`, {
+        sizeBytes: totalSize,
+        sha256,
+      });
+
+      const task = manager1.start({
+        model: makeModel(),
+        version,
+        apiKey: null,
+        settings: makeSettings(),
+        managedModelsDir: modelsRoot,
+      });
+
+      await new Promise<void>((resolve) => {
+        const onProgress = (t: { id: string; status: string; downloadedBytes: number }) => {
+          if (t.id === task.id && t.downloadedBytes >= 32 * 1024) {
+            manager1.off("progress", onProgress);
+            expect(manager1.pauseDownload(task.id)).toBe(true);
+            resolve();
+          }
+        };
+        manager1.on("progress", onProgress);
+        const current = manager1.getTask(task.id);
+        if (current && current.downloadedBytes >= 32 * 1024) {
+          manager1.off("progress", onProgress);
+          expect(manager1.pauseDownload(task.id)).toBe(true);
+          resolve();
+        }
+      });
+
+      await manager1.waitForTask(task.id);
+      expect(manager1.getTask(task.id)?.status).toBe("paused");
+      expect(fs.existsSync(persistPath)).toBe(true);
+
+      manager1.prepareShutdown();
+
+      const manager2 = new CivitaiDownloadManager({
+        allowLoopbackHttpForTests: true,
+        persistPath,
+      });
+
+      const recovered = manager2.getTask(task.id);
+      expect(recovered).toBeDefined();
+      expect(recovered?.status).toBe("paused");
+      expect(recovered?.downloadedBytes).toBeGreaterThanOrEqual(32 * 1024);
+
+      const resumed = manager2.resumeDownload(task.id);
+      expect(resumed).toBeDefined();
+
+      const completed = await manager2.waitForTask(task.id);
+      expect(completed?.status).toBe("completed");
+      expect(requestedRanges.length).toBeGreaterThanOrEqual(1);
+      expect(requestedRanges[0]).toMatch(/bytes=\d+-/);
+
+      const targetPath = resolveCivitaiTargetPath(
+        modelsRoot,
+        "LORA",
+        "sdxl",
+        "test-lora.safetensors"
+      );
+      expect(fs.existsSync(targetPath)).toBe(true);
+      expect(fs.statSync(targetPath).size).toBe(totalSize);
+    } finally {
+      await closeServer(server);
     }
   });
 });

@@ -4,9 +4,14 @@ import path from "node:path";
 import sharp from "sharp";
 import { z } from "zod";
 import { IPC_CHANNELS } from "../../../shared/ipc-channels";
-import { resolveEffectivePreviewPath } from "../../../shared/model-utils";
+import {
+  evaluateEmbeddingCompatibility,
+  evaluateLoraCompatibility,
+  resolveEffectivePreviewPath,
+} from "../../../shared/model-utils";
 import { CURATED_MODEL_CATALOG } from "../../../shared/presets";
-import type { ModelCategory } from "../../../shared/types";
+import type { ModelArchitecture, ModelCategory } from "../../../shared/types";
+import { resolveCivitaiModelsRoot } from "../../civitai/download-manager";
 import { isAllowedLoopbackHost, isPathInsideAnyRoot } from "../../security";
 import {
   CivitaiSearchSchema,
@@ -191,20 +196,28 @@ export function registerModelsHandlers(
     }
   });
 
-  handle(IPC_CHANNELS.MODELS_IMPORT_PREVIEW, async (_event, modelIdRaw: string) => {
+  handle(IPC_CHANNELS.MODELS_IMPORT_PREVIEW, async (_event, modelIdRaw: string, sourcePathRaw?: unknown) => {
     const modelId = z.string().min(1).max(64).parse(modelIdRaw);
     const model = ctx.repo.getModelById(modelId);
     if (!model) throw new Error(`Unknown model id: ${modelId}`);
 
-    const win = ctx.getMainWindow();
-    const res = await dialog.showOpenDialog(win ?? undefined!, {
-      title: `Choose preview image for ${model.name}`,
-      properties: ["openFile"],
-      filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] }],
-    });
-    if (res.canceled || res.filePaths.length === 0) return null;
+    let source: string;
+    if (typeof sourcePathRaw === "string" && sourcePathRaw.trim()) {
+      source = path.resolve(sourcePathRaw.trim());
+      if (!fs.existsSync(source)) {
+        throw new Error(`Source preview image not found: ${source}`);
+      }
+    } else {
+      const win = ctx.getMainWindow();
+      const res = await dialog.showOpenDialog(win ?? undefined!, {
+        title: `Choose preview image for ${model.name}`,
+        properties: ["openFile"],
+        filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] }],
+      });
+      if (res.canceled || res.filePaths.length === 0) return null;
+      source = path.resolve(res.filePaths[0]!);
+    }
 
-    const source = path.resolve(res.filePaths[0]!);
     const ext = path.extname(source).toLowerCase();
     if (![".png", ".jpg", ".jpeg", ".webp"].includes(ext)) {
       throw new Error("Unsupported image format for model preview.");
@@ -212,9 +225,59 @@ export function registerModelsHandlers(
 
     const originalsDir = path.join(ctx.paths.modelPreviewCacheDir, "originals");
     await fs.promises.mkdir(originalsDir, { recursive: true });
-    const destination = path.join(originalsDir, `${modelId}${ext}`);
+    const targetFilename = `${modelId}${ext}`;
+
+    // 1. Clean up old webp thumbnails and any stale original with a different extension
+    if (fs.existsSync(ctx.paths.modelPreviewCacheDir)) {
+      const cacheEntries = await fs.promises.readdir(ctx.paths.modelPreviewCacheDir);
+      const thumbPrefix = `${modelId}-`;
+      await Promise.all(
+        cacheEntries
+          .filter((name) => name.startsWith(thumbPrefix) && name.endsWith(".webp"))
+          .map((name) =>
+            fs.promises
+              .rm(path.join(ctx.paths.modelPreviewCacheDir, name), { force: true })
+              .catch(() => undefined)
+          )
+      );
+
+      const origEntries = await fs.promises.readdir(originalsDir);
+      await Promise.all(
+        origEntries
+          .filter(
+            (name) =>
+              (name === modelId || name.startsWith(`${modelId}.`)) &&
+              name !== targetFilename
+          )
+          .map((name) =>
+            fs.promises
+              .rm(path.join(originalsDir, name), { force: true })
+              .catch(() => undefined)
+          )
+      );
+    }
+
+    // 2. Copy the new preview image into originals
+    const destination = path.join(originalsDir, targetFilename);
     await fs.promises.copyFile(source, destination);
 
+    // 3. Pre-generate the cached webp thumbnail immediately so getModelPreview succeeds instantaneously
+    try {
+      const stat = await fs.promises.stat(destination);
+      const cachePath = path.join(
+        ctx.paths.modelPreviewCacheDir,
+        `${modelId}-${Math.round(stat.mtimeMs)}.webp`
+      );
+      await sharp(destination)
+        .rotate()
+        .resize({ width: 720, height: 720, fit: "inside", withoutEnlargement: true })
+        .webp({ quality: 82 })
+        .toFile(cachePath);
+    } catch (sharpErr) {
+      ctx.logger.warn("models", `Pre-generating preview thumbnail failed: ${String(sharpErr)}`);
+    }
+
+    // 4. Update model metadata
     const updated = ctx.repo.updateModelMetadata(modelId, {
       previewMode: "custom",
       previewPath: destination,
@@ -246,8 +309,10 @@ export function registerModelsHandlers(
     if (!item) {
       throw new Error(`Unknown catalog item '${catalogId}'.`);
     }
+    const settings = ctx.getSettings();
+    const modelsRoot = resolveCivitaiModelsRoot(settings, ctx.paths.defaultManagedModelsDir);
     const targetPath = path.join(
-      ctx.paths.defaultManagedModelsDir,
+      modelsRoot,
       item.targetSubdir,
       item.fileName
     );
@@ -294,7 +359,7 @@ export function registerModelsHandlers(
   });
 
   handle(IPC_CHANNELS.CIVITAI_START_DOWNLOAD, async (_event, requestRaw: unknown) => {
-    const { modelId, versionId } = CivitaiStartDownloadSchema.parse(requestRaw);
+    const { modelId, versionId, targetArchitecture } = CivitaiStartDownloadSchema.parse(requestRaw);
     const model = await ctx.civitaiClient.getModelDetails(
       modelId,
       ctx.getCachedModels()
@@ -310,6 +375,23 @@ export function registerModelsHandlers(
         `Civitai version ${versionId} has no downloadable file; it may be unavailable or restricted.`
       );
     }
+
+    // Backend compatibility enforcement: prevent incompatible LoRAs/Embeddings from being installed for the wrong target
+    if (targetArchitecture && targetArchitecture !== "unknown") {
+      const targetArch = targetArchitecture as ModelArchitecture;
+      if (model.type === "LORA") {
+        const check = evaluateLoraCompatibility(version.architecture, targetArch);
+        if (!check.compatible) {
+          throw new Error(`Incompatible LoRA: ${check.message}`);
+        }
+      } else if (model.type === "TextualInversion") {
+        const check = evaluateEmbeddingCompatibility(version.architecture, targetArch);
+        if (!check.compatible) {
+          throw new Error(`Incompatible Embedding: ${check.message}`);
+        }
+      }
+    }
+
     return ctx.civitaiDownloadManager.start({
       model,
       version,
@@ -318,6 +400,14 @@ export function registerModelsHandlers(
       managedModelsDir: ctx.paths.defaultManagedModelsDir,
     });
   });
+
+  handle(IPC_CHANNELS.CIVITAI_PAUSE_DOWNLOAD, (_event, idRaw: unknown) =>
+    ctx.civitaiDownloadManager.pauseDownload(z.string().min(1).max(120).parse(idRaw))
+  );
+
+  handle(IPC_CHANNELS.CIVITAI_RESUME_DOWNLOAD, (_event, idRaw: unknown) =>
+    ctx.civitaiDownloadManager.resumeDownload(z.string().min(1).max(120).parse(idRaw))
+  );
 
   handle(IPC_CHANNELS.CIVITAI_CANCEL_DOWNLOAD, (_event, idRaw: unknown) =>
     ctx.civitaiDownloadManager.cancelDownload(z.string().min(1).max(120).parse(idRaw))

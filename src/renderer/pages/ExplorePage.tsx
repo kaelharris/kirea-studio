@@ -17,6 +17,7 @@ import {
   evaluateLoraCompatibility,
   getEffectiveArchitecture,
   getEffectiveModelInfo,
+  getModelRefDisplayName,
   isGenerationSupportedArchitecture,
 } from "../../shared/model-utils";
 import type {
@@ -419,10 +420,9 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({
                   <div className="text-[11px] text-fg-subtle">
                     Checkpoint:{" "}
                     <span className="text-fg-muted">
-                      {recipe.checkpointName ??
-                        (recipe.checkpointPath
-                          ? shortModelLabel(recipe.checkpointPath)
-                          : "Not pinned")}
+                      {recipe.checkpointPath
+                        ? getModelRefDisplayName(models, recipe.checkpointPath)
+                        : recipe.checkpointName ?? "Not pinned"}
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-1">

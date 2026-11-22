@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   CloudDownload,
+  Copy,
   Download,
   ExternalLink,
   FolderOpen,
@@ -34,7 +35,16 @@ import type {
 } from "../../../shared/types";
 import { formatBytes, formatDurationSeconds } from "../../utils/format";
 import { ModelPreview } from "../ModelPreview";
-import { Badge, Button, Card, EmptyState, Input, Select } from "../ui/Primitives";
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  Input,
+  Select,
+  useContextMenu,
+  type ContextMenuItem,
+} from "../ui/Primitives";
 import {
   ARCHITECTURE_FILTERS,
   CATEGORY_LABELS,
@@ -66,6 +76,7 @@ interface ModelVaultViewProps {
   onRequestDelete: (model: ModelRecord) => void;
   onStartCatalogDownload: (item: CuratedModelCatalogItem) => void;
   onOpenHub: () => void;
+  onSwitchToQueue?: () => void;
   onScan: () => void;
   onOpenPath: (targetPath: string) => void;
 }
@@ -94,10 +105,130 @@ export const ModelVaultView: React.FC<ModelVaultViewProps> = ({
   onRequestDelete,
   onStartCatalogDownload,
   onOpenHub,
+  onSwitchToQueue,
   onScan,
   onOpenPath,
-}) => (
-    <>
+}) => {
+  const { showContextMenu } = useContextMenu();
+
+  const handleModelContextMenu = (e: React.MouseEvent, m: ModelRecord) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const info = getEffectiveModelInfo(m);
+    const supported = isGenerationSupportedArchitecture(info.architecture);
+    const canUse =
+      m.installed &&
+      supported &&
+      (m.category === "checkpoint" ||
+        m.category === "upscale" ||
+        m.architecture === "z_image");
+    const canAddLora = m.installed && supported && m.category === "lora";
+    const canDelete = isManagedPath(m.filePath) || m.isIncomplete;
+
+    const items: ContextMenuItem[] = [
+      {
+        id: "model-editor",
+        label: "View / Edit Model Details",
+        icon: <Pencil className="w-3.5 h-3.5" />,
+        onClick: () => onOpenEditor(m),
+      },
+    ];
+
+    if (canUse || canAddLora) {
+      items.push({
+        id: "model-use",
+        label: canAddLora ? "Add LoRA to Creation" : "Use in Creation Studio",
+        icon: <Play className="w-3.5 h-3.5" />,
+        onClick: () => onUseModel(m),
+        separator: true,
+      });
+    }
+
+    items.push({
+      id: "model-favorite",
+      label: m.metadata?.favorite ? "Remove from Favorites" : "Mark as Favorite",
+      icon: <Star className="w-3.5 h-3.5" />,
+      onClick: () => onToggleFavorite(m),
+    });
+
+    items.push(
+      {
+        id: "copy-model-name",
+        label: "Copy Model Name",
+        icon: <Copy className="w-3.5 h-3.5" />,
+        onClick: () => {
+          void navigator.clipboard.writeText(info.name);
+        },
+      },
+      {
+        id: "copy-model-path",
+        label: "Copy Model File Path",
+        icon: <Copy className="w-3.5 h-3.5" />,
+        onClick: () => {
+          void navigator.clipboard.writeText(m.filePath);
+        },
+      }
+    );
+
+    if (m.installed && !m.filePath.startsWith("comfy-api://")) {
+      items.push({
+        id: "reveal-model",
+        label: "Reveal in File Explorer",
+        icon: <FolderOpen className="w-3.5 h-3.5" />,
+        onClick: () => onOpenPath(m.sourceRoot),
+        separator: canDelete,
+      });
+    }
+
+    if (canDelete) {
+      items.push({
+        id: "delete-model",
+        label: "Delete Model...",
+        icon: <Trash2 className="w-3.5 h-3.5" />,
+        destructive: true,
+        onClick: () => onRequestDelete(m),
+      });
+    }
+
+    showContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      title: info.name,
+      items,
+    });
+  };
+
+  const handleEmptyVaultContextMenu = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest(".rounded-xl, .border, button, input")) {
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+
+    showContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      title: "Model Vault",
+      items: [
+        {
+          id: "vault-scan",
+          label: "Scan Local Models",
+          icon: <RefreshCw className="w-3.5 h-3.5" />,
+          onClick: onScan,
+        },
+        {
+          id: "vault-hub",
+          label: "Browse Online Hub",
+          icon: <Download className="w-3.5 h-3.5" />,
+          onClick: onOpenHub,
+        },
+      ],
+    });
+  };
+
+  return (
+    <div onContextMenu={handleEmptyVaultContextMenu} className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex p-1 rounded-xl bg-surface border border-border">
           <button
@@ -136,21 +267,23 @@ export const ModelVaultView: React.FC<ModelVaultViewProps> = ({
                 className="pl-9"
               />
             </div>
-            <Select
-              value={architecture}
-              onChange={(e) =>
-                setArchitecture(e.target.value as "all" | ModelArchitecture)
-              }
-              className="h-9 w-44 text-xs"
-              aria-label="Filter by architecture"
-            >
-              <option value="all">All architectures</option>
-              {ARCHITECTURE_FILTERS.map((arch) => (
-                <option key={arch} value={arch}>
-                  {ARCHITECTURE_LABELS[arch]}
-                </option>
-              ))}
-            </Select>
+            <div className="w-44 shrink-0">
+              <Select
+                value={architecture}
+                onChange={(e) =>
+                  setArchitecture(e.target.value as "all" | ModelArchitecture)
+                }
+                className="h-9 text-xs"
+                aria-label="Filter by architecture"
+              >
+                <option value="all">All architectures</option>
+                {ARCHITECTURE_FILTERS.map((arch) => (
+                  <option key={arch} value={arch}>
+                    {ARCHITECTURE_LABELS[arch]}
+                  </option>
+                ))}
+              </Select>
+            </div>
             <Button
               size="sm"
               variant={favoritesOnly ? "primary" : "secondary"}
@@ -196,7 +329,7 @@ export const ModelVaultView: React.FC<ModelVaultViewProps> = ({
               }
             />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
+            <div className="grid gap-3.5 [grid-template-columns:repeat(auto-fill,minmax(230px,1fr))]">
               {filteredModels.map((m) => {
                 const info = getEffectiveModelInfo(m);
                 const supported = isGenerationSupportedArchitecture(info.architecture);
@@ -207,14 +340,18 @@ export const ModelVaultView: React.FC<ModelVaultViewProps> = ({
                     m.category === "upscale" ||
                     m.architecture === "z_image");
                 const canAddLora = m.installed && supported && m.category === "lora";
-                const canDelete = isManagedPath(m.filePath);
+                const canDelete = isManagedPath(m.filePath) || m.isIncomplete;
                 const compatNames = m.compatibleWorkflows
                   .map((id) => workflowNames.get(id) ?? id)
                   .slice(0, 3);
 
                 return (
-                  <Card key={m.id} className="p-3.5 flex flex-col gap-3">
-                    <ModelPreview model={m} className="h-36" />
+                  <Card
+                    key={m.id}
+                    className="p-3.5 flex flex-col gap-3"
+                    onContextMenu={(e) => handleModelContextMenu(e, m)}
+                  >
+                    <ModelPreview model={m} className="aspect-[2/3]" />
 
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-1.5">
@@ -359,7 +496,17 @@ export const ModelVaultView: React.FC<ModelVaultViewProps> = ({
                         )}
                       </div>
 
-                      {canAddLora ? (
+                      {m.isIncomplete ? (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => onSwitchToQueue?.()}
+                          title="View and resume this download in the Downloads Queue"
+                        >
+                          <CloudDownload className="w-3.5 h-3.5 text-accent-hover" />
+                          Resume in Queue
+                        </Button>
+                      ) : canAddLora ? (
                         <Button size="sm" variant="primary" onClick={() => onUseModel(m)}>
                           <Plus className="w-3.5 h-3.5" />
                           Add to Create
@@ -568,5 +715,6 @@ export const ModelVaultView: React.FC<ModelVaultViewProps> = ({
           </div>
         </div>
       )}
-    </>
-);
+    </div>
+  );
+};

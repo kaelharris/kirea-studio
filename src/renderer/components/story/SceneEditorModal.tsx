@@ -11,6 +11,10 @@ import type {
   Story,
   StoryScenePlan,
 } from "../../../shared/types";
+import {
+  getEffectiveModelInfo,
+  getModelRefDisplayName,
+} from "../../../shared/model-utils";
 import { shortModelLabel } from "../../utils/format";
 import { Badge, Button, Input, Modal, Select, Textarea } from "../ui/Primitives";
 import { REFERENCE_MODES, type SceneFormState } from "./story-form-types";
@@ -126,7 +130,7 @@ export const SceneEditorModal: React.FC<SceneEditorModalProps> = ({
                   <option value="">Inherit from story / lead</option>
                   {checkpointModels.map((model) => (
                     <option key={model.id} value={model.relativePath}>
-                      {shortModelLabel(model.relativePath)}
+                      {getEffectiveModelInfo(model).name}
                     </option>
                   ))}
                 </Select>
@@ -380,8 +384,10 @@ export const SceneEditorModal: React.FC<SceneEditorModalProps> = ({
                   </div>
                   <div className="text-[11px] text-fg-muted">
                     <span className="text-fg-subtle">Checkpoint:</span>{" "}
-                    {plan.checkpoint ? shortModelLabel(plan.checkpoint) : "none"} ·{" "}
-                    {plan.architecture}
+                    {plan.checkpoint
+                      ? getModelRefDisplayName(checkpointModels, plan.checkpoint)
+                      : "none"}{" "}
+                    · {plan.architecture}
                   </div>
                   {plan.loras.length > 0 && (
                     <div className="text-[11px] text-fg-muted space-y-0.5">

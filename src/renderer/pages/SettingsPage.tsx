@@ -14,12 +14,20 @@ import {
   Plug,
   Plus,
   RefreshCw,
+  RotateCcw,
   ShieldCheck,
   Square,
   Trash2,
 } from "lucide-react";
 import type { RuntimeReleaseInfo } from "../../shared/api";
 import type { CivitaiConnectionTest } from "../../shared/civitai";
+import type { HuggingFaceConnectionTest } from "../../shared/huggingface";
+import type {
+  UpdateChannel,
+  UpdateInstallResult,
+  UpdatePhase,
+  UpdateState,
+} from "../../shared/update-types";
 import type {
   AppDiagnostics,
   AppSettings,
@@ -31,15 +39,9 @@ import type {
   RuntimeMode,
   RuntimeState,
 } from "../../shared/types";
-import {
-  Badge,
-  Button,
-  Card,
-  Input,
-  SectionHeader,
-  Select,
-} from "../components/ui/Primitives";
-import { formatBytes } from "../utils/format";
+import { Badge, Button, Card, Input, SectionHeader, Select } from "../components/ui/Primitives";
+import { BrandMark } from "../components/BrandMark";
+import { formatBytes, formatDurationSeconds, formatRelativeTime } from "../utils/format";
 
 interface SettingsPageProps {
   settings: AppSettings;
@@ -47,14 +49,58 @@ interface SettingsPageProps {
   hardware: GpuStats | null;
   downloads: DownloadTask[];
   samplersAndSchedulers: { samplers: string[]; schedulers: string[] };
+  updateState: UpdateState;
   onUpdateSettings: (partial: Partial<AppSettings>) => Promise<void>;
   onStartRuntime: (mode?: RuntimeMode) => Promise<void>;
   onStopRuntime: () => Promise<void>;
   onTestConnection: () => Promise<void>;
+  onCheckForUpdates: () => Promise<void>;
+  onDownloadUpdate: () => Promise<void>;
+  onCancelUpdateDownload: () => Promise<void>;
+  onInstallUpdate: (force?: boolean) => Promise<UpdateInstallResult>;
+  onSetUpdateChannel: (channel: UpdateChannel) => Promise<void>;
   onToast: (msg: string, tone?: "info" | "error") => void;
 }
 
-type SettingsTab = "runtime" | "storage" | "performance" | "civitai" | "diagnostics";
+type SettingsTab =
+  | "runtime"
+  | "storage"
+  | "performance"
+  | "civitai"
+  | "huggingface"
+  | "about"
+  | "diagnostics";
+
+const UPDATE_STATUS_LABELS: Record<UpdatePhase, string> = {
+  disabled: "Unavailable in development",
+  idle: "Idle",
+  checking: "Checking for updates",
+  "up-to-date": "Up to date",
+  available: "Update available",
+  downloading: "Downloading update",
+  downloaded: "Ready to install",
+  installing: "Restarting to install",
+  error: "Update check failed",
+};
+
+function updateStatusTone(
+  phase: UpdatePhase
+): "neutral" | "accent" | "success" | "warning" | "danger" {
+  switch (phase) {
+    case "available":
+    case "installing":
+      return "accent";
+    case "downloaded":
+      return "success";
+    case "checking":
+    case "downloading":
+      return "warning";
+    case "error":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
 
 export const SettingsPage: React.FC<SettingsPageProps> = ({
   settings,
@@ -62,10 +108,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   hardware,
   downloads,
   samplersAndSchedulers,
+  updateState,
   onUpdateSettings,
   onStartRuntime,
   onStopRuntime,
   onTestConnection,
+  onCheckForUpdates,
+  onDownloadUpdate,
+  onCancelUpdateDownload,
+  onInstallUpdate,
+  onSetUpdateChannel,
   onToast,
 }) => {
   const [tab, setTab] = useState<SettingsTab>("runtime");
@@ -79,6 +131,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [savingApiKey, setSavingApiKey] = useState(false);
   const [testingCivitai, setTestingCivitai] = useState(false);
   const [civitaiTest, setCivitaiTest] = useState<CivitaiConnectionTest | null>(null);
+  const [hfTokenDraft, setHfTokenDraft] = useState("");
+  const [showHfToken, setShowHfToken] = useState(false);
+  const [savingHfToken, setSavingHfToken] = useState(false);
+  const [testingHf, setTestingHf] = useState(false);
+  const [hfTest, setHfTest] = useState<HuggingFaceConnectionTest | null>(null);
+  const [installingUpdate, setInstallingUpdate] = useState(false);
+  const [updateBlockedJobs, setUpdateBlockedJobs] = useState<number | null>(null);
 
   useEffect(() => {
     if (tab === "diagnostics") {
@@ -189,6 +248,62 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     }
   };
 
+  const handleSaveHuggingFaceToken = async (): Promise<void> => {
+    setSavingHfToken(true);
+    try {
+      const hadToken = hfTokenDraft.trim().length > 0;
+      await window.kirea.setHuggingFaceToken(hfTokenDraft);
+      await onUpdateSettings({});
+      setHfTokenDraft("");
+      setHfTest(null);
+      onToast(hadToken ? "Hugging Face token stored securely." : "Hugging Face token cleared.");
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : String(err), "error");
+    } finally {
+      setSavingHfToken(false);
+    }
+  };
+
+  const handleClearHuggingFaceToken = async (): Promise<void> => {
+    setSavingHfToken(true);
+    try {
+      await window.kirea.setHuggingFaceToken("");
+      await onUpdateSettings({});
+      setHfTokenDraft("");
+      setHfTest(null);
+      onToast("Hugging Face token cleared.");
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : String(err), "error");
+    } finally {
+      setSavingHfToken(false);
+    }
+  };
+
+  const handleTestHuggingFace = async (): Promise<void> => {
+    setTestingHf(true);
+    try {
+      setHfTest(await window.kirea.testHuggingFaceConnection());
+    } catch (err) {
+      setHfTest({
+        ok: false,
+        authenticated: Boolean(settings.huggingfaceTokenSet),
+        username: null,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setTestingHf(false);
+    }
+  };
+
+  const handleInstallUpdate = async (force = false): Promise<void> => {
+    setInstallingUpdate(true);
+    const result = await onInstallUpdate(force);
+    if (!result.started) {
+      setInstallingUpdate(false);
+      setUpdateBlockedJobs(result.reason === "active-jobs" ? result.activeJobs : null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <SectionHeader
@@ -208,6 +323,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 ["storage", "Storage & Paths"],
                 ["performance", "Performance & Defaults"],
                 ["civitai", "Civitai Hub"],
+                ["huggingface", "Hugging Face Hub"],
+                ["about", "About & Updates"],
                 ["diagnostics", "Interface & Diagnostics"],
               ] as Array<[SettingsTab, string]>
             ).map(([id, label]) => (
@@ -854,22 +971,32 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
           <Card className="p-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-semibold text-fg">Safe Browsing Filter</h3>
+              <h3 className="text-sm font-semibold text-fg">
+                Mature Content (18+)
+                <Badge tone={settings.nsfwFilter ? "neutral" : "warning"} className="ml-2">
+                  {settings.nsfwFilter ? "Off" : "On"}
+                </Badge>
+              </h3>
               <p className="text-xs text-fg-muted leading-relaxed mt-1 max-w-xl">
-                When enabled, Civitai Hub search requests exclude NSFW models. Model
-                downloads always remain explicit user actions.
+                Off by default. When off, discovery sends provider safe-browsing flags
+                and any result the provider still marks mature is hidden or blurred
+                locally. When on, mature models returned by the provider are shown
+                unblurred with a visible label. You must be of legal age in your
+                jurisdiction. This setting does not change how generation prompts are
+                handled, does not add prompt suppression and does not bypass provider
+                age gates.
               </p>
             </div>
             <label className="inline-flex items-center gap-2 text-xs text-fg cursor-pointer">
               <input
                 type="checkbox"
-                checked={settings.nsfwFilter}
+                checked={!settings.nsfwFilter}
                 onChange={(e) =>
-                  void onUpdateSettings({ nsfwFilter: e.target.checked })
+                  void onUpdateSettings({ nsfwFilter: !e.target.checked })
                 }
                 className="accent-accent"
               />
-              Hide NSFW results
+              Show mature content
             </label>
           </Card>
 
@@ -890,6 +1017,366 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 settings.managedComfyPath ||
                 "App-managed models directory"}
             </p>
+          </Card>
+        </div>
+      )}
+
+      {/* TAB: HUGGING FACE HUB */}
+      {tab === "huggingface" && (
+        <div className="space-y-4">
+          <Card className="p-4 space-y-4">
+            <div className="flex items-start gap-2.5">
+              <KeyRound className="w-4 h-4 text-accent mt-0.5 shrink-0" />
+              <div>
+                <h3 className="text-sm font-semibold text-fg">Hugging Face Access Token</h3>
+                <p className="text-xs text-fg-muted leading-relaxed mt-1">
+                  Optional. Required for gated or private repositories. The token is
+                  encrypted with the OS credential store (DPAPI) in a dedicated secrets
+                  file, never stored in the settings database, never written to logs, and
+                  sent only to huggingface.co. Public search and public downloads work
+                  without a token.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone={settings.huggingfaceTokenSet ? "success" : "neutral"}>
+                  {settings.huggingfaceTokenSet ? "Token stored" : "Anonymous access"}
+                </Badge>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <div className="relative flex-1 min-w-[260px]">
+                  <Input
+                    aria-label="Hugging Face access token"
+                    type={showHfToken ? "text" : "password"}
+                    value={hfTokenDraft}
+                    onChange={(e) => setHfTokenDraft(e.target.value)}
+                    placeholder={
+                      settings.huggingfaceTokenSet
+                        ? "Stored token — paste a new one to replace it"
+                        : "Paste a Hugging Face read token (hf_…)"
+                    }
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="pr-9 font-mono text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowHfToken((v) => !v)}
+                    aria-label={showHfToken ? "Hide token" : "Show token"}
+                    className="absolute right-2 top-2 p-0.5 text-fg-subtle hover:text-fg cursor-pointer"
+                  >
+                    {showHfToken ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+                <Button
+                  variant="primary"
+                  loading={savingHfToken}
+                  onClick={() => void handleSaveHuggingFaceToken()}
+                >
+                  Save Token
+                </Button>
+                {settings.huggingfaceTokenSet && (
+                  <Button
+                    variant="danger"
+                    disabled={savingHfToken}
+                    onClick={() => void handleClearHuggingFaceToken()}
+                  >
+                    Remove
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                loading={testingHf}
+                onClick={() => void handleTestHuggingFace()}
+              >
+                <Plug className="w-3.5 h-3.5" />
+                Test Connection
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  void window.kirea.openExternalUrl("https://huggingface.co/settings/tokens")
+                }
+              >
+                Create a read token
+              </Button>
+              {hfTest && (
+                <Badge tone={hfTest.ok ? "success" : "danger"}>{hfTest.message}</Badge>
+              )}
+            </div>
+          </Card>
+
+          <Card className="p-4 space-y-1.5">
+            <h3 className="text-sm font-semibold text-fg">Compatibility policy</h3>
+            <p className="text-xs text-fg-muted leading-relaxed">
+              Hugging Face downloads are gated by a compatibility report that checks the
+              installed ComfyUI workflow, required loader nodes, companion components,
+              detected GPU/RAM, and free disk space. Kirea never installs custom nodes or
+              model dependencies automatically, and never overwrites existing model files.
+            </p>
+          </Card>
+        </div>
+      )}
+
+      {/* TAB: ABOUT & UPDATES */}
+      {tab === "about" && (
+        <div className="space-y-4">
+          <Card className="p-4 space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-well">
+                  <BrandMark size={26} />
+                </span>
+                <div>
+                  <h3 className="text-base font-semibold text-fg">Kirea Studio</h3>
+                  <p className="text-xs text-fg-muted">
+                    Installed v{updateState.currentVersion || diagnostics?.appVersion || "—"}
+                  </p>
+                </div>
+              </div>
+              <Badge tone={updateStatusTone(updateState.phase)}>
+                {UPDATE_STATUS_LABELS[updateState.phase]}
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-bg p-3.5 text-xs md:grid-cols-3">
+              <div>
+                <div className="text-fg-subtle">Installed version</div>
+                <div className="font-mono font-semibold text-fg">
+                  v{updateState.currentVersion || "—"}
+                </div>
+              </div>
+              <div>
+                <div className="text-fg-subtle">Latest available</div>
+                <div className="font-mono font-semibold text-fg">
+                  {updateState.availableVersion ? `v${updateState.availableVersion}` : "—"}
+                </div>
+              </div>
+              <div>
+                <div className="text-fg-subtle">Last update check</div>
+                <div className="font-semibold text-fg">
+                  {formatRelativeTime(updateState.lastCheckedAt)}
+                </div>
+              </div>
+            </div>
+
+            {updateState.error && (
+              <div className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-xs text-danger">
+                {updateState.error}
+              </div>
+            )}
+
+            {!updateState.canCheck && (
+              <div className="rounded-lg border border-border bg-surface-subtle px-3 py-2 text-[11px] leading-relaxed text-fg-muted">
+                Automatic updates are available in packaged releases. This development
+                build does not check for updates and will never contact the release feed.
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-fg-muted">Release channel</label>
+                <Select
+                  aria-label="Release channel"
+                  value={updateState.channel}
+                  onChange={(e) =>
+                    void onSetUpdateChannel(e.target.value as UpdateChannel)
+                  }
+                >
+                  <option value="stable">Stable — published releases</option>
+                  <option value="prerelease">Prerelease — early builds</option>
+                </Select>
+                <p className="text-[11px] text-fg-subtle">
+                  Prerelease only accepts releases explicitly marked as prerelease.
+                </p>
+              </div>
+              <div className="flex items-end pb-1">
+                <label className="inline-flex items-center gap-2 text-xs text-fg cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.checkUpdatesAutomatically}
+                    onChange={(e) =>
+                      void onUpdateSettings({
+                        checkUpdatesAutomatically: e.target.checked,
+                      })
+                    }
+                    className="accent-accent"
+                  />
+                  Check for updates automatically
+                </label>
+              </div>
+            </div>
+
+            {(updateState.phase === "downloading" || updateState.phase === "downloaded") &&
+              updateState.progress && (
+                <div className="space-y-1.5 rounded-xl border border-border bg-bg p-3">
+                  <div className="flex items-baseline justify-between text-xs">
+                    <span className="font-medium text-fg">
+                      {updateState.phase === "downloaded"
+                        ? "Download complete"
+                        : `Downloading v${updateState.availableVersion ?? ""}`}
+                    </span>
+                    <span className="font-mono tabular-nums text-fg-muted">
+                      {Math.round(updateState.progress.percent)}%
+                    </span>
+                  </div>
+                  <div
+                    className="h-1.5 w-full overflow-hidden rounded-full bg-surface-subtle"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.round(updateState.progress.percent)}
+                  >
+                    <div
+                      className="h-full bg-accent-solid transition-[width] duration-200 ease-out"
+                      style={{ width: `${updateState.progress.percent}%` }}
+                    />
+                  </div>
+                  <div className="flex flex-wrap justify-between gap-2 text-[11px] text-fg-subtle">
+                    <span className="font-mono tabular-nums">
+                      {updateState.progress.totalBytes > 0
+                        ? `${formatBytes(updateState.progress.transferredBytes)} / ${formatBytes(updateState.progress.totalBytes)}`
+                        : "Size appears when the server reports it"}
+                    </span>
+                    <span className="font-mono tabular-nums">
+                      {updateState.phase === "downloading" &&
+                      updateState.progress.bytesPerSecond > 0
+                        ? `${formatBytes(updateState.progress.bytesPerSecond)}/s · ${
+                            updateState.progress.totalBytes >
+                            updateState.progress.transferredBytes
+                              ? `${formatDurationSeconds(
+                                  (updateState.progress.totalBytes -
+                                    updateState.progress.transferredBytes) /
+                                    updateState.progress.bytesPerSecond
+                                )} left`
+                              : "finishing"
+                          }`
+                        : ""}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+            {updateState.releaseNotes && (
+              <div className="space-y-1">
+                <div className="text-xs font-medium text-fg-muted">Release notes</div>
+                <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-xl border border-border bg-bg p-3 text-[11px] leading-relaxed text-fg-muted">
+                  {updateState.releaseNotes}
+                </pre>
+              </div>
+            )}
+
+            {updateBlockedJobs !== null && (
+              <div className="space-y-2 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2">
+                <p className="text-[11px] leading-relaxed text-warning">
+                  {updateBlockedJobs} generation{" "}
+                  {updateBlockedJobs === 1 ? "job is" : "jobs are"} still running. Restarting
+                  now stops {updateBlockedJobs === 1 ? "it" : "them"}.
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setUpdateBlockedJobs(null)}
+                  >
+                    Keep working
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    loading={installingUpdate}
+                    onClick={() => void handleInstallUpdate(true)}
+                  >
+                    Restart anyway
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-2 border-t border-border pt-3">
+              <Button
+                size="sm"
+                variant="secondary"
+                loading={updateState.phase === "checking"}
+                disabled={!updateState.canCheck || updateState.phase === "downloading"}
+                onClick={() => void onCheckForUpdates()}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Check for Updates
+              </Button>
+              {updateState.phase === "available" && (
+                <Button size="sm" variant="primary" onClick={() => void onDownloadUpdate()}>
+                  <Download className="h-3.5 w-3.5" />
+                  Download Update
+                </Button>
+              )}
+              {updateState.phase === "downloading" && (
+                <Button size="sm" variant="secondary" onClick={() => void onCancelUpdateDownload()}>
+                  Cancel Download
+                </Button>
+              )}
+              {updateState.phase === "downloaded" && updateBlockedJobs === null && (
+                <Button
+                  size="sm"
+                  variant="primary"
+                  loading={installingUpdate}
+                  onClick={() => void handleInstallUpdate(false)}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Restart &amp; Update
+                </Button>
+              )}
+              {updateState.phase === "error" && updateState.availableVersion && (
+                <Button size="sm" variant="primary" onClick={() => void onDownloadUpdate()}>
+                  <Download className="h-3.5 w-3.5" />
+                  Retry Download
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  void window.kirea.openExternalUrl(
+                    "https://github.com/kaelharris/kirea-studio/releases"
+                  )
+                }
+              >
+                <FileText className="h-3.5 w-3.5" />
+                View Releases
+              </Button>
+            </div>
+          </Card>
+
+          <Card className="p-4 space-y-2">
+            <div className="flex items-center gap-2 text-sm font-semibold text-fg">
+              <ShieldCheck className="h-4 w-4 text-success" />
+              Update Security &amp; Data Safety
+            </div>
+            <p className="text-xs leading-relaxed text-fg-muted">
+              Update metadata and installers are fetched over HTTPS from this
+              repository&apos;s GitHub release feed, and every download is SHA-512 verified
+              against the release manifest before it can run. Updates replace only the
+              application files: generated images and videos, model weights, LoRAs,
+              workflows, characters, settings, SQLite databases, and your ComfyUI
+              installation are never touched. Builds are currently unsigned, so Windows may
+              show “Unknown publisher” during installation.
+            </p>
+            <div className="flex items-center gap-1.5 pt-1 text-[11px] text-fg-subtle">
+              <Info className="h-3.5 w-3.5" />
+              Kirea Studio never downloads or installs an update without your confirmation.
+            </div>
           </Card>
         </div>
       )}

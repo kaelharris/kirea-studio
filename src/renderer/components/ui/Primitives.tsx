@@ -85,11 +85,15 @@ export const Button: React.FC<ButtonProps> = ({
   );
 };
 
-export const Card: React.FC<{
-  className?: string;
-  children: React.ReactNode;
-}> = ({ className = "", children }) => (
-  <div className={`bg-surface border border-border rounded-xl ${className}`}>
+export const Card: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({
+  className = "",
+  children,
+  ...rest
+}) => (
+  <div
+    className={`bg-surface border border-border rounded-xl ${className}`}
+    {...rest}
+  >
     {children}
   </div>
 );
@@ -315,8 +319,10 @@ export const Modal: React.FC<{
   onClose: () => void;
   title: string | React.ReactNode;
   maxWidthClass?: string;
+  closeOnBackdropClick?: boolean;
+  zIndexClass?: string;
   children: React.ReactNode;
-}> = ({ open, onClose, title, maxWidthClass = "max-w-lg", children }) => {
+}> = ({ open, onClose, title, maxWidthClass = "max-w-lg", closeOnBackdropClick = true, zIndexClass = "z-40", children }) => {
   const panelRef = useRef<HTMLDivElement | null>(null);
   useDialogFocus(open, onClose, panelRef);
 
@@ -324,11 +330,11 @@ export const Modal: React.FC<{
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-[var(--scrim)] animate-[kirea-overlay-in_140ms_ease-out]"
+      className={`fixed inset-0 ${zIndexClass} flex items-center justify-center p-4 bg-[var(--scrim)] animate-[kirea-overlay-in_140ms_ease-out]`}
       role="dialog"
       aria-modal="true"
       aria-label={typeof title === "string" ? title : "Dialog"}
-      onClick={onClose}
+      onClick={closeOnBackdropClick ? onClose : undefined}
     >
       <div
         ref={panelRef}
@@ -388,3 +394,16 @@ export const ConfirmDialog: React.FC<{
     </div>
   </Modal>
 );
+
+export {
+  ContextMenuProvider,
+  useContextMenu,
+  useContextMenuTrigger,
+  clampMenuPosition,
+  clampSubmenuPosition,
+  getNextFocusIndex,
+  type ContextMenuItem,
+  type ContextMenuOptions,
+  type ContextMenuContextValue,
+} from "./ContextMenu";
+

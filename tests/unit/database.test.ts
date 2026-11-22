@@ -90,7 +90,7 @@ describe("StudioDatabase & StudioRepository", () => {
 
     const db1 = new StudioDatabase(dbPath);
     expect(db1.recoveredFromCorruption).toBe(false);
-    expect(db1.getSchemaVersion()).toBe(10);
+    expect(db1.getSchemaVersion()).toBe(12);
 
     const repo1 = new StudioRepository(db1);
     repo1.upsertWorkflowMetadata(WORKFLOW_TEMPLATES);
@@ -309,7 +309,7 @@ describe("StudioDatabase & StudioRepository", () => {
 
     const db = new StudioDatabase(dbPath);
     expect(db.recoveredFromCorruption).toBe(true);
-    expect(db.getSchemaVersion()).toBe(10);
+    expect(db.getSchemaVersion()).toBe(12);
     db.close();
 
     const files = fs.readdirSync(dir);
@@ -344,7 +344,7 @@ describe("StudioDatabase & StudioRepository", () => {
     raw.close();
 
     const db = new StudioDatabase(dbPath);
-    expect(db.getSchemaVersion()).toBe(10);
+    expect(db.getSchemaVersion()).toBe(12);
 
     const tableNames = (
       db.db
@@ -446,7 +446,7 @@ describe("StudioDatabase & StudioRepository", () => {
     raw.close();
 
     const db = new StudioDatabase(dbPath);
-    expect(db.getSchemaVersion()).toBe(10);
+    expect(db.getSchemaVersion()).toBe(12);
     const rows = db.db
       .prepare(
         "SELECT frame_index, name, duration_ms, frame_id FROM pixel_frames WHERE asset_id = ? ORDER BY frame_index"
@@ -495,13 +495,16 @@ describe("StudioDatabase & StudioRepository", () => {
       description: "Preferred anime checkpoint",
       architectureOverride: "illustrious",
       baseModel: "SDXL 1.0",
-      previewMode: "none",
+      previewMode: "custom",
+      previewPath: "C:\\images\\latest_generated_work.png",
       triggerWords: ["nova_style"],
       tags: ["anime", "portrait"],
       notes: "keep me",
       favorite: true,
     });
     expect(updated.metadata?.displayName).toBe("Nova Anime XL");
+    expect(updated.metadata?.previewMode).toBe("custom");
+    expect(updated.metadata?.previewPath).toBe("C:\\images\\latest_generated_work.png");
     expect(updated.metadata?.favorite).toBe(true);
     expect(updated.metadata?.triggerWords).toEqual(["nova_style"]);
 

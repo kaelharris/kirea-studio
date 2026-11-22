@@ -332,6 +332,85 @@ a1111:
     expect(record?.compatibleWorkflows).toContain("i2i_sd15_base");
   });
 
+  it("reads original Civitai model names and source IDs from .civitai.info sidecars", async () => {
+    const root = makeTempDir();
+    const externalComfy = path.join(root, "ext_comfy");
+    const managedModels = path.join(root, "managed_models");
+    const checkpointDir = path.join(externalComfy, "models", "checkpoints");
+
+    fs.mkdirSync(checkpointDir, { recursive: true });
+    fs.mkdirSync(managedModels, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(checkpointDir, "pdav53h.safetensors"),
+      Buffer.alloc(2048, 3)
+    );
+    fs.writeFileSync(
+      path.join(checkpointDir, "pdav53h.civitai.info"),
+      JSON.stringify({
+        source: "civitai",
+        modelId: 111274,
+        modelVersionId: 2925672,
+        modelName: "PerfectDeliberate-Anime",
+        name: "v5.0_A",
+        baseModel: "Illustrious",
+      })
+    );
+
+    const scanner = new ModelScanner();
+    const models = await scanner.scanAll(
+      makeScanSettings(root, externalComfy),
+      managedModels,
+      null
+    );
+    const record = models.find((m) => m.name === "pdav53h");
+    expect(record?.discovery?.source).toEqual({
+      provider: "civitai",
+      modelId: 111274,
+      versionId: 2925672,
+      modelName: "PerfectDeliberate-Anime",
+      versionName: "v5.0_A",
+      url: "https://civitai.com/models/111274?modelVersionId=2925672",
+    });
+  });
+
+  it("reads embedded safetensors titles and rejects generic training names", async () => {
+    const root = makeTempDir();
+    const externalComfy = path.join(root, "ext_comfy");
+    const managedModels = path.join(root, "managed_models");
+    const loraDir = path.join(externalComfy, "models", "loras");
+
+    fs.mkdirSync(loraDir, { recursive: true });
+    fs.mkdirSync(managedModels, { recursive: true });
+
+    const writeHeader = (name: string, metadata: Record<string, string>): void => {
+      const header = JSON.stringify({
+        __metadata__: metadata,
+        "lora_down.weight": { dtype: "F16", shape: [1], data_offsets: [0, 2] },
+      });
+      const head = Buffer.alloc(8);
+      head.writeBigUInt64LE(BigInt(Buffer.byteLength(header)), 0);
+      fs.writeFileSync(path.join(loraDir, name), Buffer.concat([head, Buffer.from(header)]));
+    };
+
+    writeHeader("mystery_style_v2.safetensors", { "modelspec.title": "Mystery Style" });
+    writeHeader("generic.safetensors", { "modelspec.title": "lora", ss_output_name: "epoch_1" });
+
+    const scanner = new ModelScanner();
+    const models = await scanner.scanAll(
+      makeScanSettings(root, externalComfy),
+      managedModels,
+      null
+    );
+
+    expect(models.find((m) => m.name === "mystery_style_v2")?.discovery?.embeddedTitle).toBe(
+      "Mystery Style"
+    );
+    expect(
+      models.find((m) => m.name === "generic")?.discovery?.embeddedTitle ?? null
+    ).toBeNull();
+  });
+
   it("discovers an adjacent <stem>.preview image without any sidecar JSON", async () => {
     const root = makeTempDir();
     const externalComfy = path.join(root, "ext_comfy");

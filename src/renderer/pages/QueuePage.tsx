@@ -14,8 +14,10 @@ import type {
   DownloadTask,
   GenerationJob,
   JobErrorKind,
+  ModelRecord,
   NavSection,
 } from "../../shared/types";
+import { getModelRefDisplayName } from "../../shared/model-utils";
 import {
   Badge,
   Button,
@@ -28,12 +30,12 @@ import {
   formatBytes,
   formatDurationSeconds,
   formatRelativeTime,
-  shortModelLabel,
   toMediaUrl,
 } from "../utils/format";
 
 interface QueuePageProps {
   jobs: GenerationJob[];
+  models: ModelRecord[];
   downloads: DownloadTask[];
   onNavigate: (page: NavSection) => void;
   onToast: (msg: string, tone?: "info" | "error") => void;
@@ -54,6 +56,7 @@ function errorAdvice(kind: JobErrorKind): string | null {
 
 export const QueuePage: React.FC<QueuePageProps> = ({
   jobs,
+  models,
   downloads,
   onNavigate,
   onToast,
@@ -264,7 +267,7 @@ export const QueuePage: React.FC<QueuePageProps> = ({
                           <Badge tone="warning">{job.errorKind}</Badge>
                         )}
                         <span className="text-small text-fg-muted">
-                          {shortModelLabel(job.checkpoint)}
+                          {getModelRefDisplayName(models, job.checkpoint)}
                         </span>
                         <span className="font-mono text-tech tabular-nums text-fg-subtle">
                           {formatRelativeTime(job.submittedAt)}

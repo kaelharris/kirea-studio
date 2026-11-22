@@ -51,14 +51,16 @@ export class ModelsRepository {
     const discoveryStmt = this.studioDb.db.prepare(
       `INSERT INTO model_discovery (
          model_id, file_path, description, base_model, preview_path,
-         trigger_words_json, discovered_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?)
+         trigger_words_json, source_json, embedded_title, discovered_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(model_id) DO UPDATE SET
          file_path = excluded.file_path,
          description = excluded.description,
          base_model = excluded.base_model,
          preview_path = excluded.preview_path,
          trigger_words_json = excluded.trigger_words_json,
+         source_json = excluded.source_json,
+         embedded_title = excluded.embedded_title,
          discovered_at = excluded.discovered_at`
     );
 
@@ -93,6 +95,8 @@ export class ModelsRepository {
             m.discovery.baseModel,
             m.discovery.previewPath,
             JSON.stringify(m.discovery.triggerWords),
+            m.discovery.source ? JSON.stringify(m.discovery.source) : null,
+            m.discovery.embeddedTitle,
             m.discovery.discoveredAt
           );
         }

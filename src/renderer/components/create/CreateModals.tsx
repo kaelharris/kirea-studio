@@ -37,6 +37,7 @@ import {
   evaluateLoraCompatibility,
   getEffectiveArchitecture,
   getEffectiveModelInfo,
+  getModelRefDisplayName,
   isGenerationSupportedArchitecture,
   UPSCALE_PRESETS,
   VAE_AUTO,
@@ -52,7 +53,7 @@ import {
   Textarea,
 } from "../ui/Primitives";
 import { MediaImage } from "../ui/MediaImage";
-import { shortModelLabel, toMediaUrl } from "../../utils/format";
+import { toMediaUrl } from "../../utils/format";
 import { describeUpscalerLabel } from "./create-helpers";
 import type { CreateController } from "./useCreateController";
 
@@ -288,7 +289,8 @@ export const CreateModals: React.FC<{ ctrl: CreateController }> = ({ ctrl }) => 
             <div className="flex items-center justify-between gap-2">
               <span className="text-fg-subtle">Checkpoint</span>
               <span className="text-fg truncate">
-                {currentCheckpointInfo?.name ?? shortModelLabel(draft.checkpoint)}
+                {currentCheckpointInfo?.name ??
+                  getModelRefDisplayName(models, draft.checkpoint)}
               </span>
             </div>
             <div className="flex items-center justify-between gap-2">

@@ -43,6 +43,7 @@ export type ModelArchitecture =
   | "flux"
   | "z_image"
   | "anima"
+  | "moss_image"
   | "krea2"
   | "ltx_video"
   | "wan_video"
@@ -109,6 +110,8 @@ export interface AppSettings {
   nsfwFilter: boolean;
   /** Whether an encrypted Civitai API key is stored outside the settings row. */
   civitaiApiKeySet: boolean;
+  /** Whether an encrypted Hugging Face token is stored outside the settings row. */
+  huggingfaceTokenSet?: boolean;
 }
 
 export interface GpuStats {
@@ -170,6 +173,15 @@ export interface ModelMetadata {
   updatedAt: string;
 }
 
+export interface ModelSource {
+  provider: string;
+  modelId: number | null;
+  versionId: number | null;
+  modelName: string | null;
+  versionName: string | null;
+  url: string | null;
+}
+
 export interface ModelDiscovery {
   modelId: string;
   filePath: string;
@@ -177,6 +189,8 @@ export interface ModelDiscovery {
   baseModel: string | null;
   previewPath: string | null;
   triggerWords: string[];
+  source: ModelSource | null;
+  embeddedTitle: string | null;
   discoveredAt: string;
 }
 
@@ -230,6 +244,11 @@ export interface CuratedModelCatalogItem {
   licenseUrl: string;
   description: string;
   targetSubdir: string;
+  /** Optional grouping metadata (for example MOSS-Image components). */
+  componentId?: string;
+  variantLabel?: string;
+  optional?: boolean;
+  workflowIds?: string[];
 }
 
 export interface VideoAspectPreset {
@@ -752,6 +771,21 @@ export interface GenerationRequest {
   outputFormat: OutputFormat;
   inputImagePath: string | null;
   denoise: number;
+  /** Inpainting binary mask base64 data URL (white = regenerate, black = preserve). */
+  maskDataUrl?: string | null;
+  /** Optional file path to a saved mask on disk. */
+  maskPath?: string | null;
+  /** Pixels to expand/grow the inpainting mask boundary by (default 6). */
+  maskGrowBy?: number;
+  /** Outpainting canvas expansion padding in pixels (top, bottom, left, right). */
+  outpaintPadding?: {
+    top: number;
+    bottom: number;
+    left: number;
+    right: number;
+  } | null;
+  /** Raw CreateBoundingBoxes editor_state JSON for MOSS layout workflows. */
+  layoutJson?: string | null;
   video?: VideoGenerationSettings;
   hiresFix?: HiresFixConfig;
   upscale?: UpscaleConfig;
@@ -792,6 +826,32 @@ export interface GenerationJob {
   sourceImagePath?: string | null;
 }
 
+export type ImageOperationKind =
+  | "txt2img"
+  | "img2img"
+  | "inpaint"
+  | "upscale"
+  | "face_restore"
+  | "background_remove"
+  | "image_edit"
+  | "moss_image"
+  | "other";
+
+export interface ImageOperationRecord {
+  id: string;
+  imageId: string;
+  sequence: number;
+  operation: ImageOperationKind;
+  workflowId: string;
+  workflowVersion: string | null;
+  checkpoint: string;
+  prompt: string;
+  seed: number;
+  parameters: Record<string, unknown>;
+  parentImageId: string | null;
+  createdAt: string;
+}
+
 export interface GeneratedImageRecord {
   id: string;
   jobId: string;
@@ -822,6 +882,9 @@ export interface GeneratedImageRecord {
   storyId?: string | null;
   storySceneId?: string | null;
   sourceImagePath?: string | null;
+  parentImageId?: string | null;
+  /** Oldest-to-newest operation lineage, including inherited parent operations. */
+  operations?: ImageOperationRecord[];
 }
 
 export interface GeneratedVideoRecord {

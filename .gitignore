@@ -3,17 +3,30 @@ node_modules/
 
 # Build output
 dist/
+dist-site/
 dist-electron/
 release/
+release-*/
 release-build/
+release-updater-*/
+scrollcraft/builds/
 *.tsbuildinfo
 
 # Logs and local artifacts
 *.log
 npm-debug.log*
 app-smoke-*.log
+launch_*.txt
+verification/
+kirea_test_*.png
+kirea_*_output.png
 .vite/
 coverage/
+
+# Agent caches
+.agents/
+.taste-skill/
+.impeccable/
 
 # OS and editor files
 .DS_Store

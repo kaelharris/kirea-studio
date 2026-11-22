@@ -8,6 +8,7 @@ import type {
   ModelArchitecture,
   ModelDiscovery,
   ModelMetadata,
+  ModelSource,
   Story,
   StoryCanvas,
   StoryCanvasItem,
@@ -59,6 +60,11 @@ export function mapDiscoveryRow(r: Record<string, unknown>): ModelDiscovery {
     baseModel: r.base_model ? String(r.base_model) : null,
     previewPath: r.preview_path ? String(r.preview_path) : null,
     triggerWords: safeParseJson<string[]>(String(r.trigger_words_json), []),
+    source: safeParseJson<ModelSource | null>(
+      r.source_json ? String(r.source_json) : null,
+      null
+    ),
+    embeddedTitle: r.embedded_title ? String(r.embedded_title) : null,
     discoveredAt: String(r.discovered_at),
   };
 }

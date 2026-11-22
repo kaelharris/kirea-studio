@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Copy,
   ImagePlus,
   Pencil,
+  Play,
   Plus,
   Sparkles,
   Star,
@@ -46,6 +48,8 @@ import {
   Select,
   SliderField,
   Textarea,
+  useContextMenu,
+  type ContextMenuItem,
 } from "../components/ui/Primitives";
 
 interface CharactersPageProps {
@@ -220,6 +224,43 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
   const [referenceRole, setReferenceRole] =
     useState<CharacterReferenceRole>("secondary");
   const [deleteTarget, setDeleteTarget] = useState<CharacterProfile | null>(null);
+  const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+
+  const draftStorageKey = useMemo(() => {
+    return `kirea_character_draft_${editing?.id ?? "new"}`;
+  }, [editing?.id]);
+
+  const initialFormState = useMemo(() => toFormState(editing), [editing]);
+  const isDirty = useMemo(() => {
+    return JSON.stringify(form) !== JSON.stringify(initialFormState);
+  }, [form, initialFormState]);
+
+  // Draft autosave to localStorage whenever user modifies form
+  useEffect(() => {
+    if (!editorOpen) return;
+    if (isDirty) {
+      try {
+        localStorage.setItem(draftStorageKey, JSON.stringify(form));
+      } catch {
+        // Ignore quota
+      }
+    } else {
+      localStorage.removeItem(draftStorageKey);
+    }
+  }, [editorOpen, isDirty, form, draftStorageKey]);
+
+  // Prevent accidental tab/window navigation or refresh while editing
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (editorOpen && isDirty) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [editorOpen, isDirty]);
 
   const checkpointModels = useMemo(
     () =>
@@ -267,16 +308,60 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
 
   const openNew = (): void => {
     setEditing(null);
-    setForm(toFormState(null));
+    const baseForm = toFormState(null);
+    const savedDraftRaw = localStorage.getItem("kirea_character_draft_new");
+    if (savedDraftRaw) {
+      try {
+        const parsed = JSON.parse(savedDraftRaw) as EditorFormState;
+        setForm(parsed);
+        setDraftRestored(true);
+      } catch {
+        setForm(baseForm);
+        setDraftRestored(false);
+      }
+    } else {
+      setForm(baseForm);
+      setDraftRestored(false);
+    }
     setReferenceRole("primary");
     setEditorOpen(true);
   };
 
   const openEdit = (character: CharacterProfile): void => {
     setEditing(character);
-    setForm(toFormState(character));
+    const baseForm = toFormState(character);
+    const savedDraftRaw = localStorage.getItem(`kirea_character_draft_${character.id}`);
+    if (savedDraftRaw) {
+      try {
+        const parsed = JSON.parse(savedDraftRaw) as EditorFormState;
+        setForm(parsed);
+        setDraftRestored(true);
+      } catch {
+        setForm(baseForm);
+        setDraftRestored(false);
+      }
+    } else {
+      setForm(baseForm);
+      setDraftRestored(false);
+    }
     setReferenceRole("secondary");
     setEditorOpen(true);
+  };
+
+  const requestClose = (): void => {
+    if (isDirty) {
+      setConfirmDiscardOpen(true);
+    } else {
+      setEditorOpen(false);
+      setDraftRestored(false);
+    }
+  };
+
+  const handleConfirmDiscard = (): void => {
+    localStorage.removeItem(draftStorageKey);
+    setConfirmDiscardOpen(false);
+    setEditorOpen(false);
+    setDraftRestored(false);
   };
 
   const appliedFocusRef = useRef<string | null>(null);
@@ -338,6 +423,8 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
         referenceWeight: form.referenceWeight,
         favorite: form.favorite,
       });
+      localStorage.removeItem(draftStorageKey);
+      setDraftRestored(false);
       setEditing(saved);
       onToast(`Saved character '${saved.name}'.`);
     } catch (err) {
@@ -411,8 +498,99 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
     triggerWords: splitTokens(form.triggerWordsText),
   });
 
+  const { showContextMenu } = useContextMenu();
+
+  const handleCharacterContextMenu = (
+    e: React.MouseEvent,
+    character: CharacterProfile
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const charTokens = getCharacterIdentityTokens(character);
+
+    const items: ContextMenuItem[] = [
+      {
+        id: "char-edit",
+        label: "Edit Character",
+        icon: <Pencil className="w-3.5 h-3.5" />,
+        onClick: () => openEdit(character),
+      },
+      {
+        id: "char-use",
+        label: "Use in Creation Studio",
+        icon: <Play className="w-3.5 h-3.5" />,
+        onClick: () => onUseCharacter(character),
+        separator: true,
+      },
+      {
+        id: "char-duplicate",
+        label: "Duplicate Character",
+        icon: <Plus className="w-3.5 h-3.5" />,
+        onClick: () => {
+          setEditing(null);
+          setForm({
+            ...toFormState(character),
+            name: `${character.name} (Copy)`,
+          });
+          setDraftRestored(false);
+          setReferenceRole("primary");
+          setEditorOpen(true);
+        },
+      },
+      {
+        id: "char-copy-tokens",
+        label: "Copy Identity Tokens",
+        icon: <Copy className="w-3.5 h-3.5" />,
+        disabled: charTokens.length === 0,
+        disabledReason: "No identity tokens configured",
+        onClick: () => {
+          void navigator.clipboard.writeText(charTokens.join(", "));
+          onToast("Identity tokens copied to clipboard.");
+        },
+        separator: true,
+      },
+      {
+        id: "char-delete",
+        label: "Delete Character...",
+        icon: <Trash2 className="w-3.5 h-3.5" />,
+        destructive: true,
+        onClick: () => setDeleteTarget(character),
+      },
+    ];
+
+    showContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      title: character.name,
+      items,
+    });
+  };
+
+  const handleEmptyWorkspaceContextMenu = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest(".rounded-xl, .border, button, input")) {
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+
+    showContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      title: "Character Workspace",
+      items: [
+        {
+          id: "new-character",
+          label: "Create New Character",
+          icon: <Plus className="w-3.5 h-3.5" />,
+          onClick: openNew,
+        },
+      ],
+    });
+  };
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" onContextMenu={handleEmptyWorkspaceContextMenu}>
       <SectionHeader
         title="Character Hub"
         subtitle="Reusable identity profiles that inject prompt tokens, checkpoints, LoRA recipes, and stock img2img references into Create Studio."
@@ -457,7 +635,11 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
               ? recipes.find((r) => r.id === character.loraRecipeId)
               : null;
             return (
-              <Card key={character.id} className="overflow-hidden flex flex-col">
+              <Card
+                key={character.id}
+                className="overflow-hidden flex flex-col"
+                onContextMenu={(e) => handleCharacterContextMenu(e, character)}
+              >
                 <div className="relative aspect-[4/3] bg-surface-subtle flex items-center justify-center overflow-hidden p-1.5">
                   <CharacterCover character={character} className="w-full h-full" />
                   <div className="absolute top-2 left-2 flex gap-1.5">
@@ -531,11 +713,28 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
 
       <Modal
         open={editorOpen}
-        onClose={() => setEditorOpen(false)}
+        onClose={requestClose}
+        closeOnBackdropClick={false}
         title={editing ? `Edit Character · ${editing.name}` : "New Character"}
         maxWidthClass="max-w-5xl"
       >
         <div className="max-h-[75vh] overflow-y-auto pr-1">
+          {draftRestored && (
+            <div className="mb-4 flex items-center justify-between p-2.5 rounded-lg bg-surface-subtle border border-accent/40 text-xs text-fg">
+              <span>Restored unsaved draft from your previous session.</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setForm(toFormState(editing));
+                  setDraftRestored(false);
+                  localStorage.removeItem(draftStorageKey);
+                }}
+              >
+                Discard Draft
+              </Button>
+            </div>
+          )}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <div className="space-y-3">
               <div className="space-y-1">
@@ -850,7 +1049,7 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
               )}
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" onClick={() => setEditorOpen(false)}>
+              <Button variant="ghost" onClick={requestClose}>
                 Close
               </Button>
               <Button variant="primary" loading={saving} onClick={() => void handleSave()}>
@@ -860,6 +1059,15 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
           </div>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={confirmDiscardOpen}
+        onClose={() => setConfirmDiscardOpen(false)}
+        onConfirm={handleConfirmDiscard}
+        title="Discard unsaved edits?"
+        description="You have unsaved changes to this character. If you discard, your edits will be permanently lost."
+        confirmLabel="Discard Edits"
+      />
 
       <ConfirmDialog
         open={deleteTarget !== null}

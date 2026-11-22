@@ -25,6 +25,15 @@ const api: KireaDesktopApi = {
   getSettings: () => ipcRenderer.invoke("settings:get"),
   updateSettings: (partial) => ipcRenderer.invoke("settings:update", partial),
 
+  // Application updates
+  getUpdateState: () => ipcRenderer.invoke("update:getState"),
+  checkForUpdates: () => ipcRenderer.invoke("update:check"),
+  downloadUpdate: () => ipcRenderer.invoke("update:download"),
+  cancelUpdateDownload: () => ipcRenderer.invoke("update:cancelDownload"),
+  dismissUpdate: () => ipcRenderer.invoke("update:dismiss"),
+  setUpdateChannel: (channel) => ipcRenderer.invoke("update:setChannel", channel),
+  installUpdate: (force) => ipcRenderer.invoke("update:install", force ?? false),
+
   // Hardware & runtime
   getHardwareStats: () => ipcRenderer.invoke("hardware:getStats"),
   getRuntimeState: () => ipcRenderer.invoke("runtime:getState"),
@@ -43,7 +52,8 @@ const api: KireaDesktopApi = {
   updateModelMetadata: (modelId, patch) =>
     ipcRenderer.invoke("models:updateMetadata", modelId, patch),
   getModelPreview: (modelId) => ipcRenderer.invoke("models:getPreview", modelId),
-  importModelPreview: (modelId) => ipcRenderer.invoke("models:importPreview", modelId),
+  importModelPreview: (modelId, sourceFilePath) =>
+    ipcRenderer.invoke("models:importPreview", modelId, sourceFilePath),
   getCuratedCatalog: () => ipcRenderer.invoke("models:catalog"),
 
   // LoRA recipes
@@ -114,8 +124,10 @@ const api: KireaDesktopApi = {
   searchCivitaiModels: (query) => ipcRenderer.invoke("civitai:searchModels", query),
   getCivitaiModelDetails: (modelId) =>
     ipcRenderer.invoke("civitai:getModelDetails", modelId),
-  startCivitaiDownload: (modelId, versionId) =>
-    ipcRenderer.invoke("civitai:startDownload", { modelId, versionId }),
+  startCivitaiDownload: (modelId, versionId, targetArchitecture) =>
+    ipcRenderer.invoke("civitai:startDownload", { modelId, versionId, targetArchitecture }),
+  pauseCivitaiDownload: (id) => ipcRenderer.invoke("civitai:pauseDownload", id),
+  resumeCivitaiDownload: (id) => ipcRenderer.invoke("civitai:resumeDownload", id),
   cancelCivitaiDownload: (id) => ipcRenderer.invoke("civitai:cancelDownload", id),
   retryCivitaiDownload: (id) => ipcRenderer.invoke("civitai:retryDownload", id),
   listCivitaiDownloads: () => ipcRenderer.invoke("civitai:listDownloads"),
@@ -127,6 +139,19 @@ const api: KireaDesktopApi = {
     ipcRenderer.invoke("civitai:getWorkflowDetails", modelId),
   prepareCivitaiWorkflowImport: (request) =>
     ipcRenderer.invoke("civitai:prepareWorkflowImport", request),
+
+  // Hugging Face Hub
+  searchHuggingFaceModels: (query) =>
+    ipcRenderer.invoke("huggingface:search", query),
+  getHuggingFaceRepo: (repoId, revision) =>
+    ipcRenderer.invoke("huggingface:getRepo", { repoId, revision }),
+  checkHuggingFaceCompatibility: (request) =>
+    ipcRenderer.invoke("huggingface:checkCompatibility", request),
+  startHuggingFaceDownloads: (request) =>
+    ipcRenderer.invoke("huggingface:startDownloads", request),
+  setHuggingFaceToken: (token) => ipcRenderer.invoke("huggingface:setToken", token),
+  testHuggingFaceConnection: () =>
+    ipcRenderer.invoke("huggingface:testConnection"),
 
   // Workflows & generation
   listWorkflows: () => ipcRenderer.invoke("workflows:list"),
@@ -240,6 +265,7 @@ const api: KireaDesktopApi = {
   onVideoCreated: (cb) => subscribe("event:videoCreated", cb),
   onPixelAiJobUpdated: (cb) => subscribe("event:pixelAiJobUpdated", cb),
   onPixelPackageProgress: (cb) => subscribe("event:pixelPackageProgress", cb),
+  onUpdateStateChanged: (cb) => subscribe("event:updateStateChanged", cb),
 };
 
 contextBridge.exposeInMainWorld("kirea", api);

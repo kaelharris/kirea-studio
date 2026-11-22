@@ -26,6 +26,14 @@ import {
   isAnimaWorkflow,
   usesDiffusionModelLoader,
 } from "./workflow-templates";
+import {
+  classifyMossModel,
+  isMossWorkflow,
+  missingMossRequirements,
+  mossDependencyStatus,
+  mossRequirementsFor,
+  validateMossLayoutJson,
+} from "../../shared/moss-image";
 import { resolveVideoFrames, resolveVideoModels } from "./video-graph-builder";
 import { isVideoMode } from "../../shared/video-utils";
 
@@ -80,11 +88,16 @@ function collectLoraIssues(
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
-  if (req.loras.length > wf.maxLoras) {
+  const effectiveMaxLoras =
+    baseArch === "illustrious" && (wf.id === "t2i_sdxl_base" || wf.id === "i2i_sdxl_base")
+      ? 10
+      : wf.maxLoras;
+
+  if (req.loras.length > effectiveMaxLoras) {
     issues.push({
       field: "loras",
       severity: "error",
-      message: `Workflow '${wf.name}' supports at most ${wf.maxLoras} LoRAs.`,
+      message: `Workflow '${wf.name}' supports at most ${effectiveMaxLoras} LoRAs.`,
     });
   }
 
@@ -471,15 +484,88 @@ export function validateGenerationRequest(
       const hasClip = installedModels.some(
         (m) => m.category === "text_encoder" && m.name.toLowerCase().includes("qwen_3_4b")
       );
-      const hasAe = installedModels.some(
-        (m) => m.category === "vae" && m.name.toLowerCase().includes("ae.")
-      );
+      const hasAe =
+        resolveAutoVaeName(
+          "z_image",
+          installedModels.filter((m) => m.category === "vae")
+        ) !== null;
       if (!hasClip || !hasAe) {
         issues.push({
           field: "checkpoint",
           severity: "error",
           message:
             "Z-Image Turbo requires text encoder 'qwen_3_4b.safetensors' and VAE 'ae.safetensors'.",
+        });
+      }
+    } else if (isMossWorkflow(req.workflowId)) {
+      if (
+        modelRecord &&
+        modelRecord.category !== "diffusion_model" &&
+        modelRecord.category !== "checkpoint"
+      ) {
+        issues.push({
+          field: "checkpoint",
+          severity: "error",
+          message: `MOSS-Image loads a split diffusion model via UNETLoader; '${req.checkpoint}' is registered as a ${modelRecord.category}.`,
+        });
+      }
+      const modelClassification = classifyMossModel(
+        modelRecord ?? { name: req.checkpoint, relativePath: req.checkpoint, architecture: arch }
+      );
+      if (!modelClassification.compatible) {
+        issues.push({
+          field: "checkpoint",
+          severity: "error",
+          message:
+            modelClassification.reason ??
+            `Checkpoint '${req.checkpoint}' is incompatible with MOSS-Image.`,
+        });
+      }
+      const wantsBase = req.workflowId === "t2i_moss_image_base";
+      if (wantsBase && modelClassification.kind === "moss_sft") {
+        issues.push({
+          field: "checkpoint",
+          severity: "error",
+          message:
+            "The MOSS-Image Base workflow requires a moss_image_base or custom fine-tune checkpoint without CFG distillation.",
+        });
+      }
+      const missing = missingMossRequirements(installedModels, req.workflowId);
+      if (missing.length > 0) {
+        const requiredIds = new Set(mossRequirementsFor(req.workflowId));
+        const detail = mossDependencyStatus(installedModels, req.workflowId)
+          .filter(
+            (status) =>
+              requiredIds.has(status.dependency.id) && !status.installed
+          )
+          .map(
+            (status) =>
+              `${status.dependency.label} (${status.dependency.targetSubdir}/)`
+          )
+          .join(", ");
+        issues.push({
+          field: "checkpoint",
+          severity: "error",
+          message: `MOSS-Image workflow is not ready: missing ${detail}. Install components from the Model Vault catalog and rescan.`,
+        });
+      }
+      if (req.workflowId === "t2i_moss_image_layout") {
+        const layoutValidation = validateMossLayoutJson(req.layoutJson?.trim() || "[]");
+        if (!layoutValidation.valid || layoutValidation.itemCount === 0) {
+          issues.push({
+            field: "prompt",
+            severity: "error",
+            message:
+              layoutValidation.error ||
+              "MOSS-Image Layout requires bounding-box JSON with at least one box.",
+          });
+        }
+      }
+      if (req.width % 16 !== 0 || req.height % 16 !== 0) {
+        issues.push({
+          field: "dimensions",
+          severity: "error",
+          message: "MOSS-Image requires width and height to be positive multiples of 16.",
         });
       }
     } else if (!usesDiffusionModelLoader(req.workflowId) && modelRecord?.category === "diffusion_model") {

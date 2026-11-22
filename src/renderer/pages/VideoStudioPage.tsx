@@ -47,6 +47,7 @@ import {
   SliderField,
   Textarea,
 } from "../components/ui/Primitives";
+import { getModelDisplayName } from "../../shared/model-utils";
 import { toMediaUrl } from "../utils/format";
 
 interface VideoStudioPageProps {
@@ -462,7 +463,7 @@ export const VideoStudioPage: React.FC<VideoStudioPageProps> = ({
                 >
                   {compatibleModels.map((model) => (
                     <option key={model.id} value={model.relativePath}>
-                      {model.name}
+                      {getModelDisplayName(model)}
                     </option>
                   ))}
                 </Select>

@@ -1,0 +1,909 @@
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#141419" />
+    <title>KIREA Studio: Your creative universe. One desktop application.</title>
+    <meta
+      name="description"
+      content="A local-first Windows desktop workspace for AI image and video creation, model management, workflows, characters, and pixel art. Connect your own ComfyUI."
+    />
+    <meta name="author" content="kaellabsstudio" />
+    <link rel="icon" href="./assets/brand/kirea-mark.svg" type="image/svg+xml" />
+    <link rel="icon" href="./assets/brand/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="./assets/brand/favicon-256.png" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="KIREA Studio" />
+    <meta property="og:title" content="KIREA Studio: Your creative universe. One desktop application." />
+    <meta
+      property="og:description"
+      content="A local-first Windows desktop workspace for AI image and video creation, models, workflows, characters and pixel art. Your machine. Your models. Your creative freedom."
+    />
+    <meta property="og:image" content="./assets/meta/og-kirea-v2.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="A colossal living sculpture of the Kirea muse becomes a world of floating ivory terraces, cobalt rivers and coral-lit doors." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="KIREA Studio: Your creative universe. One desktop application." />
+    <meta
+      name="twitter:description"
+      content="A local-first Windows desktop studio for AI image and video creation, models, workflows, characters, and pixel art."
+    />
+    <meta name="twitter:image" content="./assets/meta/og-kirea-v2.jpg" />
+
+    <link rel="preload" href="./assets/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="./assets/fonts/geist-mono-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="./scrollcraft.css" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script>
+      document.documentElement.classList.remove("no-js");
+      document.documentElement.classList.add("js");
+    </script>
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Kirea Studio",
+        "applicationCategory": "MultimediaApplication",
+        "operatingSystem": "Windows 10, Windows 11",
+        "softwareVersion": "1.0.1",
+        "downloadUrl": "https://github.com/kaelharris/kirea-studio/releases/download/v1.0.1/Kirea-Studio-Setup-1.0.1-win-x64.exe",
+        "license": "https://github.com/kaelharris/kirea-studio/blob/main/LICENSE",
+        "description": "A local-first Windows desktop workspace for AI image and video creation, model management, workflows, characters, and pixel art.",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "publisher": {
+          "@type": "Organization",
+          "name": "kaellabsstudio"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <div class="sc-grain" aria-hidden="true"></div>
+
+    <header class="site-header" data-header>
+      <div class="shell site-header__inner">
+        <div class="site-header__start">
+          <a class="brand" href="#top" aria-label="KIREA Studio, back to top">
+            <span class="brand__mark" aria-hidden="true"></span>
+            <span class="brand__word">KIREA <span>Studio</span></span>
+          </a>
+          <p class="site-header__where" aria-hidden="true">
+            <span data-nav-index>01</span>
+            <span class="site-header__where-slash">/</span>
+            <span data-nav-name>Overview</span>
+          </p>
+        </div>
+
+        <div class="site-header__tools">
+          <a
+            class="site-header__github"
+            href="https://github.com/kaelharris/kirea-studio"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <img class="brand-icon" src="./assets/brand/github-mark.svg" width="16" height="16" alt="" />
+            GitHub <span aria-hidden="true">↗</span>
+          </a>
+          <button
+            class="nav-toggle"
+            type="button"
+            aria-expanded="false"
+            aria-controls="site-menu"
+            data-menu-toggle
+          >
+            <span class="nav-toggle__icon" aria-hidden="true"></span>
+            <span class="nav-toggle__label">Sections</span>
+          </button>
+          <a
+            class="button button--primary button--small site-header__cta"
+            href="https://github.com/kaelharris/kirea-studio/releases/download/v1.0.1/Kirea-Studio-Setup-1.0.1-win-x64.exe"
+          >
+            Download for Windows
+          </a>
+        </div>
+      </div>
+
+      <nav class="site-menu" id="site-menu" data-menu aria-label="Sections" aria-hidden="true">
+        <ol class="site-menu__list">
+          <li><a href="#top" data-nav-link="overview"><span class="site-menu__num">01</span>Overview</a></li>
+          <li><a href="#studios" data-nav-link="studios"><span class="site-menu__num">02</span>Studios</a></li>
+          <li><a href="#tour" data-nav-link="tour"><span class="site-menu__num">03</span>Product</a></li>
+          <li><a href="#local" data-nav-link="local"><span class="site-menu__num">04</span>Local-first</a></li>
+          <li><a href="#requirements" data-nav-link="requirements"><span class="site-menu__num">05</span>Requirements</a></li>
+          <li><a href="#download" data-nav-link="download"><span class="site-menu__num">06</span>Download</a></li>
+        </ol>
+        <a
+          class="site-menu__repo"
+          href="https://github.com/kaelharris/kirea-studio"
+          target="_blank"
+          rel="noreferrer"
+        >
+          <span class="brand-label">
+            <img class="brand-icon" src="./assets/brand/github-mark.svg" width="16" height="16" alt="" />
+            GitHub repository
+          </span>
+          <span aria-hidden="true">↗</span>
+        </a>
+      </nav>
+
+      <div class="site-progress" aria-hidden="true"><span data-progress></span></div>
+    </header>
+
+    <main id="main" tabindex="-1">
+      <section
+        class="hero"
+        id="top"
+        data-sc-act="pin"
+        data-sc-span="1.6"
+        data-sc-drift="#141419"
+        aria-labelledby="hero-title"
+        data-hero
+        data-nav-section="overview"
+        tabindex="-1"
+      >
+        <div class="sc-stage hero__stage" data-sc-stage>
+          <div class="hero__media" aria-hidden="true">
+            <picture>
+              <source media="(width <= 560px)" srcset="./assets/art/kirea-hero-phone-390.webp 390w, ./assets/art/kirea-hero-phone-780.webp 780w" sizes="100vw" />
+              <source media="(560px < width <= 860px)" srcset="./assets/art/kirea-hero-tablet-768.webp 768w, ./assets/art/kirea-hero-tablet-1072.webp 1072w" sizes="100vw" />
+              <source media="(width > 860px) and (min-aspect-ratio: 17/10)" srcset="./assets/art/kirea-hero-wide-1664.webp 1664w" sizes="100vw" />
+              <img
+                class="hero__art"
+                src="./assets/art/kirea-hero-desktop-1504.webp"
+                srcset="./assets/art/kirea-hero-desktop-1504.webp 1504w"
+                sizes="100vw"
+                width="1504"
+                height="940"
+                alt=""
+                fetchpriority="high"
+                decoding="async"
+              />
+            </picture>
+            <video
+              class="hero__art hero__video"
+              src="./assets/art/kirea-hero-loop.mp4"
+              width="1920"
+              height="1080"
+              preload="none"
+              muted
+              loop
+              playsinline
+            ></video>
+            <div class="hero__haze" data-sc-parallax="-0.25"></div>
+          </div>
+          <div class="hero__scrim" aria-hidden="true"></div>
+
+          <div class="shell hero__inner">
+            <div class="hero__copy">
+              <h1 id="hero-title" class="hero__title">
+                <span>Your creative universe.</span>
+                <span>One desktop application.</span>
+              </h1>
+              <p class="hero__lede">
+                A local-first Windows desktop studio for AI image and video, model management,
+                workflows, characters and pixel art. Connect your own ComfyUI.
+              </p>
+              <div class="hero__actions">
+                <a
+                  class="button button--primary"
+                  href="https://github.com/kaelharris/kirea-studio/releases/download/v1.0.1/Kirea-Studio-Setup-1.0.1-win-x64.exe"
+                >
+                  Download for Windows
+                </a>
+                <a
+                  class="button button--quiet"
+                  href="https://github.com/kaelharris/kirea-studio"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <img class="brand-icon" src="./assets/brand/github-mark.svg" width="16" height="16" alt="" />
+                  View on GitHub <span class="ext" aria-hidden="true">↗</span>
+                </a>
+              </div>
+              <div class="hero__meta">
+                <span class="compat-chip">Windows 10/11 · x64</span>
+                <span class="hero__local">
+                  <span class="status-dot" aria-hidden="true"></span>
+                  Local-first. Connects to your ComfyUI at <code>127.0.0.1:8188</code>.
+                </span>
+              </div>
+            </div>
+          </div>
+          <div class="hero__mist" aria-hidden="true" data-sc-parallax="0.35"></div>
+        </div>
+      </section>
+
+      <section
+        class="studios"
+        id="studios"
+        data-sc-act="pin"
+        data-sc-span="4"
+        data-sc-drift="#101015"
+        aria-labelledby="studios-title"
+        data-orrery-section
+        data-nav-section="studios"
+        tabindex="-1"
+      >
+        <div class="sc-stage studios__stage" data-sc-stage>
+          <div class="shell studios__head">
+            <p class="sc-label">The studios</p>
+            <h2 id="studios-title" class="sc-display sc-display--md">Six worlds. One application.</h2>
+          </div>
+
+          <div class="orrery" data-orrery>
+            <div class="orrery__path" aria-hidden="true"></div>
+
+            <div class="orrery__hub">
+              <img
+                class="orrery__character"
+                src="./assets/art/kirea-orrery-muse-1600.webp"
+                srcset="./assets/art/kirea-orrery-muse-800.webp 800w, ./assets/art/kirea-orrery-muse-1600.webp 1600w"
+                sizes="(max-width: 860px) 86vw, min(54vw, 880px, clamp(160px, calc(125vh - 450px), 70vh))"
+                width="1600"
+                height="940"
+                alt="The silver-haired KIREA muse holds both palms open beneath the orbiting studio artwork."
+                loading="lazy"
+                decoding="async"
+              />
+            </div>
+
+            <ul class="orrery__worlds" data-orrery-worlds>
+              <li
+                class="world"
+                data-world
+                data-title="Image Studio"
+                data-copy="Text-to-image, image-to-image, 4× upscaling, multi-LoRA stacks and live previews."
+                data-tech="SD 1.5 · SDXL · Illustrious · Anima · Z-Image"
+              >
+                <figure class="world__art">
+                  <img
+                    src="./assets/art/kirea-creation-640.webp"
+                    srcset="./assets/art/kirea-creation-320.webp 320w, ./assets/art/kirea-creation-640.webp 640w"
+                    sizes="(max-width: 860px) min(72vw, 280px, 40vh), clamp(179.2px, 16.8vw, 257.6px)"
+                    width="640"
+                    height="480"
+                    alt="The silver-haired muse uses a wooden roller to lift a coral koi from thick pigment in her print studio."
+                    loading="eager"
+                    decoding="async"
+                  />
+                </figure>
+                <p class="sr-only">
+                  Image Studio. Text-to-image, image-to-image, 4× upscaling, multi-LoRA stacks and
+                  live previews. SD 1.5, SDXL, Illustrious, Anima, Z-Image.
+                </p>
+              </li>
+
+              <li
+                class="world"
+                data-world
+                data-title="Video Studio"
+                data-copy="Native ComfyUI video workflows for Wan 2.1 and LTX-Video, with VRAM checks before a job."
+                data-tech="Wan 2.1 · LTX-Video · local only"
+              >
+                <figure class="world__art">
+                  <img
+                    src="./assets/art/kirea-motion-640.webp"
+                    srcset="./assets/art/kirea-motion-320.webp 320w, ./assets/art/kirea-motion-640.webp 640w"
+                    sizes="(max-width: 860px) min(72vw, 280px, 40vh), clamp(179.2px, 16.8vw, 257.6px)"
+                    width="640"
+                    height="480"
+                    alt="The muse runs through a metal wind tunnel as ribbons of coral fabric sweep behind her."
+                    loading="eager"
+                    decoding="async"
+                  />
+                </figure>
+                <p class="sr-only">
+                  Video Studio. Native ComfyUI video workflows for Wan 2.1 and LTX-Video, with VRAM
+                  checks before a job. Wan 2.1, LTX-Video, local only.
+                </p>
+              </li>
+
+              <li
+                class="world"
+                data-world
+                data-title="Model Hub"
+                data-model-hub
+                data-copy="A non-destructive local vault with Civitai discovery and Hugging Face import."
+                data-tech="Vault · Civitai · Hugging Face"
+              >
+                <figure class="world__art">
+                  <img
+                    src="./assets/art/kirea-cabinet-640.webp"
+                    srcset="./assets/art/kirea-cabinet-320.webp 320w, ./assets/art/kirea-cabinet-640.webp 640w"
+                    sizes="(max-width: 860px) min(72vw, 280px, 40vh), clamp(179.2px, 16.8vw, 257.6px)"
+                    width="640"
+                    height="480"
+                    alt="An olive cabinet holds models made of folded paper, carved wood and minerals."
+                    loading="eager"
+                    decoding="async"
+                  />
+                </figure>
+                <p class="sr-only">
+                  Model Hub. A non-destructive local vault with Civitai discovery and Hugging Face
+                  import. Vault, Civitai, Hugging Face.
+                </p>
+              </li>
+
+              <li
+                class="world"
+                data-world
+                data-title="Workflow Management"
+                data-copy="Versioned ComfyUI templates with validation and one-click loading into Create."
+                data-tech="Validated templates · SD 1.5 / SDXL"
+              >
+                <figure class="world__art">
+                  <img
+                    src="./assets/art/kirea-connections-640.webp"
+                    srcset="./assets/art/kirea-connections-320.webp 320w, ./assets/art/kirea-connections-640.webp 640w"
+                    sizes="(max-width: 860px) min(72vw, 280px, 40vh), clamp(179.2px, 16.8vw, 257.6px)"
+                    width="640"
+                    height="480"
+                    alt="Folded paper ribbons interconnect in an arrangement of coral, lilac and indigo."
+                    loading="eager"
+                    decoding="async"
+                  />
+                </figure>
+                <p class="sr-only">
+                  Workflow Management. Versioned ComfyUI templates with validation and one-click
+                  loading into Create. Validated templates, SD 1.5 and SDXL.
+                </p>
+              </li>
+
+              <li
+                class="world"
+                data-world
+                data-title="Character &amp; Animation"
+                data-copy="Reusable identities, Story Canvas sequencing and a frame timeline for pixel animation."
+                data-tech="Characters · Stories · Frame timeline"
+              >
+                <figure class="world__art">
+                  <img
+                    src="./assets/art/kirea-cast-640.webp"
+                    srcset="./assets/art/kirea-cast-320.webp 320w, ./assets/art/kirea-cast-640.webp 640w"
+                    sizes="(max-width: 860px) min(72vw, 280px, 40vh), clamp(179.2px, 16.8vw, 257.6px)"
+                    width="640"
+                    height="480"
+                    alt="The muse poses a paper bird while three characters gather around her in a rehearsal studio."
+                    loading="eager"
+                    decoding="async"
+                  />
+                </figure>
+                <p class="sr-only">
+                  Character and Animation. Reusable identities, Story Canvas sequencing and a frame
+                  timeline for pixel animation. Characters, Stories, Frame timeline.
+                </p>
+              </li>
+
+              <li
+                class="world"
+                data-world
+                data-title="Pixel Studio"
+                data-copy="Seeded pixel art for characters, items, tilesets and effects, with sprite-sheet exports."
+                data-tech="PNG · sprite sheet · GIF/APNG · Godot · Unity · Phaser"
+              >
+                <figure class="world__art">
+                  <img
+                    class="world__pixels"
+                    src="./assets/art/kirea-pixel-640.webp"
+                    srcset="./assets/art/kirea-pixel-320.webp 320w, ./assets/art/kirea-pixel-640.webp 640w"
+                    sizes="(max-width: 860px) min(72vw, 280px, 40vh), clamp(179.2px, 16.8vw, 257.6px)"
+                    width="640"
+                    height="480"
+                    alt="A silver-haired pixel sprite carries a planter across a terracotta roof garden beside a greenhouse."
+                    loading="eager"
+                    decoding="async"
+                  />
+                </figure>
+                <p class="sr-only">
+                  Pixel Studio. Seeded pixel art for characters, items, tilesets and effects, with
+                  sprite-sheet exports. PNG, sprite sheet, GIF/APNG, Godot, Unity, Phaser.
+                </p>
+              </li>
+            </ul>
+
+            <div class="orrery__plate" aria-hidden="true" data-orrery-plate>
+              <p class="orrery__index"><span data-orrery-index>01</span> / 06</p>
+              <h3 class="orrery__name" data-orrery-title>Image Studio</h3>
+              <p class="orrery__copy" data-orrery-copy>
+                Text-to-image, image-to-image, 4× upscaling, multi-LoRA stacks and live previews.
+              </p>
+              <p class="orrery__tech">
+                <span data-orrery-tech>SD 1.5 · SDXL · Illustrious · Anima · Z-Image</span>
+                <span data-orrery-providers hidden>
+                  Vault ·
+                  <span class="brand-label">
+                    <img class="brand-icon" src="./assets/brand/civitai-mark.svg" width="16" height="16" alt="" />
+                    Civitai
+                  </span>
+                  ·
+                  <span class="brand-label">
+                    <img class="brand-icon" src="./assets/brand/hugging-face-mark.svg" width="16" height="16" alt="" />
+                    Hugging Face
+                  </span>
+                </span>
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="showcase"
+        id="tour"
+        data-nav-section="tour"
+        tabindex="-1"
+        data-sc-act="pin"
+        data-sc-span="2.6"
+        data-sc-drift="#121218"
+        aria-labelledby="tour-title"
+        data-showcase
+      >
+        <div class="sc-stage showcase__stage" data-sc-stage>
+          <div class="showcase__inner">
+            <div class="shell showcase__meta">
+              <h2 id="tour-title" class="sc-display sc-display--md">See KIREA in action.</h2>
+              <div class="showcase__tabs" role="tablist" aria-label="Application screens">
+                <button
+                  type="button"
+                  role="tab"
+                  id="showcase-tab-home"
+                  aria-selected="true"
+                  aria-controls="showcase-panel"
+                  tabindex="0"
+                  data-showcase-tab="home"
+                  data-copy="Live GPU telemetry, engine status and recent work, with every studio one click away."
+                  data-caption="Home · Live GPU telemetry, engine status and recent work."
+                >
+                  Home
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  id="showcase-tab-create"
+                  aria-selected="false"
+                  aria-controls="showcase-panel"
+                  tabindex="-1"
+                  data-showcase-tab="create"
+                  data-copy="Brief in plain language, or tune the prompt, model, LoRA stack and every generation parameter."
+                  data-caption="Create · Prompt composer and generation controls."
+                >
+                  Create
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  id="showcase-tab-models"
+                  aria-selected="false"
+                  aria-controls="showcase-panel"
+                  tabindex="-1"
+                  data-showcase-tab="models"
+                  data-copy="Your local vault, Civitai discovery and Hugging Face import in one non-destructive library."
+                  data-caption="Models · Local vault, Civitai and Hugging Face."
+                >
+                  Models
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  id="showcase-tab-workflows"
+                  aria-selected="false"
+                  aria-controls="showcase-panel"
+                  tabindex="-1"
+                  data-showcase-tab="workflows"
+                  data-copy="Validated, versioned ComfyUI templates with model counts and one-click loading into Create."
+                  data-caption="Workflows · Validated ComfyUI templates."
+                >
+                  Workflows
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  id="showcase-tab-explore"
+                  aria-selected="false"
+                  aria-controls="showcase-panel"
+                  tabindex="-1"
+                  data-showcase-tab="explore"
+                  data-copy="Starter presets, LoRA recipes and saved prompts for editorial, anime, product and character work."
+                  data-caption="Explore · Presets and LoRA recipes."
+                >
+                  Explore
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  id="showcase-tab-light"
+                  aria-selected="false"
+                  aria-controls="showcase-panel"
+                  tabindex="-1"
+                  data-showcase-tab="light"
+                  data-copy="The same workspace in KIREA's warm ivory theme, with the same token set."
+                  data-caption="Light theme · The same workspace in warm ivory."
+                >
+                  Light theme
+                </button>
+              </div>
+            </div>
+
+            <div
+              class="showcase__panel"
+              id="showcase-panel"
+              role="tabpanel"
+              aria-labelledby="showcase-tab-home"
+            >
+              <button
+                class="app-window app-window--showcase"
+                type="button"
+                data-shot
+                data-showcase-app
+                data-caption="Home · Live GPU telemetry, engine status and recent work."
+                aria-label="Open the Home screenshot full size"
+                aria-describedby="showcase-description"
+              >
+                <span class="showcase__stack">
+                  <img
+                    class="is-active"
+                    data-showcase-image="home"
+                    src="./assets/shots/home-dark.webp"
+                    width="1600"
+                    height="940"
+                    alt="Kirea Studio Home screen with local ComfyUI status, GPU telemetry, recent creations and the active queue."
+                    loading="eager"
+                    decoding="async"
+                  />
+                  <img
+                    data-showcase-image="create"
+                    src="./assets/shots/create-dark.webp"
+                    width="1600"
+                    height="940"
+                    alt="Kirea Studio Create screen with a plain-language prompt composer, model selector and generation controls."
+                    loading="lazy"
+                    decoding="async"
+                    aria-hidden="true"
+                  />
+                  <img
+                    data-showcase-image="models"
+                    src="./assets/shots/models-dark.webp"
+                    width="1600"
+                    height="940"
+                    alt="Kirea Studio Models screen showing the local model vault, Civitai hub, architecture filters and download actions."
+                    loading="lazy"
+                    decoding="async"
+                    aria-hidden="true"
+                  />
+                  <img
+                    data-showcase-image="workflows"
+                    src="./assets/shots/workflows-dark.webp"
+                    width="1600"
+                    height="940"
+                    alt="Kirea Studio Workflows screen with versioned SDXL and SD 1.5 text-to-image and image-to-image templates."
+                    loading="lazy"
+                    decoding="async"
+                    aria-hidden="true"
+                  />
+                  <img
+                    data-showcase-image="explore"
+                    src="./assets/shots/explore-dark.webp"
+                    width="1600"
+                    height="940"
+                    alt="Kirea Studio Explore screen with starter presets for editorial portraits, anime visuals and industrial product design."
+                    loading="lazy"
+                    decoding="async"
+                    aria-hidden="true"
+                  />
+                  <img
+                    data-showcase-image="light"
+                    src="./assets/shots/create-light.webp"
+                    width="1600"
+                    height="940"
+                    alt="Kirea Studio Create screen in the warm ivory light theme, with the prompt composer and generation controls."
+                    loading="lazy"
+                    decoding="async"
+                    aria-hidden="true"
+                  />
+                </span>
+                <span class="shell app-window__foot">
+                  <span id="showcase-description" data-showcase-copy>
+                    Live GPU telemetry, engine status and recent work, with every studio one click away.
+                  </span>
+                  <span class="app-window__expand">View fullscreen</span>
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="local"
+        id="local"
+        data-sc-act="flow"
+        data-sc-drift="#151519"
+        aria-labelledby="local-title"
+        data-nav-section="local"
+        tabindex="-1"
+      >
+        <div class="sc-stage local__stage" data-sc-stage>
+          <div class="shell local__inner">
+            <div class="local__copy">
+              <p class="sc-label">Local-first</p>
+              <h2 id="local-title" class="sc-display local__title">
+                <span class="local__line">Your machine.</span>
+                <span class="local__line">Your models.</span>
+                <span class="local__line">Your work.</span>
+              </h2>
+              <p class="local__lede">
+                KIREA talks to ComfyUI over loopback. The app, the queue, the prompts and the
+                renders stay on your machine.
+              </p>
+
+              <ol class="principles">
+                <li>
+                  <div>
+                    <h3>Privacy</h3>
+                    <p>Prompts, seeds, queue history and renders stay on your machine.</p>
+                  </div>
+                </li>
+                <li>
+                  <div>
+                    <h3>Ownership</h3>
+                    <p>Use the ComfyUI install and model folders you already have. Nothing is moved or rewritten.</p>
+                  </div>
+                </li>
+                <li>
+                  <div>
+                    <h3>Independence</h3>
+                    <p>No account, cloud queue or telemetry. Run the app on your own hardware.</p>
+                  </div>
+                </li>
+              </ol>
+
+              <p class="local__loop">
+                <span class="brand-label">
+                  <img class="brand-icon" src="./assets/brand/comfyui-mark.svg" width="16" height="16" alt="" />
+                  Loopback only
+                </span>
+                · <code>127.0.0.1:8188</code>
+              </p>
+              <a
+                class="text-link"
+                href="https://github.com/kaelharris/kirea-studio/blob/main/docs/ARCHITECTURE.md"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Read the architecture <span class="ext" aria-hidden="true">↗</span>
+              </a>
+            </div>
+
+            <figure class="local__visual">
+              <picture class="local__frame">
+                <source media="(width <= 560px)" srcset="./assets/art/kirea-local-phone-390.webp 390w, ./assets/art/kirea-local-phone-669.webp 669w" sizes="100vw" />
+                <source media="(560px < width <= 860px)" srcset="./assets/art/kirea-local-tablet-768.webp 768w, ./assets/art/kirea-local-tablet-1086.webp 1086w" sizes="100vw" />
+                <source media="(width > 860px) and (min-aspect-ratio: 17/10)" srcset="./assets/art/kirea-local-wide-719.webp 719w, ./assets/art/kirea-local-wide-1254.webp 1254w" sizes="719px" />
+                <img
+                  src="./assets/art/kirea-local-desktop-1254.webp"
+                  srcset="./assets/art/kirea-local-desktop-710.webp 710w, ./assets/art/kirea-local-desktop-1254.webp 1254w"
+                  sizes="min(49vw, 719px)"
+                  width="1254"
+                  height="1176"
+                  alt="An old walnut workbench, paper and tools catch late daylight beside a tall atelier window."
+                  loading="lazy"
+                  decoding="async"
+                  data-sc-parallax="0.3"
+                />
+              </picture>
+              <figcaption>Local Studio · original artwork</figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="setup"
+        id="requirements"
+        data-sc-act="flow"
+        data-sc-drift="#111116"
+        aria-labelledby="setup-title"
+        data-nav-section="requirements"
+        tabindex="-1"
+      >
+        <div class="shell">
+          <div class="setup__head" data-sc-in data-sc-stagger="60">
+            <h2 id="setup-title" class="sc-display sc-display--md">Requirements and download.</h2>
+            <p class="setup__lede">
+              KIREA is a Windows desktop app. The 146 MB installer does not bundle Python, CUDA or
+              model weights.
+            </p>
+          </div>
+
+          <div class="setup__grid">
+            <div class="setup__specs" data-sc-in data-sc-stagger="50">
+              <dl class="spec-list">
+                <div class="spec">
+                  <dt>Platform</dt>
+                  <dd>Windows 10 / 11 · 64-bit x64</dd>
+                </div>
+                <div class="spec">
+                  <dt>Reference GPU</dt>
+                  <dd>
+                    RTX 4070 Ti SUPER · 16 GB VRAM
+                    <span>The verified runtime reference machine</span>
+                    <img class="spec__gpu-mark" src="./assets/brand/geforce-rtx.png" width="3000" height="1286" alt="NVIDIA GeForce RTX" loading="lazy" />
+                  </dd>
+                </div>
+                <div class="spec">
+                  <dt>
+                    <span class="brand-label">
+                      <img class="brand-icon" src="./assets/brand/comfyui-mark.svg" width="16" height="16" alt="" />
+                      ComfyUI
+                    </span>
+                  </dt>
+                  <dd>
+                    v0.37.0 or newer
+                    <span>v0.45.2 verified with the current workflow set</span>
+                  </dd>
+                </div>
+                <div class="spec">
+                  <dt>Engine setup</dt>
+                  <dd>
+                    Existing local install or managed runtime
+                    <span>The managed runtime stays under your Windows app data</span>
+                  </dd>
+                </div>
+                <div class="spec">
+                  <dt>Installer</dt>
+                  <dd>
+                    146 MB · unsigned
+                    <span>SHA-256 is published on the release page</span>
+                  </dd>
+                </div>
+                <div class="spec">
+                  <dt>Models</dt>
+                  <dd>
+                    Not bundled
+                    <span>Your vault and downloads need their own disk space</span>
+                  </dd>
+                </div>
+              </dl>
+              <a
+                class="text-link"
+                href="https://github.com/kaelharris/kirea-studio/blob/main/docs/RUNTIME_COMPATIBILITY.md"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Runtime compatibility notes <span class="ext" aria-hidden="true">↗</span>
+              </a>
+            </div>
+
+            <div class="setup__profile" data-sc-in data-sc-stagger="50">
+              <div class="profile" data-profile-group>
+                <div class="profile__switch" role="group" aria-label="GPU memory profile">
+                  <button type="button" data-profile="memory" aria-pressed="true">8–12 GB VRAM</button>
+                  <button type="button" data-profile="quality" aria-pressed="false">16 GB+ VRAM</button>
+                </div>
+                <div class="profile__panel" aria-live="polite">
+                  <h3 data-profile-title>Memory Saver</h3>
+                  <p data-profile-copy>
+                    Adds <code>--lowvram</code>, reduces latent dimensions, and surfaces low-VRAM
+                    warnings. Best for 8–12 GB cards and smaller image or video jobs.
+                  </p>
+                  <p class="profile__detail" data-profile-detail>
+                    Image profiles scale automatically. Video may still need smaller dimensions.
+                  </p>
+                </div>
+              </div>
+              <p class="setup__note">
+                Existing ComfyUI installs stay untouched. A managed runtime lives under your
+                Windows app data.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="close"
+        id="download"
+        data-sc-act="pin"
+        data-sc-span="1.2"
+        data-sc-drift="#0f1015"
+        aria-labelledby="download-title"
+        data-nav-section="download"
+        tabindex="-1"
+      >
+        <div class="sc-stage close__stage" data-sc-stage>
+          <picture>
+            <source media="(width <= 560px)" srcset="./assets/art/kirea-gateway-phone-390.webp 390w, ./assets/art/kirea-gateway-phone-669.webp 669w" sizes="100vw" />
+            <source media="(560px < width <= 860px)" srcset="./assets/art/kirea-gateway-tablet-768.webp 768w, ./assets/art/kirea-gateway-tablet-1086.webp 1086w" sizes="100vw" />
+            <source media="(width > 860px) and (min-aspect-ratio: 17/10)" srcset="./assets/art/kirea-gateway-wide-1664.webp 1664w" sizes="100vw" />
+            <img
+              class="close__art"
+              src="./assets/art/kirea-gateway-desktop-1504.webp"
+              srcset="./assets/art/kirea-gateway-desktop-1504.webp 1504w"
+              sizes="100vw"
+              width="1504"
+              height="940"
+              alt=""
+              loading="lazy"
+              decoding="async"
+              data-sc-parallax="0.12"
+            />
+          </picture>
+          <div class="close__scrim" aria-hidden="true"></div>
+
+          <div class="shell close__inner">
+            <div class="download-card" data-sc-cue="0 1 0 0">
+              <p class="sc-label download-card__label">Kirea Studio v1.0.1</p>
+              <h2 id="download-title" class="download-card__title">Your universe, on your machine.</h2>
+              <p class="download-card__platform">Windows 10/11 · x64 · 146 MB</p>
+              <a
+                class="button button--dark download-card__button"
+                href="https://github.com/kaelharris/kirea-studio/releases/download/v1.0.1/Kirea-Studio-Setup-1.0.1-win-x64.exe"
+              >
+                Download for Windows
+              </a>
+              <p class="download-card__fine">
+                Unsigned installer. Verify the SHA-256 published on the
+                <a href="https://github.com/kaelharris/kirea-studio/releases/latest">release page</a>
+                before running.
+              </p>
+              <div class="download-card__links">
+                <a href="https://github.com/kaelharris/kirea-studio/releases/latest" target="_blank" rel="noreferrer">
+                  Release notes &amp; SHA-256 <span aria-hidden="true">↗</span>
+                </a>
+                <a href="https://github.com/kaelharris/kirea-studio/releases" target="_blank" rel="noreferrer">
+                  All releases <span aria-hidden="true">↗</span>
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <footer class="site-footer">
+            <div class="shell site-footer__inner">
+              <div>
+                <img class="site-footer__mark" src="./assets/brand/kael-labs-color.png" width="1682" height="277" alt="KAEL LABS" loading="lazy" />
+                <nav class="site-footer__nav" aria-label="Project">
+                  <a class="brand-label" href="https://github.com/kaelharris/kirea-studio" target="_blank" rel="noreferrer">
+                    <img class="brand-icon" src="./assets/brand/github-mark.svg" width="16" height="16" alt="" />
+                    GitHub
+                  </a>
+                  <a href="https://github.com/kaelharris/kirea-studio/tree/main/docs" target="_blank" rel="noreferrer">Documentation</a>
+                  <a href="https://github.com/kaelharris/kirea-studio/releases/latest" target="_blank" rel="noreferrer">Releases</a>
+                  <a href="https://github.com/kaelharris/kirea-studio/issues" target="_blank" rel="noreferrer">Issues</a>
+                  <a href="https://github.com/kaelharris/kirea-studio/blob/main/LICENSE" target="_blank" rel="noreferrer">License</a>
+                </nav>
+              </div>
+              <div class="site-footer__legal">
+                <p>© 2026 kaellabsstudio. Kirea Studio is MIT licensed.</p>
+                <p>ComfyUI is a separate GPL-3.0 project and is not bundled.</p>
+              </div>
+              <a class="site-footer__top" href="#top">Back to top <span aria-hidden="true">↑</span></a>
+            </div>
+          </footer>
+        </div>
+      </section>
+    </main>
+
+    <dialog class="lightbox" data-lightbox aria-labelledby="lightbox-caption">
+      <button class="lightbox__close" type="button" data-lightbox-close>
+        <span aria-hidden="true">×</span>
+        <span class="sr-only">Close screenshot</span>
+      </button>
+      <div class="lightbox__body">
+        <img data-lightbox-image alt="" />
+        <p class="lightbox__caption" id="lightbox-caption" data-lightbox-caption></p>
+      </div>
+    </dialog>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

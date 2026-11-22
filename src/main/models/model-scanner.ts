@@ -7,8 +7,10 @@ import type {
   ModelCategory,
   ModelDiscovery,
   ModelRecord,
+  ModelSource,
 } from "../../shared/types";
 import { inferModelArchitecture } from "../../shared/aspect-ratios";
+import { normalizeModelTitle } from "../../shared/model-utils";
 import { WORKFLOW_TEMPLATES } from "../comfy/workflow-registry";
 import type { ComfyApiClient } from "../comfy/comfy-adapter";
 import type { StudioLogger } from "../logger";
@@ -25,13 +27,15 @@ const ACCEPTED_MODEL_EXTS = new Set([
 const INCOMPLETE_EXTS = new Set([".part", ".tmp", ".crdownload"]);
 
 const PREVIEW_EXTS = [".png", ".jpg", ".jpeg", ".webp"];
-const SIDECAR_SUFFIXES = [".json", ".civitai.info"];
+const SIDECAR_SUFFIXES = [".hf.json", ".json", ".civitai.info"];
 
 export interface DiscoveredModelMetadata {
   description: string | null;
   baseModel: string | null;
   triggerWords: string[];
   previewPath: string | null;
+  source: ModelSource | null;
+  embeddedTitle: string | null;
 }
 
 const CATEGORY_TO_FOLDERS: Record<ModelCategory, string[]> = {
@@ -169,10 +173,15 @@ function getCompatibleWorkflowIds(category: ModelCategory, arch: ModelArchitectu
     return category === "checkpoint" ? ["t2v_ltx_2b", "i2v_ltx_2b"] : [];
   }
   if (arch === "wan_video") {
-    return category === "diffusion_model" ? ["t2v_wan21_1_3b"] : [];
+    return category === "diffusion_model" || category === "checkpoint"
+      ? ["t2v_wan21_1_3b", "t2v_wan21_14b"]
+      : [];
   }
 
   if (category === "checkpoint") {
+    if (arch === "anima") {
+      return ["t2i_anima_base", "i2i_anima_base"];
+    }
     return WORKFLOW_TEMPLATES.filter(
       (wf) =>
         wf.mode !== "upscale" &&
@@ -192,6 +201,11 @@ function getCompatibleWorkflowIds(category: ModelCategory, arch: ModelArchitectu
     }
     if (arch === "anima") {
       return ["t2i_anima_base", "i2i_anima_base"];
+    }
+    if (arch === "moss_image") {
+      return WORKFLOW_TEMPLATES.filter((wf) =>
+        wf.supportedArchitectures.includes("moss_image")
+      ).map((wf) => wf.id);
     }
     return [];
   }
@@ -249,10 +263,37 @@ export function sniffSafetensorsArchitecture(filePath: string): ModelArchitectur
 
 function classifySafetensorsHeader(header: string): ModelArchitecture | null {
   if (
+    header.includes('modelspec.architecture":"moss_image') ||
+    header.includes('modelspec.architecture":"moss') ||
+    header.includes('"image_model": "moss_image"') ||
+    header.includes('"image_model":"moss_image"') ||
+    (header.includes("shared_block_modulation") &&
+      (header.includes("layers.0.proj.ffn_up_gate") ||
+        header.includes("layers.0.proj.q") ||
+        header.includes("final_linear_video"))) ||
+    (header.includes("video_embedder") &&
+      (header.includes("layers.0.proj.q.lora_") || header.includes("layers.0.proj.ffn_up_gate.lora_"))) ||
+    header.includes("layers.0.proj.q.lora_") ||
+    header.includes("layers.0.proj.ffn_up_gate.lora_") ||
+    header.includes(".layers.0.proj.q.")
+  ) {
+    return "moss_image";
+  }
+
+  if (
     header.includes('modelspec.architecture":"anima') ||
     header.includes("networks.lora_anima")
   ) {
     return "anima";
+  }
+
+  if (
+    header.includes("final_linear_video") ||
+    header.includes("final_norm_video") ||
+    header.includes("wan2.1") ||
+    header.includes("wan_video")
+  ) {
+    return "wan_video";
   }
 
   const hasAnimaAdapter =
@@ -327,7 +368,17 @@ function inferArchitectureFromCategoryName(
   category: ModelCategory
 ): ModelArchitecture | null {
   const lower = fileName.toLowerCase();
+  if (lower.includes("moss")) {
+    return "moss_image";
+  }
   if (category === "text_encoder") {
+    if (
+      lower.includes("qwen3.5-9b") ||
+      lower.includes("qwen3_5_9b") ||
+      lower.includes("qwen35_9b")
+    ) {
+      return "moss_image";
+    }
     if (lower.includes("qwen_3_06b") || lower.includes("qwen3_06b")) return "anima";
     if (lower.includes("qwen_3_4b") || lower.includes("qwen3_4b")) return "z_image";
     if (lower.includes("qwen3vl") || lower.includes("qwen3_vl")) return "krea2";
@@ -335,6 +386,13 @@ function inferArchitectureFromCategoryName(
     return null;
   }
   if (category === "vae") {
+    if (
+      lower.includes("flux2-vae_small") ||
+      lower.includes("flux2_vae_small") ||
+      lower.includes("flux2-vae-small")
+    ) {
+      return "moss_image";
+    }
     if (lower.includes("qwen_image_vae")) return "anima";
     if (lower === "ae" || lower.startsWith("ae.")) return "flux";
     if (lower.includes("sdxl_vae") || lower.includes("sdxl-vae")) return "sdxl";
@@ -381,7 +439,10 @@ function inferCategoryContextArchitecture(
     }
   }
 
-  if (category === "diffusion_model" && combined.toLowerCase().includes("z")) {
+  if (
+    category === "diffusion_model" &&
+    /(?:^|[^a-z])z[-_ ]?(?:image|turbo)|zturbo|zimage|(?:^|[_-])izt(?:[_-]|$)/i.test(combined)
+  ) {
     return "z_image";
   }
   return "unknown";
@@ -418,6 +479,103 @@ function firstStringArray(source: Record<string, unknown>, keys: string[]): stri
     }
   }
   return [];
+}
+
+function firstNumber(source: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return null;
+}
+
+function parseModelSource(source: Record<string, unknown>): ModelSource | null {
+  const provider = firstString(source, ["source", "provider"]);
+  const modelName = firstString(source, [
+    "modelName",
+    "model_name",
+    "repo_id",
+    "repoId",
+    "huggingface_repo",
+  ]);
+  const versionName = firstString(source, ["name", "versionName", "version_name", "revision"]);
+  const modelId = firstNumber(source, ["modelId", "model_id"]);
+  const versionId = firstNumber(source, [
+    "modelVersionId",
+    "model_version_id",
+    "versionId",
+    "version_id",
+  ]);
+  if (!modelName && modelId === null) return null;
+
+  const normalizedProvider = provider?.trim().toLowerCase() ?? "";
+  const isCivitai = normalizedProvider === "civitai";
+  const isHuggingFace =
+    normalizedProvider === "huggingface" || (!isCivitai && modelName?.includes("/") === true);
+  const url =
+    firstString(source, ["modelUrl", "model_url"]) ??
+    (isCivitai && modelId !== null
+      ? `https://civitai.com/models/${modelId}${
+          versionId !== null ? `?modelVersionId=${versionId}` : ""
+        }`
+      : isHuggingFace && modelName
+        ? `https://huggingface.co/${modelName}`
+        : null);
+
+  return {
+    provider:
+      provider?.trim() || (isCivitai ? "civitai" : isHuggingFace ? "huggingface" : "local"),
+    modelId,
+    versionId,
+    modelName,
+    versionName,
+    url,
+  };
+}
+
+/**
+ * Reads the safetensors `__metadata__` block (bounded to the first 8 MiB) for a
+ * human title. Many Civitai uploads use `modelspec.title` or `ss_output_name`.
+ */
+export function readSafetensorsEmbeddedTitle(filePath: string): string | null {
+  if (path.extname(filePath).toLowerCase() !== ".safetensors") return null;
+
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(filePath, "r");
+    const lengthBuffer = Buffer.alloc(8);
+    fs.readSync(fd, lengthBuffer, 0, 8, 0);
+    const headerLength = Number(lengthBuffer.readBigUInt64LE(0));
+    if (!Number.isFinite(headerLength) || headerLength <= 1 || headerLength > 64 * 1024 * 1024) {
+      return null;
+    }
+    const readLength = Math.min(headerLength, 8 * 1024 * 1024);
+    const headerBuffer = Buffer.alloc(readLength);
+    fs.readSync(fd, headerBuffer, 0, readLength, 8);
+    const parsed = JSON.parse(headerBuffer.toString("utf8")) as unknown;
+    if (!parsed || typeof parsed !== "object") return null;
+    const metadata = (parsed as Record<string, unknown>).__metadata__;
+    if (!metadata || typeof metadata !== "object") return null;
+    const record = metadata as Record<string, unknown>;
+    return (
+      normalizeModelTitle(firstString(record, ["modelspec.title", "ss_output_name"])) ??
+      null
+    );
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // ignore
+      }
+    }
+  }
 }
 
 function stripHtml(input: string): string {
@@ -476,6 +634,7 @@ export function discoverModelMetadata(modelFilePath: string): DiscoveredModelMet
   let baseModel: string | null = null;
   let triggerWords: string[] = [];
   let previewPath: string | null = null;
+  let source: ModelSource | null = null;
 
   for (const suffix of SIDECAR_SUFFIXES) {
     const sidecarPath = `${withoutExt}${suffix}`;
@@ -483,9 +642,9 @@ export function discoverModelMetadata(modelFilePath: string): DiscoveredModelMet
     try {
       const raw = JSON.parse(fs.readFileSync(sidecarPath, "utf8")) as unknown;
       if (!raw || typeof raw !== "object") continue;
-      const source = raw as Record<string, unknown>;
+      const sidecar = raw as Record<string, unknown>;
 
-      const rawDescription = firstString(source, [
+      const rawDescription = firstString(sidecar, [
         "description",
         "modelDescription",
         "about",
@@ -497,11 +656,11 @@ export function discoverModelMetadata(modelFilePath: string): DiscoveredModelMet
       }
 
       if (!baseModel) {
-        baseModel = firstString(source, ["baseModel", "base_model", "base", "modelType"]);
+        baseModel = firstString(sidecar, ["baseModel", "base_model", "base", "modelType"]);
       }
 
       if (triggerWords.length === 0) {
-        triggerWords = firstStringArray(source, [
+        triggerWords = firstStringArray(sidecar, [
           "triggerWords",
           "trigger_words",
           "trainedWords",
@@ -510,9 +669,13 @@ export function discoverModelMetadata(modelFilePath: string): DiscoveredModelMet
         ]);
       }
 
+      if (!source) {
+        source = parseModelSource(sidecar);
+      }
+
       if (!previewPath) {
         previewPath = resolvePreviewCandidate(
-          firstString(source, [
+          firstString(sidecar, [
             "previewPath",
             "preview_path",
             "preview",
@@ -532,11 +695,22 @@ export function discoverModelMetadata(modelFilePath: string): DiscoveredModelMet
     previewPath = findAdjacentPreview(modelFilePath);
   }
 
-  if (!description && !baseModel && triggerWords.length === 0 && !previewPath) {
+  const embeddedTitle = source?.modelName
+    ? null
+    : readSafetensorsEmbeddedTitle(modelFilePath);
+
+  if (
+    !description &&
+    !baseModel &&
+    triggerWords.length === 0 &&
+    !previewPath &&
+    !source &&
+    !embeddedTitle
+  ) {
     return null;
   }
 
-  return { description, baseModel, triggerWords, previewPath };
+  return { description, baseModel, triggerWords, previewPath, source, embeddedTitle };
 }
 
 function addCategoryDir(
@@ -753,6 +927,8 @@ export class ModelScanner {
               baseModel: discoveryInfo.baseModel,
               previewPath: discoveryInfo.previewPath,
               triggerWords: discoveryInfo.triggerWords,
+              source: discoveryInfo.source,
+              embeddedTitle: discoveryInfo.embeddedTitle,
               discoveredAt: nowIso,
             }
           : null;

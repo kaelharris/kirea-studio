@@ -53,8 +53,29 @@ export class ComfyApiClient {
       });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
+        let detailedMessage = `ComfyUI ${init?.method ?? "GET"} ${endpoint} failed (${res.status})`;
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed.node_errors && Object.keys(parsed.node_errors).length > 0) {
+            const nodeErrSummary = Object.entries(parsed.node_errors)
+              .map(([nodeId, nErr]: [string, any]) => {
+                const errList = Array.isArray(nErr.errors)
+                  ? nErr.errors.map((e: any) => e.details || e.message || String(e)).join(", ")
+                  : "";
+                return `Node ${nodeId} (${nErr.class_type || "Unknown"}): ${errList}`;
+              })
+              .join("; ");
+            detailedMessage += `: ${nodeErrSummary}`;
+          } else if (parsed.error?.message) {
+            detailedMessage += `: ${parsed.error.message}${parsed.error.details ? ` - ${parsed.error.details}` : ""}`;
+          }
+        } catch {
+          if (text.trim().length > 0 && text.trim().length < 500) {
+            detailedMessage += `: ${text.trim()}`;
+          }
+        }
         throw new ComfyApiError(
-          `ComfyUI ${init?.method ?? "GET"} ${endpoint} failed (${res.status})`,
+          detailedMessage,
           res.status,
           text
         );
@@ -196,8 +217,17 @@ export class ComfyApiClient {
           ? "image/webp"
           : "image/png";
 
+    return this.uploadImageBuffer(buffer, fileName, mime, overwrite);
+  }
+
+  async uploadImageBuffer(
+    buffer: Buffer | Uint8Array,
+    fileName: string,
+    mime = "image/png",
+    overwrite = true
+  ): Promise<{ name: string; subfolder: string; type: string }> {
     const form = new FormData();
-    form.append("image", new Blob([buffer], { type: mime }), fileName);
+    form.append("image", new Blob([buffer as any], { type: mime }), fileName);
     form.append("type", "input");
     form.append("overwrite", overwrite ? "true" : "false");
 
