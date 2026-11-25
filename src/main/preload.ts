@@ -75,6 +75,40 @@ const api: KireaDesktopApi = {
     ipcRenderer.invoke("characters:removeReference", characterId, referenceId),
   getCharacterPreview: (characterId) =>
     ipcRenderer.invoke("characters:getPreview", characterId),
+  saveCharacterDna: (characterId, dna, knowledge) =>
+    ipcRenderer.invoke("characters:saveDNA", characterId, dna, knowledge),
+  listCharacterOutfits: (characterId) =>
+    ipcRenderer.invoke("characters:listOutfits", characterId),
+  saveCharacterOutfit: (outfit) =>
+    ipcRenderer.invoke("characters:saveOutfit", outfit),
+  deleteCharacterOutfit: (characterId, outfitId) =>
+    ipcRenderer.invoke("characters:deleteOutfit", characterId, outfitId),
+  listCharacterAdapters: (characterId) =>
+    ipcRenderer.invoke("characters:listAdapters", characterId),
+  saveCharacterAdapter: (adapter) =>
+    ipcRenderer.invoke("characters:saveAdapter", adapter),
+  deleteCharacterAdapter: (characterId, adapterId) =>
+    ipcRenderer.invoke("characters:deleteAdapter", characterId, adapterId),
+  cropCharacterReference: (characterId, referenceId, crop) =>
+    ipcRenderer.invoke("characters:cropReference", characterId, referenceId, crop),
+  validateCharacterDataset: (characterId) =>
+    ipcRenderer.invoke("characters:validateDataset", characterId),
+  exportCharacterDataset: (characterId, exportDir) =>
+    ipcRenderer.invoke("characters:exportDataset", characterId, exportDir),
+  preflightCharacterTraining: (characterId, config) =>
+    ipcRenderer.invoke("characters:preflightTraining", characterId, config),
+  startCharacterTraining: (characterId, config) =>
+    ipcRenderer.invoke("characters:startTraining", characterId, config),
+  cancelCharacterTraining: (jobId) =>
+    ipcRenderer.invoke("characters:cancelTraining", jobId),
+  listCharacterTrainingJobs: (characterId) =>
+    ipcRenderer.invoke("characters:listTrainingJobs", characterId),
+  interrogateCharacterReferenceTags: (characterId, referenceIds) =>
+    ipcRenderer.invoke("characters:visionInterrogate", characterId, referenceIds),
+  updateCharacterReferenceTags: (characterId, referenceId, tags) =>
+    ipcRenderer.invoke("characters:visionTagsUpdate", characterId, referenceId, tags),
+  getVisionModelStatus: () =>
+    ipcRenderer.invoke("characters:visionModelStatus"),
 
   // Stories
   listStories: () => ipcRenderer.invoke("stories:list"),
@@ -119,6 +153,7 @@ const api: KireaDesktopApi = {
   pauseDownload: (id) => ipcRenderer.invoke("downloads:pause", id),
   resumeDownload: (id) => ipcRenderer.invoke("downloads:resume", id),
   cancelDownload: (id) => ipcRenderer.invoke("downloads:cancel", id),
+  clearCompletedDownloads: () => ipcRenderer.invoke("downloads:clearCompleted"),
 
   // Civitai Hub
   searchCivitaiModels: (query) => ipcRenderer.invoke("civitai:searchModels", query),
@@ -131,6 +166,14 @@ const api: KireaDesktopApi = {
   cancelCivitaiDownload: (id) => ipcRenderer.invoke("civitai:cancelDownload", id),
   retryCivitaiDownload: (id) => ipcRenderer.invoke("civitai:retryDownload", id),
   listCivitaiDownloads: () => ipcRenderer.invoke("civitai:listDownloads"),
+  clearCompletedCivitaiDownloads: () => ipcRenderer.invoke("civitai:clearDownloads"),
+  clearDownloadHistory: async () => {
+    const [generic, civitai] = await Promise.all([
+      ipcRenderer.invoke("downloads:clearCompleted") as Promise<number>,
+      ipcRenderer.invoke("civitai:clearDownloads") as Promise<number>,
+    ]);
+    return { generic, civitai };
+  },
   setCivitaiApiKey: (apiKey) => ipcRenderer.invoke("civitai:setApiKey", apiKey),
   testCivitaiConnection: () => ipcRenderer.invoke("civitai:testConnection"),
   searchCivitaiWorkflows: (query) =>
@@ -172,6 +215,8 @@ const api: KireaDesktopApi = {
   listJobs: () => ipcRenderer.invoke("jobs:list"),
   cancelJob: (jobId) => ipcRenderer.invoke("jobs:cancel", jobId),
   retryJob: (jobId) => ipcRenderer.invoke("jobs:retry", jobId),
+  deleteJob: (jobId) => ipcRenderer.invoke("jobs:delete", jobId),
+  deleteJobs: (jobIds) => ipcRenderer.invoke("jobs:delete", jobIds),
 
   // Library, collections & prompts
   listLibraryMedia: (query) => ipcRenderer.invoke("library:listMedia", query),
@@ -266,6 +311,11 @@ const api: KireaDesktopApi = {
   onPixelAiJobUpdated: (cb) => subscribe("event:pixelAiJobUpdated", cb),
   onPixelPackageProgress: (cb) => subscribe("event:pixelPackageProgress", cb),
   onUpdateStateChanged: (cb) => subscribe("event:updateStateChanged", cb),
+  onTrainingProgress: (cb) => subscribe("event:trainingProgress", cb),
+  onTrainingLog: (cb) => subscribe("event:trainingLog", cb),
+  onTrainingCompleted: (cb) => subscribe("event:trainingCompleted", cb),
+  onTrainingTelemetry: (cb) => subscribe("event:trainingTelemetry", cb),
+  onVisionTaggingProgress: (cb) => subscribe("event:visionTaggingProgress", cb),
 };
 
 contextBridge.exposeInMainWorld("kirea", api);

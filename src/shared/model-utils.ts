@@ -32,7 +32,8 @@ export const ARCHITECTURE_HINTS: Record<ModelArchitecture, string> = {
     "Split DiT (UNET + Qwen3 text encoder + qwen_image_vae). 1024 px, ~30 steps, CFG 4, euler/simple.",
   moss_image:
     "MOSS-Image split pipeline: diffusion model + Qwen3.5-9B text encoder + FLUX.2 small VAE. 1024 px, 25 steps, CFG 2.5, er_sde/simple.",
-  krea2: "Krea 2 diffusion model. Label and preview only; generation workflow is not shipped yet.",
+  krea2:
+    "Krea 2 diffusion model: 1024 px, 4–30 steps, Qwen3-VL-4B text encoder + AE VAE.",
   ltx_video: "Video checkpoint. Not usable in the image generation studio.",
   wan_video: "Wan video diffusion model. Not usable in the image generation studio.",
   unknown: "Architecture could not be inferred from the filename, metadata, or tensor header.",
@@ -41,7 +42,6 @@ export const ARCHITECTURE_HINTS: Record<ModelArchitecture, string> = {
 /** Architectures that are labeled but cannot yet be rendered by shipped image workflows. */
 export const UNSUPPORTED_GENERATION_ARCHITECTURES: ModelArchitecture[] = [
   "flux",
-  "krea2",
   "ltx_video",
   "wan_video",
 ];
@@ -284,6 +284,7 @@ export function architectureBadgeTone(
     case "sdxl":
     case "illustrious":
     case "pony":
+    case "krea2":
       return "accent";
     case "sd15":
     case "z_image":
@@ -291,7 +292,6 @@ export function architectureBadgeTone(
     case "moss_image":
       return "success";
     case "flux":
-    case "krea2":
       return "warning";
     case "ltx_video":
     case "wan_video":

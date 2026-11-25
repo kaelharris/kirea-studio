@@ -54,7 +54,7 @@ import {
 } from "../ui/Primitives";
 import { MediaImage } from "../ui/MediaImage";
 import { toMediaUrl } from "../../utils/format";
-import { describeUpscalerLabel } from "./create-helpers";
+import { describeUpscalerLabel, LORA_PREVIEW_SIZES } from "./create-helpers";
 import type { CreateController } from "./useCreateController";
 
 export const CreateModals: React.FC<{ ctrl: CreateController }> = ({ ctrl }) => {
@@ -204,11 +204,17 @@ export const CreateModals: React.FC<{ ctrl: CreateController }> = ({ ctrl }) => 
                     className="flex items-center gap-2.5 p-2 rounded-xl bg-bg border border-border"
                   >
                     {info.previewPath && (
-                      <div className="w-10 shrink-0">
+                      <div
+                        className="shrink-0"
+                        style={{
+                          width: LORA_PREVIEW_SIZES.picker,
+                          height: LORA_PREVIEW_SIZES.picker,
+                        }}
+                      >
                         <ModelPreview
                           model={lora}
-                          className="h-10 rounded-lg"
-                          iconSizeClass="w-3 h-3"
+                          className="h-full w-full rounded-lg"
+                          iconSizeClass="w-4 h-4"
                         />
                       </div>
                     )}

@@ -17,6 +17,7 @@ import {
   composeCharacterPrompt,
   getPrimaryCharacterReference,
   removeCharacterIdentityTokens,
+  resolveCharacterAdapter,
   resolveCharacterReferencePlan,
 } from "../../../shared/character-utils";
 import {
@@ -35,6 +36,13 @@ import {
   isMossWorkflow,
   isMossWorkflowReady,
 } from "../../../shared/moss-image";
+import {
+  detectModelVariant,
+  findSamplingProfile,
+  isProfileCustomized,
+  type ModelSamplingProfile,
+  validateSamplingProfileSupport,
+} from "../../../shared/sampling-profiles";
 import type {
   CharacterProfile,
   GenerationMode,
@@ -45,6 +53,7 @@ import type {
   PerformanceProfile,
   UpscaleConfig,
   ValidationIssue,
+  WorkflowTemplate,
 } from "../../../shared/types";
 import { shortModelLabel } from "../../utils/format";
 import type { StudioWorkflowMode } from "./WorkflowSelector";
@@ -53,6 +62,45 @@ import {
   DEFAULT_HIRES_CONFIG,
   DEFAULT_UPSCALE_CONFIG,
 } from "./create-helpers";
+
+/** Renderer-only workspace intent; removed before a generation request is submitted. */
+export type CreationDraft = GenerationRequest & {
+  workspaceWorkflow?: StudioWorkflowMode;
+};
+
+export function resolveCreationWorkflowMode(
+  draft: CreationDraft,
+  workflows: Pick<WorkflowTemplate, "id" | "name" | "tags">[] = []
+): StudioWorkflowMode {
+  if (draft.mode === "upscale") return "upscale";
+  if (draft.mode === "txt2img") return "generate";
+
+  const requested = (draft as CreationDraft).workspaceWorkflow;
+  if (
+    requested === "edit" ||
+    requested === "inpaint" ||
+    requested === "outpaint" ||
+    requested === "variations"
+  ) {
+    return requested;
+  }
+
+  const registered = workflows.find((candidate) => candidate.id === draft.workflowId);
+  const searchText = ` ${[draft.workflowId, registered?.name, ...(registered?.tags ?? [])]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+    .replace(/inpainting/g, "inpaint")
+    .replace(/outpainting/g, "outpaint")
+    .replace(/variations/g, "variation")
+    .replace(/[^a-z0-9]+/g, " ")} `;
+  if (searchText.includes(" outpaint ")) return "outpaint";
+  if (searchText.includes(" inpaint ")) return "inpaint";
+  if (searchText.includes(" variation ")) return "variations";
+  return "edit";
+}
+
+export const DEFAULT_INSPECTOR_OPEN = false;
 
 export function useCreateController(props: CreatePageProps) {
   const {
@@ -76,6 +124,8 @@ export function useCreateController(props: CreatePageProps) {
     onChangeProfile,
     onInspectImage,
     onToggleFavorite,
+    onDeleteImage,
+    onDeleteJob,
     onSavePrompt,
     onToast,
   } = props;
@@ -94,30 +144,18 @@ export function useCreateController(props: CreatePageProps) {
   const [savingRecipe, setSavingRecipe] = useState(false);
   const [uiMode, setUiMode] = useState<"creative" | "advanced">("creative");
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
-  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(DEFAULT_INSPECTOR_OPEN);
   const [inspectorTab, setInspectorTab] = useState<"result" | "history">("result");
-  const [workflowMode, setWorkflowMode] = useState<StudioWorkflowMode>(() => {
-    if (draft.mode === "upscale") return "upscale";
-    if (draft.mode === "img2img") return "edit";
-    return "generate";
-  });
+  const [workflowMode, setWorkflowMode] = useState<StudioWorkflowMode>(() =>
+    resolveCreationWorkflowMode(draft, workflows)
+  );
+  const requestedWorkflowMode = (draft as CreationDraft).workspaceWorkflow;
 
-  // Keep workflowMode in sync when draft.mode is altered externally
+  // Keep workspace controls in sync with external image handoffs and draft changes.
   useEffect(() => {
-    if (draft.mode === "upscale" && workflowMode !== "upscale") {
-      setWorkflowMode("upscale");
-    } else if (draft.mode === "txt2img" && workflowMode !== "generate") {
-      setWorkflowMode("generate");
-    } else if (
-      draft.mode === "img2img" &&
-      workflowMode !== "edit" &&
-      workflowMode !== "inpaint" &&
-      workflowMode !== "outpaint" &&
-      workflowMode !== "variations"
-    ) {
-      setWorkflowMode("edit");
-    }
-  }, [draft.mode]);
+    const nextMode = resolveCreationWorkflowMode(draft, workflows);
+    if (workflowMode !== nextMode) setWorkflowMode(nextMode);
+  }, [draft.mode, draft.workflowId, requestedWorkflowMode, workflows, workflowMode]);
 
   const [currentMaskDataUrl, setCurrentMaskDataUrl] = useState<string | null>(null);
   const [outpaintPadding, setOutpaintPadding] = useState<{
@@ -172,6 +210,40 @@ export function useCreateController(props: CreatePageProps) {
     }
     return inferModelArchitecture(draft.checkpoint);
   }, [currentCheckpointModel, draft.checkpoint]);
+
+  const [samplingMode, setSamplingMode] = useState<"automatic" | "custom">("automatic");
+
+  const currentSamplingProfile = useMemo<ModelSamplingProfile>(() => {
+    const variant = detectModelVariant(draft.checkpoint);
+    return findSamplingProfile(currentArch, variant, draft.mode);
+  }, [currentArch, draft.checkpoint, draft.mode]);
+
+  const isSamplingCustomized = useMemo(() => {
+    return isProfileCustomized(currentSamplingProfile, draft);
+  }, [currentSamplingProfile, draft.steps, draft.sampler, draft.scheduler, draft.cfg]);
+
+  const samplingProfileValidation = useMemo(() => {
+    return validateSamplingProfileSupport(
+      currentSamplingProfile,
+      samplersAndSchedulers.samplers,
+      samplersAndSchedulers.schedulers
+    );
+  }, [currentSamplingProfile, samplersAndSchedulers]);
+
+  const restoreRecommendedSamplingProfile = useCallback(() => {
+    setDraft((prev) => ({
+      ...prev,
+      steps: currentSamplingProfile.sampling.steps,
+      sampler: currentSamplingProfile.sampling.sampler,
+      scheduler: currentSamplingProfile.sampling.scheduler,
+      cfg: currentSamplingProfile.sampling.cfg,
+      denoise:
+        prev.mode === "img2img"
+          ? currentSamplingProfile.sampling.denoise ?? prev.denoise
+          : 1.0,
+    }));
+    setSamplingMode("automatic");
+  }, [currentSamplingProfile, setDraft]);
 
   const checkpointGroups = useMemo(() => {
     const groups = new Map<string, ModelRecord[]>();
@@ -424,7 +496,7 @@ export function useCreateController(props: CreatePageProps) {
     prompt = composeCharacterPrompt(next, prompt);
 
     let negativePrompt = prev.negativePrompt.trim();
-    const characterNegative = next.negativePrompt.trim();
+    const characterNegative = (next.dna?.negativeConstraints || next.negativePrompt || "").trim();
     if (
       characterNegative &&
       !negativePrompt.toLowerCase().includes(characterNegative.toLowerCase())
@@ -467,16 +539,31 @@ export function useCreateController(props: CreatePageProps) {
     const recipe = next.loraRecipeId
       ? recipes.find((r) => r.id === next.loraRecipeId) ?? null
       : null;
-    const loras = recipe
-      ? recipe.items
-          .filter((item) => item.enabled)
-          .slice(0, 4)
-          .map((item) => ({
-            name: item.loraPath,
-            strengthModel: item.strengthModel,
-            strengthClip: item.strengthClip,
-          }))
-      : prev.loras;
+    const adapter = resolveCharacterAdapter(next, arch);
+    let loras = prev.loras;
+
+    if (adapter && adapter.fileLocation) {
+      const exists = loras.some((l) => l.name === adapter.fileLocation);
+      if (!exists) {
+        loras = [
+          {
+            name: adapter.fileLocation,
+            strengthModel: adapter.recommendedStrength ?? 0.85,
+            strengthClip: adapter.recommendedStrength ?? 0.85,
+          },
+          ...loras.filter((l) => l.name !== adapter.fileLocation).slice(0, 3),
+        ];
+      }
+    } else if (recipe) {
+      loras = recipe.items
+        .filter((item) => item.enabled)
+        .slice(0, 4)
+        .map((item) => ({
+          name: item.loraPath,
+          strengthModel: item.strengthModel,
+          strengthClip: item.strengthClip,
+        }));
+    }
 
     const wf = workflows.find((w) => w.id === workflowId);
     const dims = resolveDimensionsForAspect(
@@ -510,6 +597,27 @@ export function useCreateController(props: CreatePageProps) {
       width: dims.width,
       height: dims.height,
     };
+  };
+
+  const [activeOutfitId, setActiveOutfitId] = useState<string | null>(null);
+
+  // Sync activeOutfitId when active character changes
+  useEffect(() => {
+    if (activeCharacter) {
+      setActiveOutfitId(activeCharacter.activeOutfitId ?? null);
+    } else {
+      setActiveOutfitId(null);
+    }
+  }, [activeCharacter]);
+
+  const onSelectOutfit = (outfitId: string | null) => {
+    setActiveOutfitId(outfitId);
+    if (!activeCharacter) return;
+    setDraft((prev) => {
+      let prompt = removeCharacterIdentityTokens(prev.prompt, activeCharacter, activeOutfitId);
+      prompt = composeCharacterPrompt(activeCharacter, prompt, outfitId);
+      return { ...prev, prompt };
+    });
   };
 
   // Apply or clear character identity whenever the active selection changes.
@@ -555,6 +663,7 @@ export function useCreateController(props: CreatePageProps) {
           ...prev,
           mode,
           workflowId,
+          workspaceWorkflow: "upscale",
           upscale: {
             ...prev.upscale,
             upscaler: preferredUpscaler,
@@ -577,6 +686,7 @@ export function useCreateController(props: CreatePageProps) {
         ...prev,
         mode,
         workflowId: targetWf?.id ?? prev.workflowId,
+        workspaceWorkflow: mode === "txt2img" ? "generate" : "edit",
         width: nextDims.width,
         height: nextDims.height,
         denoise: mode === "img2img" ? Math.min(0.75, prev.denoise || 0.55) : 1.0,
@@ -595,6 +705,7 @@ export function useCreateController(props: CreatePageProps) {
         setDraft((p) => ({
           ...p,
           inputImagePath: null,
+          workspaceWorkflow: "generate",
         }));
       } else if (mode === "edit") {
         handleModeSwitch("img2img");
@@ -603,6 +714,7 @@ export function useCreateController(props: CreatePageProps) {
             ...p,
             inputImagePath: chosenImagePath,
             denoise: Math.min(0.75, p.denoise || 0.55),
+            workspaceWorkflow: "edit",
           }));
         }
       } else if (mode === "variations") {
@@ -612,6 +724,7 @@ export function useCreateController(props: CreatePageProps) {
           inputImagePath: chosenImagePath || p.inputImagePath,
           randomSeed: true,
           denoise: 0.55,
+          workspaceWorkflow: "variations",
         }));
       } else if (mode === "inpaint") {
         handleModeSwitch("img2img");
@@ -619,6 +732,7 @@ export function useCreateController(props: CreatePageProps) {
           ...p,
           inputImagePath: chosenImagePath || p.inputImagePath,
           denoise: 0.75,
+          workspaceWorkflow: "inpaint",
         }));
       } else if (mode === "outpaint") {
         handleModeSwitch("img2img");
@@ -626,6 +740,7 @@ export function useCreateController(props: CreatePageProps) {
           ...p,
           inputImagePath: chosenImagePath || p.inputImagePath,
           denoise: 0.85,
+          workspaceWorkflow: "outpaint",
         }));
       } else if (mode === "upscale") {
         handleModeSwitch("upscale");
@@ -671,71 +786,67 @@ export function useCreateController(props: CreatePageProps) {
       ? getEffectiveArchitecture(matched)
       : inferModelArchitecture(relPath);
 
-    // Choose appropriate default workflow for model architecture
+    // Choose appropriate default workflow and sampling profile for model architecture and variant
+    const variant = detectModelVariant(relPath);
+    const profile = findSamplingProfile(arch, variant, draft.mode);
+
     let nextWfId = draft.workflowId;
     let extraOverrides: Partial<GenerationRequest> = {};
 
+    if (samplingMode === "automatic") {
+      extraOverrides = {
+        ...extraOverrides,
+        steps: profile.sampling.steps,
+        sampler: profile.sampling.sampler,
+        scheduler: profile.sampling.scheduler,
+        cfg: profile.sampling.cfg,
+        denoise: draft.mode === "img2img" ? (profile.sampling.denoise ?? draft.denoise) : 1.0,
+      };
+    } else {
+      if (profile.lockedParameters?.includes("cfg")) {
+        extraOverrides.cfg = profile.sampling.cfg;
+      }
+      if (profile.lockedParameters?.includes("steps")) {
+        extraOverrides.steps = profile.sampling.steps;
+      }
+    }
+
     if (arch === "moss_image") {
-      const isBase = relPath.toLowerCase().includes("moss_image_base_");
+      const isBase = variant === "base" || relPath.toLowerCase().includes("moss_image_base_");
+      const isTurbo = variant === "turbo" || relPath.toLowerCase().includes("turbo");
       const preferred =
         draft.mode === "img2img"
           ? "i2i_moss_image_edit"
-          : isBase
-            ? "t2i_moss_image_base"
-            : "t2i_moss_image";
+          : isTurbo
+            ? "t2i_moss_image_turbo"
+            : isBase
+              ? "t2i_moss_image_base"
+              : "t2i_moss_image";
       const mossWf = workflows.find((w) => w.id === preferred);
-      if (mossWf) {
-        nextWfId = mossWf.id;
-        extraOverrides = {
-          steps: mossWf.defaults.steps,
-          cfg: mossWf.defaults.cfg,
-          sampler: mossWf.defaults.sampler,
-          scheduler: mossWf.defaults.scheduler,
-          denoise: mossWf.defaults.denoise,
-        };
-      }
+      if (mossWf) nextWfId = mossWf.id;
     } else if (arch === "anima") {
       const animaWf = workflows.find(
         (w) => w.id === (draft.mode === "img2img" ? "i2i_anima_base" : "t2i_anima_base")
       );
-      if (animaWf) {
-        nextWfId = animaWf.id;
-        extraOverrides = {
-          steps: animaWf.defaults.steps,
-          cfg: animaWf.defaults.cfg,
-          sampler: animaWf.defaults.sampler,
-          scheduler: animaWf.defaults.scheduler,
-        };
-      }
+      if (animaWf) nextWfId = animaWf.id;
     } else if (arch === "z_image" && draft.mode === "txt2img") {
       const zWf = workflows.find((w) => w.id === "t2i_z_image_turbo");
-      if (zWf) {
-        nextWfId = zWf.id;
-        extraOverrides = {
-          steps: zWf.defaults.steps,
-          cfg: zWf.defaults.cfg,
-          sampler: zWf.defaults.sampler,
-          scheduler: zWf.defaults.scheduler,
-        };
-      }
+      if (zWf) nextWfId = zWf.id;
     } else if (arch === "illustrious") {
       const illWf = workflows.find(
         (w) => w.id === (draft.mode === "img2img" ? "i2i_illustrious_base" : "t2i_illustrious_base")
       );
-      if (illWf) {
-        nextWfId = illWf.id;
-        extraOverrides = {
-          steps: illWf.defaults.steps,
-          cfg: illWf.defaults.cfg,
-          sampler: illWf.defaults.sampler,
-          scheduler: illWf.defaults.scheduler,
-        };
-      }
+      if (illWf) nextWfId = illWf.id;
     } else if (arch === "sd15") {
       const sd15Wf = workflows.find(
         (w) => w.id === (draft.mode === "img2img" ? "i2i_sd15_base" : "t2i_sd15_base")
       );
       if (sd15Wf) nextWfId = sd15Wf.id;
+    } else if (arch === "wan_video") {
+      const wanWf = workflows.find(
+        (w) => w.id === (relPath.toLowerCase().includes("14b") ? "t2v_wan21_14b" : "t2v_wan21_1_3b")
+      );
+      if (wanWf) nextWfId = wanWf.id;
     } else {
       const sdxlWf = workflows.find(
         (w) => w.id === (draft.mode === "img2img" ? "i2i_sdxl_base" : "t2i_sdxl_base")
@@ -1196,8 +1307,9 @@ export function useCreateController(props: CreatePageProps) {
     }
     setSubmitting(true);
     try {
+      const { workspaceWorkflow: _workspaceWorkflow, ...generationDraft } = draft as CreationDraft;
       const payload: GenerationRequest = {
-        ...draft,
+        ...generationDraft,
         maskDataUrl: workflowMode === "inpaint" ? (draft.maskDataUrl ?? currentMaskDataUrl) : null,
         outpaintPadding: workflowMode === "outpaint" ? draft.outpaintPadding : null,
       };
@@ -1282,6 +1394,8 @@ export function useCreateController(props: CreatePageProps) {
     loraWarnings,
     activeCharacter,
     activeCharacterPlan,
+    activeOutfitId,
+    onSelectOutfit,
     appendToPrompt,
     workflowMode,
     setWorkflowMode,
@@ -1324,6 +1438,15 @@ export function useCreateController(props: CreatePageProps) {
     revealPromptErrors,
     warnings,
     progressPercent,
+    currentSamplingProfile,
+    samplingMode,
+    setSamplingMode,
+    isSamplingCustomized,
+    restoreRecommendedSamplingProfile,
+    samplingProfileValidation,
+    jobs,
+    onDeleteImage,
+    onDeleteJob,
   };
 }
 

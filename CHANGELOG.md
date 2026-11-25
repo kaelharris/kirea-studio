@@ -5,6 +5,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.1.1] - 2026-11-23
+
+### Added
+
+- MOSS-Image Base, SFT, Turbo, Layout, Edit, and color/depth-control workflows with split-pipeline dependency validation, curated component downloads, and provenance labels.
+- Dedicated Illustrious text-to-image and image-to-image workflows supporting up to ten sequential LoRA adapters.
+- Hugging Face Hub browsing and verified downloads alongside Civitai model and workflow discovery.
+
+### Changed
+
+- Expanded model discovery and preview metadata, unified library workflows, and Create editing tools.
+- Reworked Advanced Create into a three-zone workbench with a settings-only left panel, a center-flow prompt composer with an inline Generate action, a full-height canvas, a flatter inspector, and fewer nested card boundaries across the app.
+- Eliminated the residual bottom shell gap, made Create flex-fill the available window height, and flattened ordinary card/panel surfaces while preserving control and media boundaries.
+- Synchronized release metadata and added deterministic verification of package, site, splash, documentation, and network identity versions.
+
+---
+
 ## [1.0.2] - 2026-11-16
 
 ### Added

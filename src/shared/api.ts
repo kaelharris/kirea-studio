@@ -49,11 +49,23 @@ import type {
 import type {
   AppDiagnostics,
   AppSettings,
+  CharacterAdapter,
+  CharacterIdentityCore,
+  CharacterKnowledge,
+  CharacterOutfit,
   CharacterProfile,
   CharacterProfileInput,
+  CharacterReferenceApproval,
+  CharacterReferenceCategory,
   CharacterReferenceRole,
+  CharacterTrainingConfig,
+  CharacterTrainingJob,
+  CharacterTrainingTelemetry,
+  VisionModelStatus,
+  VisualTag,
   CollectionRecord,
   CuratedModelCatalogItem,
+  DatasetValidationReport,
   DownloadTask,
   GeneratedImageRecord,
   GeneratedVideoRecord,
@@ -80,6 +92,7 @@ import type {
   StorySceneCastInput,
   StorySceneInput,
   StoryScenePlan,
+  TrainingPreflightResult,
   ValidationIssue,
   WorkflowTemplate,
 } from "./types";
@@ -196,13 +209,85 @@ export interface KireaDesktopApi {
   updateCharacterReference(
     characterId: string,
     referenceId: string,
-    patch: { role?: CharacterReferenceRole; caption?: string; weight?: number }
+    patch: {
+      role?: CharacterReferenceRole;
+      caption?: string;
+      weight?: number;
+      category?: CharacterReferenceCategory;
+      approvalStatus?: CharacterReferenceApproval;
+      associatedOutfitId?: string | null;
+      includedInTraining?: boolean;
+      suggestedTags?: VisualTag[];
+      imageHash?: string | null;
+    }
   ): Promise<CharacterProfile | null>;
   removeCharacterReference(
     characterId: string,
     referenceId: string
   ): Promise<CharacterProfile | null>;
   getCharacterPreview(characterId: string): Promise<string | null>;
+  saveCharacterDna(
+    characterId: string,
+    dna: Partial<CharacterIdentityCore>,
+    knowledge?: Partial<CharacterKnowledge>
+  ): Promise<CharacterProfile>;
+  listCharacterOutfits(characterId: string): Promise<CharacterOutfit[]>;
+  saveCharacterOutfit(
+    outfit: Omit<CharacterOutfit, "createdAt" | "updatedAt">
+  ): Promise<CharacterOutfit>;
+  deleteCharacterOutfit(
+    characterId: string,
+    outfitId: string
+  ): Promise<boolean>;
+  listCharacterAdapters(characterId: string): Promise<CharacterAdapter[]>;
+  saveCharacterAdapter(
+    adapter: Omit<CharacterAdapter, "createdAt" | "updatedAt">
+  ): Promise<CharacterAdapter>;
+  deleteCharacterAdapter(
+    characterId: string,
+    adapterId: string
+  ): Promise<boolean>;
+  cropCharacterReference(
+    characterId: string,
+    referenceId: string,
+    crop: {
+      left: number;
+      top: number;
+      width: number;
+      height: number;
+      category?: CharacterReferenceCategory;
+      caption?: string;
+    }
+  ): Promise<CharacterProfile | null>;
+  validateCharacterDataset(
+    characterId: string
+  ): Promise<DatasetValidationReport>;
+  exportCharacterDataset(
+    characterId: string,
+    exportDir?: string
+  ): Promise<{ success: boolean; exportPath: string; count: number }>;
+  preflightCharacterTraining(
+    characterId: string,
+    config?: Partial<CharacterTrainingConfig>
+  ): Promise<TrainingPreflightResult>;
+  startCharacterTraining(
+    characterId: string,
+    config: CharacterTrainingConfig
+  ): Promise<CharacterTrainingJob>;
+  cancelCharacterTraining(jobId: string): Promise<boolean>;
+  listCharacterTrainingJobs(
+    characterId: string
+  ): Promise<CharacterTrainingJob[]>;
+  interrogateCharacterReferenceTags(
+    characterId: string,
+    referenceIds?: string[]
+  ): Promise<CharacterProfile>;
+  updateCharacterReferenceTags(
+    characterId: string,
+    referenceId: string,
+    tags: VisualTag[]
+  ): Promise<CharacterProfile>;
+  getVisionModelStatus(): Promise<VisionModelStatus>;
 
   // Stories
   listStories(): Promise<Story[]>;
@@ -248,6 +333,7 @@ export interface KireaDesktopApi {
   pauseDownload(id: string): Promise<boolean>;
   resumeDownload(id: string): Promise<DownloadTask | null>;
   cancelDownload(id: string): Promise<boolean>;
+  clearCompletedDownloads(): Promise<number>;
 
   // Civitai Hub
   searchCivitaiModels(query: CivitaiSearchQuery): Promise<CivitaiSearchResult>;
@@ -258,6 +344,8 @@ export interface KireaDesktopApi {
   cancelCivitaiDownload(id: string): Promise<boolean>;
   retryCivitaiDownload(id: string): Promise<CivitaiDownloadTask | null>;
   listCivitaiDownloads(): Promise<CivitaiDownloadTask[]>;
+  clearCompletedCivitaiDownloads(): Promise<number>;
+  clearDownloadHistory(): Promise<{ generic: number; civitai: number }>;
   setCivitaiApiKey(apiKey: string): Promise<{ hasApiKey: boolean }>;
   testCivitaiConnection(): Promise<CivitaiConnectionTest>;
 
@@ -295,6 +383,8 @@ export interface KireaDesktopApi {
   listJobs(): Promise<GenerationJob[]>;
   cancelJob(jobId: string): Promise<boolean>;
   retryJob(jobId: string): Promise<GenerationJob[]>;
+  deleteJob(jobId: string): Promise<boolean>;
+  deleteJobs(jobIds: string[]): Promise<number>;
 
   // Library, collections & prompts
   listLibraryMedia(query?: LibraryMediaQuery): Promise<LibraryMediaResult>;
@@ -394,6 +484,19 @@ export interface KireaDesktopApi {
   onVideoCreated(cb: (video: GeneratedVideoRecord) => void): () => void;
   onPixelAiJobUpdated(cb: (job: PixelAiJob) => void): () => void;
   onPixelPackageProgress(cb: (progress: PixelPackageProgress) => void): () => void;
+  onTrainingProgress(
+    cb: (payload: { jobId: string; step: number; maxSteps: number; epoch?: number; loss?: number | null }) => void
+  ): () => void;
+  onTrainingLog(cb: (payload: { jobId: string; line: string }) => void): () => void;
+  onTrainingCompleted(
+    cb: (payload: { jobId: string; status: string; adapterId?: string | null; error?: string }) => void
+  ): () => void;
+  onTrainingTelemetry(
+    cb: (telemetry: CharacterTrainingTelemetry) => void
+  ): () => void;
+  onVisionTaggingProgress(
+    cb: (payload: { current: number; total: number; referenceId: string; status: "analyzing" | "completed" | "error" }) => void
+  ): () => void;
 }
 
 declare global {

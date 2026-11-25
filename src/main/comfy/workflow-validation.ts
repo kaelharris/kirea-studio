@@ -24,6 +24,7 @@ import {
 import {
   getWorkflowById,
   isAnimaWorkflow,
+  isKrea2Workflow,
   usesDiffusionModelLoader,
 } from "./workflow-templates";
 import {
@@ -93,7 +94,8 @@ function collectLoraIssues(
       ? 10
       : wf.maxLoras;
 
-  if (req.loras.length > effectiveMaxLoras) {
+  const loras = req.loras ?? [];
+  if (loras.length > effectiveMaxLoras) {
     issues.push({
       field: "loras",
       severity: "error",
@@ -101,7 +103,7 @@ function collectLoraIssues(
     });
   }
 
-  for (const lora of req.loras) {
+  for (const lora of loras) {
     const loraRec = installedModels.find(
       (m) =>
         m.category === "lora" &&
@@ -566,6 +568,46 @@ export function validateGenerationRequest(
           field: "dimensions",
           severity: "error",
           message: "MOSS-Image requires width and height to be positive multiples of 16.",
+        });
+      }
+    } else if (isKrea2Workflow(req.workflowId)) {
+      if (
+        modelRecord &&
+        modelRecord.category !== "diffusion_model" &&
+        modelRecord.category !== "checkpoint"
+      ) {
+        issues.push({
+          field: "checkpoint",
+          severity: "error",
+          message: `Krea 2 workflows require a diffusion model or checkpoint; '${req.checkpoint}' is registered as a ${modelRecord.category}.`,
+        });
+      }
+      const hasClip = installedModels.some(
+        (m) =>
+          m.category === "text_encoder" &&
+          /qwen3vl[-_]4b/i.test(m.name)
+      );
+      const hasAe =
+        resolveAutoVaeName(
+          "krea2",
+          installedModels.filter((m) => m.category === "vae")
+        ) !== null ||
+        installedModels.some(
+          (m) => m.category === "vae" && m.name.toLowerCase().includes("ae")
+        );
+      if (installedModels.length > 0 && (!hasClip || !hasAe)) {
+        issues.push({
+          field: "checkpoint",
+          severity: "error",
+          message:
+            "Krea 2 requires text encoder 'qwen3vl_4b_fp8_scaled.safetensors' and VAE 'ae.safetensors' in the vault.",
+        });
+      }
+      if (req.width % 16 !== 0 || req.height % 16 !== 0) {
+        issues.push({
+          field: "dimensions",
+          severity: "error",
+          message: "Krea 2 requires width and height to be positive multiples of 16.",
         });
       }
     } else if (!usesDiffusionModelLoader(req.workflowId) && modelRecord?.category === "diffusion_model") {

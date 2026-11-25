@@ -400,6 +400,222 @@ export interface LoraRecipeInput {
   items: LoraRecipeItemInput[];
 }
 
+export type CharacterReferenceCategory =
+  | "canonical_face"
+  | "front_view"
+  | "three_quarter"
+  | "side_profile"
+  | "full_body"
+  | "expression"
+  | "pose"
+  | "clothing_variant"
+  | "approved_artwork"
+  | "other";
+
+export type CharacterReferenceApproval = "approved" | "rejected" | "pending";
+
+export interface CharacterIdentityCore {
+  triggerToken: string;
+  gender?: string;
+  ageCategory: string;
+  species: string;
+  archetype?: string;
+  hairColor: string;
+  hairStyle: string;
+  eyeColor: string;
+  skinTone: string;
+  facialCharacteristics: string;
+  distinctiveFeatures: string[];
+  bodyCharacteristics: string;
+  signatureAccessories: string[];
+  canonicalDescription: string;
+  fixedTraits: string[];
+  variableTraits: string[];
+  preferredStyle: string;
+  negativeConstraints: string;
+  dnaLocked: boolean;
+}
+
+export interface CharacterOutfit {
+  id: string;
+  characterId: string;
+  name: string;
+  description: string;
+  promptTokens: string[];
+  isDefault: boolean;
+  previewImagePath?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CharacterAdapter {
+  id: string;
+  characterId: string;
+  baseModelFamily: string;
+  checkpointPath?: string | null;
+  checkpointName?: string | null;
+  triggerToken: string;
+  fileLocation: string;
+  trainingConfig?: CharacterTrainingConfig | null;
+  datasetVersion?: string | null;
+  rank: number;
+  alpha: number;
+  recommendedStrength: number;
+  status: "trained" | "validating" | "active" | "disabled";
+  validationImages?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CharacterKnowledge {
+  personality: string;
+  speechStyle: string;
+  background: string;
+  history: string;
+  relationships: Array<{ target: string; relation: string; notes: string }>;
+  motivations: string;
+  likes: string[];
+  dislikes: string[];
+  rules: string[];
+  worldbuilding: string;
+  dialogueExamples: Array<{ context: string; quote: string }>;
+}
+
+export interface CharacterTrainingConfig {
+  baseModelFamily: string;
+  baseCheckpointPath: string;
+  triggerToken: string;
+  datasetId?: string;
+  datasetVersion?: string;
+  rank: number;
+  alpha: number;
+  learningRate: number;
+  epochs: number;
+  batchSize: number;
+  resolution: number;
+  gradientAccumulationSteps?: number;
+  gradientCheckpointing?: boolean;
+  precision?: "fp16" | "bf16" | "fp32";
+  outputDirectory?: string;
+  saveEveryNEpochs?: number;
+}
+
+export interface CharacterTrainingJob {
+  id: string;
+  characterId: string;
+  adapterId?: string | null;
+  baseModelFamily: string;
+  status: "QUEUED" | "RUNNING" | "PAUSED" | "COMPLETED" | "FAILED" | "CANCELLED";
+  progressStep: number;
+  progressMax: number;
+  currentEpoch?: number;
+  totalEpochs?: number;
+  loss?: number | null;
+  config: CharacterTrainingConfig;
+  errorMessage?: string | null;
+  logsText: string;
+  outputAdapterPath?: string | null;
+  submittedAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+}
+
+export interface CharacterTrainingTelemetry {
+  trainingId: string;
+  step: number;
+  totalSteps: number;
+  epoch: number;
+  totalEpochs: number;
+  loss: number;
+  smoothedLoss: number;
+  learningRate: number;
+  elapsedMs: number;
+  estimatedRemainingMs?: number;
+  lossHistory: Array<{
+    step: number;
+    loss: number;
+  }>;
+}
+
+export type VisualTagCategory = "identity" | "clothing" | "pose_expression" | "environment";
+export type VisualTagApproval = "approved" | "rejected" | "pending";
+
+export interface VisualTag {
+  id: string;
+  tag: string;
+  category: VisualTagCategory;
+  confidence: number;
+  approvalStatus: VisualTagApproval;
+  source: "wd14_neural" | "visual_heuristic" | "manual";
+}
+
+export interface VisionModelStatus {
+  available: boolean;
+  modelName: string | null;
+  modelPath: string | null;
+  tagsPath: string | null;
+  backendType: "wd14_onnx" | "heuristic_fallback";
+  instructionMessage: string;
+}
+
+export interface TrainingPreflightResult {
+  ready: boolean;
+  canTrain: boolean;
+  gpuName: string;
+  vramTotalMB: number;
+  vramFreeMB: number;
+  systemRamMB: number;
+  diskFreeGB: number;
+  modelAvailable: boolean;
+  modelPath: string | null;
+  datasetValid: boolean;
+  datasetImageCount: number;
+  backendAvailable: boolean;
+  pythonPath: string | null;
+  torchVersion: string | null;
+  cudaAvailable: boolean;
+  blockers: string[];
+  advisories: string[];
+  recommendedPreset: CharacterTrainingConfig;
+}
+
+export interface DatasetItem {
+  referenceId: string;
+  filePath: string;
+  caption: string;
+  identityTokens: string[];
+  clothingTokens: string[];
+  environmentTokens: string[];
+  category: CharacterReferenceCategory;
+  width?: number;
+  height?: number;
+  aspectRatio?: string;
+  selected: boolean;
+}
+
+export interface DatasetValidationReport {
+  isValid: boolean;
+  totalImages: number;
+  selectedImages: number;
+  categoriesPresent: Record<string, number>;
+  aspectRatiosPresent: Record<string, number>;
+  duplicatesDetected: Array<{ idA: string; idB: string; reason: string }>;
+  captionCoveragePercent: number;
+  warnings: string[];
+  suggestions: string[];
+}
+
+export interface CharacterDataset {
+  id: string;
+  characterId: string;
+  version: string;
+  name: string;
+  itemCount: number;
+  items: DatasetItem[];
+  exportPath?: string | null;
+  createdAt: string;
+}
+
 export interface CharacterReference {
   id: string;
   characterId: string;
@@ -410,6 +626,15 @@ export interface CharacterReference {
   weight: number;
   position: number;
   createdAt: string;
+  category?: CharacterReferenceCategory;
+  approvalStatus?: CharacterReferenceApproval;
+  associatedOutfitId?: string | null;
+  includedInTraining?: boolean;
+  width?: number | null;
+  height?: number | null;
+  aspectRatio?: string | null;
+  suggestedTags?: VisualTag[];
+  imageHash?: string | null;
 }
 
 export interface CharacterProfile {
@@ -436,13 +661,28 @@ export interface CharacterProfile {
   createdAt: string;
   updatedAt: string;
   references: CharacterReference[];
+
+  // Character DNA Layer extensions
+  dna?: CharacterIdentityCore;
+  identityCore?: CharacterIdentityCore;
+  outfits?: CharacterOutfit[];
+  adapters?: CharacterAdapter[];
+  knowledge?: CharacterKnowledge;
+  activeAdapterId?: string | null;
+  activeOutfitId?: string | null;
 }
 
 export interface CharacterReferenceUpdateInput {
   id: string;
-  role: CharacterReferenceRole;
+  role?: CharacterReferenceRole;
   caption?: string;
   weight?: number;
+  category?: CharacterReferenceCategory;
+  approvalStatus?: CharacterReferenceApproval;
+  associatedOutfitId?: string | null;
+  includedInTraining?: boolean;
+  suggestedTags?: VisualTag[];
+  imageHash?: string | null;
 }
 
 export interface CharacterProfileInput {
@@ -465,6 +705,12 @@ export interface CharacterProfileInput {
   tags?: string[];
   favorite?: boolean;
   references?: CharacterReferenceUpdateInput[];
+
+  // Character DNA input
+  dna?: Partial<CharacterIdentityCore>;
+  knowledge?: Partial<CharacterKnowledge>;
+  activeAdapterId?: string | null;
+  activeOutfitId?: string | null;
 }
 
 export type StoryStatus = "draft" | "in_progress" | "complete";
@@ -794,6 +1040,7 @@ export interface GenerationRequest {
   storyId?: string | null;
   storySceneId?: string | null;
   sourceImagePath?: string | null;
+  startupInterrupted?: boolean;
 }
 
 export interface GenerationJob {
@@ -824,6 +1071,7 @@ export interface GenerationJob {
   storyId?: string | null;
   storySceneId?: string | null;
   sourceImagePath?: string | null;
+  startupInterrupted?: boolean;
 }
 
 export type ImageOperationKind =

@@ -97,6 +97,7 @@ export class JobOrchestrator extends EventEmitter {
   private activeJobId: string | null = null;
   private activePromptId: string | null = null;
   private cancelledIds = new Set<string>();
+  private readonly deletedJobIds = new Set<string>();
   private isProcessingLoop = false;
 
   private activeWaiter: {
@@ -120,6 +121,34 @@ export class JobOrchestrator extends EventEmitter {
   private reconcileInterruptedJobsOnStartup(): void {
     const stored = this.repo.listJobs(150);
     for (const job of stored) {
+      // Terminal decisions are authoritative, even if related output rows exist.
+      if (
+        job.status === "COMPLETED" ||
+        job.status === "FAILED" ||
+        job.status === "CANCELLED"
+      ) {
+        this.jobs.set(job.id, job);
+        continue;
+      }
+
+      // 1. If outputs exist in the database for this job, it completed successfully!
+      if (this.repo.hasOutputsForJob?.(job.id)) {
+        const completedJob: GenerationJob = {
+          ...job,
+          status: "COMPLETED",
+          errorKind: "NONE",
+          errorMessage: null,
+          progressStep: job.progressMax || job.settings?.steps || 1,
+          completedAt: job.completedAt ?? new Date().toISOString(),
+        };
+        this.repo.upsertJob(completedJob);
+        this.jobs.set(completedJob.id, completedJob);
+        this.logger.info("jobs", `Reconciled completed job ${job.id} from existing outputs.`);
+        continue;
+      }
+
+      // 2. Genuinely interrupted / pending jobs from prior sessions:
+      // Mark as interrupted in history. Do NOT auto-retry, resubmit or pop up repeated alerts.
       if (
         job.status === "IDLE" ||
         job.status === "VALIDATING" ||
@@ -131,13 +160,14 @@ export class JobOrchestrator extends EventEmitter {
         const reconciled: GenerationJob = {
           ...job,
           status: "FAILED",
-          errorKind: "RUNTIME_CRASH",
-          errorMessage:
-            "Interrupted when application previously exited. Click Retry to run again.",
-          completedAt: new Date().toISOString(),
+          errorKind: "CANCELLED",
+          errorMessage: "Interrupted when application previously closed.",
+          completedAt: job.completedAt ?? new Date().toISOString(),
+          startupInterrupted: true,
         };
         this.repo.upsertJob(reconciled);
         this.jobs.set(reconciled.id, reconciled);
+        this.logger.info("jobs", `Reconciled orphaned job ${job.id} as interrupted.`);
       } else {
         this.jobs.set(job.id, job);
       }
@@ -162,6 +192,15 @@ export class JobOrchestrator extends EventEmitter {
     ws.on("executing", ({ promptId, node }: ComfyWsExecutingEvent) => {
       const job = this.matchActiveJob(promptId);
       if (!job) return;
+      // Do not allow late execution events to overwrite completed or output-processing jobs
+      if (
+        job.status === "COMPLETED" ||
+        job.status === "PROCESSING_OUTPUT" ||
+        job.status === "FAILED" ||
+        job.status === "CANCELLED"
+      ) {
+        return;
+      }
       if (node === null) {
         // ComfyUI signals end of node graph execution with executing node=null
         return;
@@ -177,6 +216,15 @@ export class JobOrchestrator extends EventEmitter {
     ws.on("progress", ({ promptId, value, max, node }: ComfyWsProgressEvent) => {
       const job = this.matchActiveJob(promptId);
       if (!job) return;
+      // Do not allow late progress events to overwrite completed or output-processing jobs
+      if (
+        job.status === "COMPLETED" ||
+        job.status === "PROCESSING_OUTPUT" ||
+        job.status === "FAILED" ||
+        job.status === "CANCELLED"
+      ) {
+        return;
+      }
       this.commitJob({
         ...job,
         status: "RUNNING",
@@ -256,13 +304,14 @@ export class JobOrchestrator extends EventEmitter {
 
     const total = Math.max(1, Math.min(8, req.batchCount || 1));
     const created: GenerationJob[] = [];
-    const baseSeed = req.randomSeed
-      ? Math.floor(Math.random() * 2_147_483_647)
+    const isRandom = req.seed === -1 || req.randomSeed;
+    const baseSeed = isRandom
+      ? Math.floor(Math.random() * 4294967295)
       : Math.max(0, Math.floor(req.seed));
 
     for (let i = 0; i < total; i++) {
-      const jobSeed = req.randomSeed
-        ? Math.floor(Math.random() * 2_147_483_647)
+      const jobSeed = isRandom
+        ? Math.floor(Math.random() * 4294967295)
         : baseSeed + i;
       const perJobReq: GenerationRequest = {
         ...req,
@@ -326,6 +375,7 @@ export class JobOrchestrator extends EventEmitter {
   }
 
   async cancelJob(jobId: string): Promise<boolean> {
+    if (this.deletedJobIds.has(jobId)) return false;
     const job = this.jobs.get(jobId);
     if (!job) return false;
 
@@ -370,10 +420,103 @@ export class JobOrchestrator extends EventEmitter {
     if (!prev) {
       throw new Error(`Job '${jobId}' not found.`);
     }
-    return this.submit({ ...prev.settings, batchCount: 1 });
+    return this.submit({
+      ...prev.settings,
+      workflowId: prev.settings?.workflowId || prev.workflowId,
+      checkpoint: prev.settings?.checkpoint || prev.checkpoint,
+      prompt: prev.settings?.prompt || prev.prompt,
+      negativePrompt: prev.settings?.negativePrompt || prev.negativePrompt,
+      batchCount: 1,
+    });
+  }
+
+  deleteJob(jobId: string): boolean {
+    const job = this.jobs.get(jobId);
+
+    // Start cancellation first. Any asynchronous cancellation write is tombstoned
+    // before it can run because SQLite deletion below is synchronous.
+    if (this.pendingIds.includes(jobId) || this.activeJobId === jobId) {
+      void this.cancelJob(jobId);
+    }
+
+    const dbDeleted = this.repo.deleteJob?.(jobId) ?? false;
+    if (!job && !dbDeleted) {
+      return false;
+    }
+
+    this.deletedJobIds.add(jobId);
+    const pendingIdx = this.pendingIds.indexOf(jobId);
+    if (pendingIdx !== -1) {
+      this.pendingIds.splice(pendingIdx, 1);
+    }
+
+    this.jobs.delete(jobId);
+    this.emit("jobDeleted", jobId);
+    return true;
+  }
+
+  deleteJobs(jobIds: string[]): number {
+    const uniqueIds = [...new Set(jobIds)];
+    if (uniqueIds.length === 0) return 0;
+
+    const existingIds = uniqueIds.filter(
+      (id) => this.jobs.has(id) || Boolean(this.repo.getJobById?.(id))
+    );
+    for (const id of existingIds) {
+      if (this.pendingIds.includes(id) || this.activeJobId === id) {
+        void this.cancelJob(id);
+      }
+    }
+
+    const dbDeletedCount = this.repo.deleteJobs?.(uniqueIds) ?? 0;
+    const memoryDeletedCount = uniqueIds.filter((id) => this.jobs.has(id)).length;
+    const removedCount = this.repo.getJobById
+      ? existingIds.filter((id) => !this.repo.getJobById(id)).length
+      : Math.max(dbDeletedCount, memoryDeletedCount);
+
+    for (const id of existingIds) {
+      this.deletedJobIds.add(id);
+      const pendingIdx = this.pendingIds.indexOf(id);
+      if (pendingIdx !== -1) {
+        this.pendingIds.splice(pendingIdx, 1);
+      }
+      this.jobs.delete(id);
+      this.emit("jobDeleted", id);
+    }
+
+    return Math.min(uniqueIds.length, removedCount);
+  }
+
+  prepareShutdown(): void {
+    if (this.activeWaiter) {
+      this.activeWaiter.reject(new Error("Application is shutting down."));
+      this.activeWaiter = null;
+    }
+    for (const pendingId of this.pendingIds) {
+      const job = this.jobs.get(pendingId);
+      if (job && (job.status === "QUEUED" || job.status === "SUBMITTING" || job.status === "IDLE")) {
+        const cancelledJob: GenerationJob = {
+          ...job,
+          status: "CANCELLED",
+          errorKind: "CANCELLED",
+          errorMessage: "Application exited while job was pending.",
+          completedAt: new Date().toISOString(),
+          startupInterrupted: true,
+        };
+        this.commitJob(cancelledJob);
+      }
+    }
+    this.pendingIds.length = 0;
   }
 
   private commitJob(job: GenerationJob): void {
+    if (this.deletedJobIds.has(job.id)) return;
+    const current = this.jobs.get(job.id);
+    // Invariant: Once COMPLETED, a job must never transition back to any non-terminal state
+    if (current?.status === "COMPLETED" && job.status !== "COMPLETED") {
+      this.logger.warn("jobs", `Prevented downgrade of completed job ${job.id} to ${job.status}`);
+      return;
+    }
     const snapshot: GenerationJob = {
       ...job,
       outputPaths: [...job.outputPaths],
@@ -400,12 +543,13 @@ export class JobOrchestrator extends EventEmitter {
 
   private async executeSingleJob(jobId: string): Promise<void> {
     let job = this.jobs.get(jobId);
-    if (!job) return;
+    if (!job || this.deletedJobIds.has(jobId)) return;
 
     this.activeJobId = jobId;
     this.activePromptId = null;
 
     const failJob = (kind: JobErrorKind, message: string): void => {
+      if (this.deletedJobIds.has(jobId)) return;
       const latest = this.jobs.get(jobId) ?? job!;
       const finalStatus = kind === "CANCELLED" ? "CANCELLED" : "FAILED";
       this.commitJob({
@@ -773,7 +917,9 @@ export class JobOrchestrator extends EventEmitter {
           completedAt: createdAt,
         };
 
+        if (this.deletedJobIds.has(jobId)) return;
         this.repo.recordCompletedVideoTx(completedJob, savedVideos, promptRecord);
+        this.activePromptId = null;
         this.jobs.set(completedJob.id, completedJob);
         this.emit("jobUpdated", { ...completedJob });
         for (const rec of savedVideos) {
@@ -862,7 +1008,9 @@ export class JobOrchestrator extends EventEmitter {
         completedAt: createdAt,
       };
 
+      if (this.deletedJobIds.has(jobId)) return;
       this.repo.recordCompletedGenerationTx(completedJob, savedRecords, promptRecord);
+      this.activePromptId = null;
 
       this.jobs.set(completedJob.id, completedJob);
       this.emit("jobUpdated", { ...completedJob });

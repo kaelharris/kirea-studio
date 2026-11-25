@@ -31,6 +31,8 @@ extraResources:
     to: pixel-engines/pixelbolt/LICENSE
   - from: external/pixel-engines/pixelbolt/package.json
     to: pixel-engines/pixelbolt/package.json
+  - from: external/training/sd_scripts_adapter.py
+    to: training/sd_scripts_adapter.py
 win:
   target:
     - target: nsis

@@ -36,6 +36,7 @@ export interface CompactPromptComposerProps {
   onToast: (msg: string) => void;
   isEngineOnline?: boolean;
   activeJob?: boolean;
+  docked?: boolean;
 }
 
 export const CompactPromptComposer: React.FC<CompactPromptComposerProps> = ({
@@ -53,6 +54,7 @@ export const CompactPromptComposer: React.FC<CompactPromptComposerProps> = ({
   onToast,
   isEngineOnline = true,
   activeJob = false,
+  docked = false,
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isFocused, setIsFocused] = useState(false);
@@ -75,11 +77,11 @@ export const CompactPromptComposer: React.FC<CompactPromptComposerProps> = ({
     const el = textareaRef.current;
     if (!el) return;
     if (!isExpanded && !isMultiLine) {
-      el.style.height = "38px";
+      el.style.height = "76px";
       return;
     }
     el.style.height = "auto";
-    const nextHeight = Math.min(220, Math.max(68, el.scrollHeight));
+    const nextHeight = Math.min(220, Math.max(96, el.scrollHeight));
     el.style.height = `${nextHeight}px`;
   }, [prompt, isExpanded, isMultiLine]);
 
@@ -328,7 +330,11 @@ export const CompactPromptComposer: React.FC<CompactPromptComposerProps> = ({
     <div
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className="order-2 shrink-0 space-y-2 rounded-xl border border-border bg-surface-elevated p-3 shadow-[var(--shadow-float)] transition-all duration-200 focus-within:border-accent/80"
+      className={`space-y-2 p-3 transition-all duration-200 focus-within:border-accent/80 ${
+        docked
+          ? "bg-transparent"
+          : "order-2 shrink-0 rounded-xl border border-border bg-surface-elevated shadow-[var(--shadow-float)]"
+      }`}
     >
       {/* Top Composer Bar: Architecture indicator, Magic Prompt, Snippets & Actions */}
       <div className="flex flex-wrap items-center justify-between gap-1.5 text-xs">
@@ -415,7 +421,7 @@ export const CompactPromptComposer: React.FC<CompactPromptComposerProps> = ({
       </div>
 
       {/* Main Prompt Input Field (Single-line to Multi-line Auto-expanding) */}
-      <div className="relative">
+      <div className="relative overflow-hidden rounded-lg border border-border bg-bg/90 transition-colors focus-within:border-accent">
         <textarea
           ref={textareaRef}
           value={prompt}
@@ -426,11 +432,22 @@ export const CompactPromptComposer: React.FC<CompactPromptComposerProps> = ({
           onContextMenu={handlePromptContextMenu}
           placeholder="Describe your scene, characters, lighting, framing, aesthetic mood... (Ctrl+Enter to render)"
           style={{
-            minHeight: isExpanded ? "68px" : "38px",
+            minHeight: isExpanded ? "96px" : "76px",
             maxHeight: "220px",
           }}
-          className="w-full resize-none rounded-lg border border-border bg-bg/90 px-3 py-2 text-xs text-fg leading-relaxed placeholder:text-fg-subtle focus:border-accent focus:outline-none transition-[min-height] duration-200 ease-out"
+          className="block w-full resize-none bg-transparent px-3 pt-2 pr-36 pb-12 text-xs text-fg leading-relaxed placeholder:text-fg-subtle focus:outline-none transition-[min-height] duration-200 ease-out"
         />
+        <Button
+          variant="accent"
+          size="md"
+          className="absolute bottom-2 right-2 z-10"
+          loading={submitting}
+          disabled={blockingErrors.length > 0}
+          onClick={onGenerate}
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          {activeJob ? "Queue Another" : "Generate Image"}
+        </Button>
       </div>
 
       {/* Collapsible Negative Prompt Field */}
@@ -483,25 +500,17 @@ export const CompactPromptComposer: React.FC<CompactPromptComposerProps> = ({
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          {activeJob && onCancel && (
-            <Button variant="danger" size="sm" onClick={onCancel}>
-              <Square className="h-3.5 w-3.5 fill-current" />
-              Cancel
-            </Button>
-          )}
-
+        {activeJob && onCancel && (
           <Button
-            variant="accent"
-            size="md"
-            loading={submitting}
-            disabled={blockingErrors.length > 0}
-            onClick={onGenerate}
+            variant="danger"
+            size="sm"
+            className="shrink-0"
+            onClick={onCancel}
           >
-            <Sparkles className="h-3.5 w-3.5" />
-            {activeJob ? "Queue Another" : "Generate Image"}
+            <Square className="h-3.5 w-3.5 fill-current" />
+            Cancel
           </Button>
-        </div>
+        )}
       </div>
 
       {/* Magic Danbooru Prompt Modal */}

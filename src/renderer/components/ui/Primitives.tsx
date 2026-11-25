@@ -35,7 +35,7 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   danger:
     "bg-transparent text-danger border border-danger/40 hover:border-danger/70 hover:bg-danger-soft disabled:opacity-45",
   creative:
-    "bg-accent-solid text-white border border-accent-solid hover:bg-accent-solid-hover hover:border-accent-solid-hover disabled:bg-[var(--accent-disabled-bg)] disabled:border-[var(--accent-disabled-border)] disabled:text-[var(--accent-disabled-fg)]",
+    "bg-terracotta text-terracotta-fg border border-terracotta hover:bg-terracotta-hover hover:border-terracotta-hover disabled:opacity-45",
   utility:
     "bg-transparent text-fg-muted border border-border hover:text-fg hover:border-border-strong disabled:opacity-40",
 };
@@ -52,7 +52,7 @@ const UTILITY_SIZE_CLASSES: Record<ButtonSize, string> = {
   lg: "h-8 px-3 text-[10px] gap-1.5 rounded-sm",
 };
 
-export const Button: React.FC<ButtonProps> = ({
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({
   variant = "secondary",
   size = "md",
   loading = false,
@@ -61,7 +61,7 @@ export const Button: React.FC<ButtonProps> = ({
   children,
   type = "button",
   ...rest
-}) => {
+}, ref) => {
   const isUtility = variant === "utility";
   const typeClasses = isUtility
     ? "font-mono font-semibold uppercase tracking-[0.1em]"
@@ -69,6 +69,7 @@ export const Button: React.FC<ButtonProps> = ({
   const sizeClasses = isUtility ? UTILITY_SIZE_CLASSES[size] : SIZE_CLASSES[size];
   return (
     <button
+      ref={ref}
       type={type}
       disabled={disabled || loading}
       className={`inline-flex items-center justify-center whitespace-nowrap transition-[background-color,border-color,color,transform] duration-150 ease-out active:scale-[0.98] disabled:active:scale-100 disabled:cursor-not-allowed ${typeClasses} ${VARIANT_CLASSES[variant]} ${sizeClasses} ${className}`}
@@ -83,15 +84,24 @@ export const Button: React.FC<ButtonProps> = ({
       {children}
     </button>
   );
-};
+});
+Button.displayName = "Button";
 
-export const Card: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({
+export const Card: React.FC<
+  React.HTMLAttributes<HTMLDivElement> & { variant?: "flat" | "raised" }
+> = ({
+  variant = "flat",
   className = "",
   children,
   ...rest
 }) => (
   <div
-    className={`bg-surface border border-border rounded-xl ${className}`}
+    data-card-variant={variant}
+    className={`${
+      variant === "raised"
+        ? "bg-surface rounded-xl border border-border"
+        : "bg-transparent"
+    } ${className}`}
     {...rest}
   >
     {children}
@@ -162,9 +172,10 @@ export const SliderField: React.FC<{
   max: number;
   step: number;
   suffix?: string;
+  disabled?: boolean;
   onChange: (value: number) => void;
-}> = ({ label, value, min, max, step, suffix = "", onChange }) => (
-  <div className="space-y-1.5">
+}> = ({ label, value, min, max, step, suffix = "", disabled = false, onChange }) => (
+  <div className={`space-y-1.5 ${disabled ? "opacity-55" : ""}`}>
     <div className="flex items-center justify-between text-xs">
       <span className="text-fg-muted font-medium">{label}</span>
       <span className="font-mono text-tech font-medium text-fg">
@@ -178,8 +189,9 @@ export const SliderField: React.FC<{
       max={max}
       step={step}
       value={value}
+      disabled={disabled}
       onChange={(e) => onChange(Number(e.target.value))}
-      className="w-full cursor-pointer"
+      className="w-full cursor-pointer disabled:cursor-not-allowed"
     />
   </div>
 );
@@ -256,6 +268,20 @@ export const ProgressBar: React.FC<{
   </div>
 );
 
+export function isInteractiveKeyboardTarget(target: unknown): boolean {
+  if (!target || typeof target !== "object") return false;
+  const element = target as {
+    isContentEditable?: boolean;
+    closest?: (selector: string) => unknown;
+  };
+  if (element.isContentEditable) return true;
+  return Boolean(
+    element.closest?.(
+      'input, textarea, select, button, a[href], summary, [contenteditable]:not([contenteditable="false"]), [role="button"], [role="textbox"], [role="combobox"], [role="slider"], [role="menuitem"], [role="tab"], [role="checkbox"], [role="radio"], [role="switch"], [tabindex]:not([tabindex="-1"])'
+    )
+  );
+}
+
 export const useDialogFocus = (
   open: boolean,
   onClose: () => void,
@@ -274,10 +300,20 @@ export const useDialogFocus = (
             panel.querySelectorAll<HTMLElement>(
               'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
             )
-          ).filter((node) => node.offsetParent !== null)
+          ).filter(
+            (node) =>
+              node.offsetParent !== null &&
+              !node.closest('[inert], [aria-hidden="true"]')
+          )
         : [];
 
-    const first = focusables()[0];
+    const autoFocusEl = panel
+      ? panel.querySelector<HTMLElement>("[data-autofocus], [autofocus]")
+      : null;
+    const first =
+      autoFocusEl && !autoFocusEl.closest('[inert], [aria-hidden="true"]')
+        ? autoFocusEl
+        : focusables()[0];
     (first ?? panel)?.focus();
 
     const onKey = (event: KeyboardEvent): void => {
@@ -367,6 +403,8 @@ export const ConfirmDialog: React.FC<{
   description: string;
   confirmLabel?: string;
   danger?: boolean;
+  defaultFocusConfirm?: boolean;
+  zIndexClass?: string;
 }> = ({
   open,
   onClose,
@@ -375,25 +413,44 @@ export const ConfirmDialog: React.FC<{
   description,
   confirmLabel = "Confirm",
   danger = true,
-}) => (
-  <Modal open={open} onClose={onClose} title={title} maxWidthClass="max-w-md">
-    <p className="text-small text-fg-muted leading-relaxed">{description}</p>
-    <div className="mt-5 flex justify-end gap-2">
-      <Button variant="secondary" onClick={onClose}>
-        Cancel
-      </Button>
-      <Button
-        variant={danger ? "danger" : "primary"}
-        onClick={() => {
-          onConfirm();
-          onClose();
-        }}
-      >
-        {confirmLabel}
-      </Button>
-    </div>
-  </Modal>
-);
+  defaultFocusConfirm = true,
+  zIndexClass = "z-40",
+}) => {
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={title}
+      maxWidthClass="max-w-md"
+      zIndexClass={zIndexClass}
+    >
+      <div>
+        <p className="text-small text-fg-muted leading-relaxed font-mono">{description}</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button
+            variant="secondary"
+            onClick={onClose}
+            data-autofocus={defaultFocusConfirm ? undefined : "true"}
+            className="font-mono text-xs uppercase"
+          >
+            Cancel
+          </Button>
+          <Button
+            variant={danger ? "danger" : "primary"}
+            data-autofocus={defaultFocusConfirm ? "true" : undefined}
+            onClick={() => {
+              onConfirm();
+              onClose();
+            }}
+            className="font-mono text-xs uppercase font-bold"
+          >
+            {confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+};
 
 export {
   ContextMenuProvider,

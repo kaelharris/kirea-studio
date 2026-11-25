@@ -50,8 +50,8 @@
         "name": "Kirea Studio",
         "applicationCategory": "MultimediaApplication",
         "operatingSystem": "Windows 10, Windows 11",
-        "softwareVersion": "1.0.1",
-        "downloadUrl": "https://github.com/kaelharris/kirea-studio/releases/download/v1.0.1/Kirea-Studio-Setup-1.0.1-win-x64.exe",
+        "softwareVersion": "1.1.1",
+        "downloadUrl": "https://github.com/kaelharris/kirea-studio/releases/download/v1.1.1/Kirea-Studio-Setup-1.1.1-win-x64.exe",
         "license": "https://github.com/kaelharris/kirea-studio/blob/main/LICENSE",
         "description": "A local-first Windows desktop workspace for AI image and video creation, model management, workflows, characters, and pixel art.",
         "offers": {
@@ -97,6 +97,7 @@
           <button
             class="nav-toggle"
             type="button"
+            aria-label="Toggle sections menu"
             aria-expanded="false"
             aria-controls="site-menu"
             data-menu-toggle
@@ -106,7 +107,7 @@
           </button>
           <a
             class="button button--primary button--small site-header__cta"
-            href="https://github.com/kaelharris/kirea-studio/releases/download/v1.0.1/Kirea-Studio-Setup-1.0.1-win-x64.exe"
+            href="https://github.com/kaelharris/kirea-studio/releases/download/v1.1.1/Kirea-Studio-Setup-1.1.1-win-x64.exe"
           >
             Download for Windows
           </a>
@@ -196,7 +197,7 @@
               <div class="hero__actions">
                 <a
                   class="button button--primary"
-                  href="https://github.com/kaelharris/kirea-studio/releases/download/v1.0.1/Kirea-Studio-Setup-1.0.1-win-x64.exe"
+                  href="https://github.com/kaelharris/kirea-studio/releases/download/v1.1.1/Kirea-Studio-Setup-1.1.1-win-x64.exe"
                 >
                   Download for Windows
                 </a>
@@ -262,8 +263,8 @@
                 class="world"
                 data-world
                 data-title="Image Studio"
-                data-copy="Text-to-image, image-to-image, 4× upscaling, multi-LoRA stacks and live previews."
-                data-tech="SD 1.5 · SDXL · Illustrious · Anima · Z-Image"
+                data-copy="Text-to-image, inpaint canvas, 4× upscaling, 10-LoRA stacks, Magic Prompt and live previews."
+                data-tech="MOSS-Image · Illustrious · Pony · SDXL · SD 1.5 · Anima"
               >
                 <figure class="world__art">
                   <img
@@ -278,8 +279,8 @@
                   />
                 </figure>
                 <p class="sr-only">
-                  Image Studio. Text-to-image, image-to-image, 4× upscaling, multi-LoRA stacks and
-                  live previews. SD 1.5, SDXL, Illustrious, Anima, Z-Image.
+                  Image Studio. Text-to-image, inpaint canvas, 4× upscaling, 10-LoRA stacks and
+                  live previews. MOSS-Image, Illustrious, Pony, SDXL, SD 1.5, Anima.
                 </p>
               </li>
 
@@ -313,7 +314,7 @@
                 data-world
                 data-title="Model Hub"
                 data-model-hub
-                data-copy="A non-destructive local vault with Civitai discovery and Hugging Face import."
+                data-copy="A non-destructive local vault with custom preview assignment, Civitai discovery and Hugging Face Hub."
                 data-tech="Vault · Civitai · Hugging Face"
               >
                 <figure class="world__art">
@@ -329,8 +330,7 @@
                   />
                 </figure>
                 <p class="sr-only">
-                  Model Hub. A non-destructive local vault with Civitai discovery and Hugging Face
-                  import. Vault, Civitai, Hugging Face.
+                  Model Hub. A non-destructive local vault with custom preview assignment, Civitai discovery and Hugging Face Hub.
                 </p>
               </li>
 
@@ -338,8 +338,8 @@
                 class="world"
                 data-world
                 data-title="Workflow Management"
-                data-copy="Versioned ComfyUI templates with validation and one-click loading into Create."
-                data-tech="Validated templates · SD 1.5 / SDXL"
+                data-copy="Versioned ComfyUI templates for MOSS-Image, Illustrious, Pony, SDXL, Inpaint, Outpaint and Video with one-click loading into Create."
+                data-tech="MOSS · Illustrious · SDXL · Inpaint · Video"
               >
                 <figure class="world__art">
                   <img
@@ -354,8 +354,7 @@
                   />
                 </figure>
                 <p class="sr-only">
-                  Workflow Management. Versioned ComfyUI templates with validation and one-click
-                  loading into Create. Validated templates, SD 1.5 and SDXL.
+                  Workflow Management. Versioned ComfyUI templates for MOSS-Image, Illustrious, Pony, SDXL, Inpaint, Outpaint and Video with one-click loading into Create.
                 </p>
               </li>
 
@@ -415,10 +414,10 @@
               <p class="orrery__index"><span data-orrery-index>01</span> / 06</p>
               <h3 class="orrery__name" data-orrery-title>Image Studio</h3>
               <p class="orrery__copy" data-orrery-copy>
-                Text-to-image, image-to-image, 4× upscaling, multi-LoRA stacks and live previews.
+                Text-to-image, inpaint canvas, 4× upscaling, 10-LoRA stacks, Magic Prompt and live previews.
               </p>
               <p class="orrery__tech">
-                <span data-orrery-tech>SD 1.5 · SDXL · Illustrious · Anima · Z-Image</span>
+                <span data-orrery-tech>MOSS-Image · Illustrious · Pony · SDXL · SD 1.5 · Anima</span>
                 <span data-orrery-providers hidden>
                   Vault ·
                   <span class="brand-label">
@@ -461,8 +460,8 @@
                   aria-controls="showcase-panel"
                   tabindex="0"
                   data-showcase-tab="home"
-                  data-copy="Live GPU telemetry, engine status and recent work, with every studio one click away."
-                  data-caption="Home · Live GPU telemetry, engine status and recent work."
+                  data-copy="Live RTX GPU telemetry, local ComfyUI engine status, active jobs queue, and multi-modal studio launchpad."
+                  data-caption="Home · Live GPU telemetry, engine status and multi-modal work."
                 >
                   Home
                 </button>
@@ -474,8 +473,8 @@
                   aria-controls="showcase-panel"
                   tabindex="-1"
                   data-showcase-tab="create"
-                  data-copy="Brief in plain language, or tune the prompt, model, LoRA stack and every generation parameter."
-                  data-caption="Create · Prompt composer and generation controls."
+                  data-copy="Native MOSS-Image &amp; Illustrious 10-LoRA workflows, Magic Prompt composer, inpaint canvas and dominant high-res viewer."
+                  data-caption="Create · MOSS-Image, 10-LoRA stack and dominant canvas."
                 >
                   Create
                 </button>
@@ -487,8 +486,8 @@
                   aria-controls="showcase-panel"
                   tabindex="-1"
                   data-showcase-tab="models"
-                  data-copy="Your local vault, Civitai discovery and Hugging Face import in one non-destructive library."
-                  data-caption="Models · Local vault, Civitai and Hugging Face."
+                  data-copy="Non-destructive Model Vault with custom preview assignment, Civitai discovery and Hugging Face Hub with resumable downloads."
+                  data-caption="Models · Local vault with custom previews, Civitai and Hugging Face."
                 >
                   Models
                 </button>
@@ -500,8 +499,8 @@
                   aria-controls="showcase-panel"
                   tabindex="-1"
                   data-showcase-tab="workflows"
-                  data-copy="Validated, versioned ComfyUI templates with model counts and one-click loading into Create."
-                  data-caption="Workflows · Validated ComfyUI templates."
+                  data-copy="Validated ComfyUI templates for MOSS-Image, Illustrious, Pony, SDXL, Inpainting, Outpainting and Video with one-click loading."
+                  data-caption="Workflows · Validated MOSS-Image, Illustrious and Video templates."
                 >
                   Workflows
                 </button>
@@ -513,7 +512,7 @@
                   aria-controls="showcase-panel"
                   tabindex="-1"
                   data-showcase-tab="explore"
-                  data-copy="Starter presets, LoRA recipes and saved prompts for editorial, anime, product and character work."
+                  data-copy="Starter presets, LoRA recipes and prompt inspiration for anime visuals, editorial styles, concept art and characters."
                   data-caption="Explore · Presets and LoRA recipes."
                 >
                   Explore
@@ -526,8 +525,8 @@
                   aria-controls="showcase-panel"
                   tabindex="-1"
                   data-showcase-tab="light"
-                  data-copy="The same workspace in KIREA's warm ivory theme, with the same token set."
-                  data-caption="Light theme · The same workspace in warm ivory."
+                  data-copy="The entire workspace in KIREA's warm ivory theme with identical contrast, canvas tools and control tokens."
+                  data-caption="Light theme · The same studio workspace in warm ivory."
                 >
                   Light theme
                 </button>
@@ -545,7 +544,7 @@
                 type="button"
                 data-shot
                 data-showcase-app
-                data-caption="Home · Live GPU telemetry, engine status and recent work."
+                data-caption="Home · Live GPU telemetry, engine status and multi-modal work."
                 aria-label="Open the Home screenshot full size"
                 aria-describedby="showcase-description"
               >
@@ -556,7 +555,7 @@
                     src="./assets/shots/home-dark.webp"
                     width="1600"
                     height="940"
-                    alt="Kirea Studio Home screen with local ComfyUI status, GPU telemetry, recent creations and the active queue."
+                    alt="Kirea Studio Home screen with local ComfyUI status, NVIDIA GeForce RTX 4070 Ti SUPER GPU telemetry, recent creations carousel and active queue."
                     loading="eager"
                     decoding="async"
                   />
@@ -565,7 +564,7 @@
                     src="./assets/shots/create-dark.webp"
                     width="1600"
                     height="940"
-                    alt="Kirea Studio Create screen with a plain-language prompt composer, model selector and generation controls."
+                    alt="Kirea Studio Create screen with MOSS-Image native DiT workflow, 10-LoRA dynamic stack, prompt composer and dominant preview canvas."
                     loading="lazy"
                     decoding="async"
                     aria-hidden="true"
@@ -575,7 +574,7 @@
                     src="./assets/shots/models-dark.webp"
                     width="1600"
                     height="940"
-                    alt="Kirea Studio Models screen showing the local model vault, Civitai hub, architecture filters and download actions."
+                    alt="Kirea Studio Models screen showing the local model vault with custom preview assignment, Civitai hub, Hugging Face hub and active download queue."
                     loading="lazy"
                     decoding="async"
                     aria-hidden="true"
@@ -585,7 +584,7 @@
                     src="./assets/shots/workflows-dark.webp"
                     width="1600"
                     height="940"
-                    alt="Kirea Studio Workflows screen with versioned SDXL and SD 1.5 text-to-image and image-to-image templates."
+                    alt="Kirea Studio Workflows screen with versioned templates for MOSS-Image, Illustrious, Pony, SDXL, Inpaint, Outpaint and Video."
                     loading="lazy"
                     decoding="async"
                     aria-hidden="true"
@@ -595,7 +594,7 @@
                     src="./assets/shots/explore-dark.webp"
                     width="1600"
                     height="940"
-                    alt="Kirea Studio Explore screen with starter presets for editorial portraits, anime visuals and industrial product design."
+                    alt="Kirea Studio Explore screen with curated starter presets, prompt inspiration and multi-LoRA recipes."
                     loading="lazy"
                     decoding="async"
                     aria-hidden="true"
@@ -605,7 +604,7 @@
                     src="./assets/shots/create-light.webp"
                     width="1600"
                     height="940"
-                    alt="Kirea Studio Create screen in the warm ivory light theme, with the prompt composer and generation controls."
+                    alt="Kirea Studio Create screen in the warm ivory light theme, with prompt composer, model selector and generation controls."
                     loading="lazy"
                     decoding="async"
                     aria-hidden="true"
@@ -613,7 +612,7 @@
                 </span>
                 <span class="shell app-window__foot">
                   <span id="showcase-description" data-showcase-copy>
-                    Live GPU telemetry, engine status and recent work, with every studio one click away.
+                    Live RTX GPU telemetry, local ComfyUI engine status, active jobs queue, and multi-modal studio launchpad.
                   </span>
                   <span class="app-window__expand">View fullscreen</span>
                 </span>
@@ -842,12 +841,12 @@
 
           <div class="shell close__inner">
             <div class="download-card" data-sc-cue="0 1 0 0">
-              <p class="sc-label download-card__label">Kirea Studio v1.0.1</p>
+              <p class="sc-label download-card__label">Kirea Studio v1.1.1</p>
               <h2 id="download-title" class="download-card__title">Your universe, on your machine.</h2>
               <p class="download-card__platform">Windows 10/11 · x64 · 146 MB</p>
               <a
                 class="button button--dark download-card__button"
-                href="https://github.com/kaelharris/kirea-studio/releases/download/v1.0.1/Kirea-Studio-Setup-1.0.1-win-x64.exe"
+                href="https://github.com/kaelharris/kirea-studio/releases/download/v1.1.1/Kirea-Studio-Setup-1.1.1-win-x64.exe"
               >
                 Download for Windows
               </a>

@@ -226,20 +226,36 @@ export function discoverExistingComfyPaths(): string[] {
     .map((entry) => entry.comfyDir);
 }
 
-function detectCliFlagSupport(comfyDir: string): {
+interface CliFlagSupport {
   supportsDatabaseUrl: boolean;
   supportsUserDirectory: boolean;
   supportsDisableAutoLaunch: boolean;
   supportsHighVram: boolean;
-} {
+  supportsLowVram: boolean;
+  supportsDisableSmartMemory: boolean;
+  supportsReserveVram: boolean;
+  supportsFast: boolean;
+  supportsExtraModelPathsConfig: boolean;
+}
+
+function unknownCliFlagSupport(): CliFlagSupport {
+  return {
+    supportsDatabaseUrl: false,
+    supportsUserDirectory: false,
+    supportsDisableAutoLaunch: false,
+    supportsHighVram: false,
+    supportsLowVram: false,
+    supportsDisableSmartMemory: false,
+    supportsReserveVram: false,
+    supportsFast: false,
+    supportsExtraModelPathsConfig: false,
+  };
+}
+
+function detectCliFlagSupport(comfyDir: string): CliFlagSupport {
   const cliArgsPath = path.join(comfyDir, "comfy", "cli_args.py");
   if (!fs.existsSync(cliArgsPath)) {
-    return {
-      supportsDatabaseUrl: false,
-      supportsUserDirectory: false,
-      supportsDisableAutoLaunch: true,
-      supportsHighVram: true,
-    };
+    return unknownCliFlagSupport();
   }
   try {
     const content = fs.readFileSync(cliArgsPath, "utf8");
@@ -248,14 +264,14 @@ function detectCliFlagSupport(comfyDir: string): {
       supportsUserDirectory: content.includes("--user-directory"),
       supportsDisableAutoLaunch: content.includes("--disable-auto-launch"),
       supportsHighVram: content.includes("--highvram"),
+      supportsLowVram: content.includes("--lowvram"),
+      supportsDisableSmartMemory: content.includes("--disable-smart-memory"),
+      supportsReserveVram: content.includes("--reserve-vram"),
+      supportsFast: content.includes("--fast"),
+      supportsExtraModelPathsConfig: content.includes("--extra-model-paths-config"),
     };
   } catch {
-    return {
-      supportsDatabaseUrl: false,
-      supportsUserDirectory: false,
-      supportsDisableAutoLaunch: true,
-      supportsHighVram: true,
-    };
+    return unknownCliFlagSupport();
   }
 }
 
@@ -515,16 +531,33 @@ export class ComfyRuntimeManager extends EventEmitter {
       args.push("--database-url", `sqlite:///${comfyDbPath}`);
     }
 
-    if (perf === "memory_saver") {
+    if (cliSupport.supportsDisableSmartMemory) {
+      args.push("--disable-smart-memory");
+    }
+    if (cliSupport.supportsReserveVram) {
+      args.push("--reserve-vram", "4.0");
+    }
+    if (cliSupport.supportsFast) {
+      args.push("--fast");
+    }
+
+    const knownMaxVram = this.state.devices.reduce(
+      (max, d) => Math.max(max, d.vramTotal ?? 0),
+      0
+    );
+    // 16 GB GPUs report ~16376 MiB (~17.17 GB). Only GPUs with > 18 GB qualify for --highvram.
+    const isHighVramGpu = knownMaxVram > 18 * 1024 * 1024 * 1024;
+
+    if (perf === "memory_saver" && cliSupport.supportsLowVram) {
       args.push("--lowvram");
-    } else if (perf === "quality" && cliSupport.supportsHighVram) {
+    } else if (perf === "quality" && cliSupport.supportsHighVram && isHighVramGpu) {
       args.push("--highvram");
     }
 
     // For managed installs, pass isolated extra_model_paths.yaml if present
     if (mode === "managed") {
       const managedYaml = path.join(layout.comfyDir, "extra_model_paths.yaml");
-      if (fs.existsSync(managedYaml)) {
+      if (cliSupport.supportsExtraModelPathsConfig && fs.existsSync(managedYaml)) {
         args.push("--extra-model-paths-config", managedYaml);
       }
     }

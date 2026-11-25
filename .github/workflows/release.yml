@@ -34,6 +34,9 @@ jobs:
             exit 1
           fi
 
+      - name: Verify release version surfaces
+        run: node scripts/verify-release-version.mjs
+
       - name: Typecheck
         run: npm run typecheck
 

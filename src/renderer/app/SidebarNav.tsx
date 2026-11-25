@@ -2,7 +2,7 @@ import React from "react";
 import { Moon, Sun } from "lucide-react";
 import type { NavSection } from "../../shared/types";
 import { BrandMark } from "../components/BrandMark";
-import { NAV_GROUPS, NAV_ITEMS } from "./app-constants";
+import { NAV_GROUPS, NAV_ITEMS, PINNED_NAV_IDS } from "./app-constants";
 
 interface SidebarNavProps {
   activePage: NavSection;
@@ -23,7 +23,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
   onToggleTheme,
 }) => (
       <aside className="w-16 min-[1280px]:w-56 shrink-0 border-r border-border bg-surface flex flex-col justify-between">
-        <div className="px-2 py-4 min-[1280px]:px-3 space-y-6">
+        <div className="px-2 py-3.5 min-[1280px]:px-3 space-y-3.5">
           <div className="flex items-center justify-center min-[1280px]:justify-start min-[1280px]:px-1">
             <BrandMark size={28} showWordmark />
           </div>
@@ -94,6 +94,34 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
 
         {/* Bottom Studio Footer */}
         <div className="p-2 min-[1280px]:p-3 border-t border-border">
+          <div className="mb-1 space-y-0.5">
+            {PINNED_NAV_IDS.map((id) => {
+              const item = NAV_ITEMS.find((entry) => entry.id === id);
+              if (!item) return null;
+              const Icon = item.icon;
+              const isActive = activePage === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onSelectPage(item.id)}
+                  aria-current={isActive ? "page" : undefined}
+                  aria-label={item.label}
+                  title={item.label}
+                  className={`w-full flex items-center justify-center min-[1280px]:justify-start gap-2.5 h-8 min-[1280px]:px-2.5 rounded-lg text-small font-semibold transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] cursor-pointer ${
+                    isActive
+                      ? "bg-accent-solid text-accent-fg"
+                      : "text-fg-muted hover:text-fg hover:bg-surface-subtle"
+                  }`}
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  <span className="hidden min-[1280px]:inline truncate">
+                    {item.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
           <button
             type="button"
             onClick={() =>

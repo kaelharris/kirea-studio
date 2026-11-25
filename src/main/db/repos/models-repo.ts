@@ -472,4 +472,17 @@ export class ModelsRepository {
       completedAt: r.completed_at ? String(r.completed_at) : null,
     }));
   }
+
+  deleteDownload(id: string): void {
+    this.studioDb.db.prepare("DELETE FROM downloads WHERE id = ?").run(id);
+  }
+
+  clearCompletedDownloads(): number {
+    const info = this.studioDb.db
+      .prepare(
+        "DELETE FROM downloads WHERE status IN ('completed', 'failed', 'cancelled')"
+      )
+      .run();
+    return Number(info.changes);
+  }
 }

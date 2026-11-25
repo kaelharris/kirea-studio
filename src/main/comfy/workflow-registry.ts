@@ -1,4 +1,9 @@
-export { WORKFLOW_TEMPLATES, getWorkflowById } from "./workflow-templates";
+export {
+  WORKFLOW_TEMPLATES,
+  getWorkflowById,
+  isAnimaWorkflow,
+  isKrea2Workflow,
+} from "./workflow-templates";
 export {
   clampRefinerCreativity,
   validateGenerationRequest,

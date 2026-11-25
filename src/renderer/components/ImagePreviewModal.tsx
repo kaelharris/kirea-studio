@@ -5,11 +5,14 @@ import {
   ChevronRight,
   Copy,
   Download,
+  Expand,
   FolderOpen,
+  FolderPlus,
   Heart,
   Info,
   Maximize2,
   Minimize2,
+  Paintbrush,
   SlidersHorizontal,
   Sparkles,
   Tag,
@@ -34,6 +37,8 @@ import {
   ConfirmDialog,
   Input,
   Select,
+  isInteractiveKeyboardTarget,
+  useDialogFocus,
 } from "./ui/Primitives";
 import { ComparisonSlider } from "./ui/ComparisonSlider";
 import { ZoomableImage } from "./ui/ZoomableImage";
@@ -56,6 +61,10 @@ interface ImagePreviewModalProps {
   onClose: () => void;
   onReuseSettings: (image: GeneratedImageRecord) => void;
   onUpscaleImage?: (image: GeneratedImageRecord) => void;
+  onSendToWorkflow?: (
+    image: GeneratedImageRecord,
+    targetWorkflow: "edit" | "inpaint" | "outpaint" | "variations" | "upscale"
+  ) => void;
   onToggleFavorite: (id: string) => Promise<void>;
   onUpdateMeta: (
     id: string,
@@ -80,6 +89,7 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
   onClose,
   onReuseSettings,
   onUpscaleImage,
+  onSendToWorkflow,
   onToggleFavorite,
   onUpdateMeta,
   onAddToCharacter,
@@ -100,6 +110,63 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
   const [customCompareSrc, setCustomCompareSrc] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const copiedPromptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useDialogFocus(Boolean(image) && !confirmDeleteOpen, onClose, panelRef);
+
+  // 3-second auto-hiding inactivity timer for immersive fullscreen viewing
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const resetInactivityTimer = useCallback(() => {
+    setControlsVisible(true);
+    if (inactivityTimerRef.current) {
+      clearTimeout(inactivityTimerRef.current);
+    }
+    inactivityTimerRef.current = setTimeout(() => {
+      setControlsVisible(false);
+    }, 3000);
+  }, []);
+
+  // When active image changes or modal mounts, reset timer and keep controls visible
+  useEffect(() => {
+    if (!image) return;
+    resetInactivityTimer();
+    return () => {
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current);
+      }
+      if (copiedPromptTimerRef.current) {
+        clearTimeout(copiedPromptTimerRef.current);
+      }
+    };
+  }, [image, resetInactivityTimer]);
+
+  // Activity listeners to reset countdown on mouse move, touch, or key interaction
+  useEffect(() => {
+    if (!image) return;
+    const handleActivity = () => {
+      resetInactivityTimer();
+    };
+
+    window.addEventListener("mousemove", handleActivity, { passive: true });
+    window.addEventListener("pointermove", handleActivity, { passive: true });
+    window.addEventListener("touchstart", handleActivity, { passive: true });
+
+    return () => {
+      window.removeEventListener("mousemove", handleActivity);
+      window.removeEventListener("pointermove", handleActivity);
+      window.removeEventListener("touchstart", handleActivity);
+    };
+  }, [image, resetInactivityTimer]);
+
+  const areControlsVisible = controlsVisible || showDetails || confirmDeleteOpen;
+
+  useEffect(() => {
+    if (!image || areControlsVisible) return;
+    if (panelRef.current?.contains(document.activeElement)) {
+      panelRef.current.focus();
+    }
+  }, [image, areControlsVisible]);
 
   // Compute navigation indices
   const currentIndex = images.findIndex((img) => img.id === image?.id);
@@ -108,18 +175,20 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
   const canGoNext = hasMultiple;
 
   const goToPrev = useCallback(() => {
+    resetInactivityTimer();
     if (!hasMultiple || !onSelectImage) return;
     const prevIndex = (currentIndex - 1 + images.length) % images.length;
     const target = images[prevIndex];
     if (target) onSelectImage(target);
-  }, [hasMultiple, currentIndex, images, onSelectImage]);
+  }, [hasMultiple, currentIndex, images, onSelectImage, resetInactivityTimer]);
 
   const goToNext = useCallback(() => {
+    resetInactivityTimer();
     if (!hasMultiple || !onSelectImage) return;
     const nextIndex = (currentIndex + 1) % images.length;
     const target = images[nextIndex];
     if (target) onSelectImage(target);
-  }, [hasMultiple, currentIndex, images, onSelectImage]);
+  }, [hasMultiple, currentIndex, images, onSelectImage, resetInactivityTimer]);
 
   // Comparison eligibility
   const effectiveSourcePath = image?.sourceImagePath || customCompareSrc;
@@ -142,12 +211,13 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
 
   // Fullscreen event listener
   useEffect(() => {
+    if (!image) return;
     const handleFsChange = () => {
       setIsFullscreen(Boolean(document.fullscreenElement));
     };
     document.addEventListener("fullscreenchange", handleFsChange);
     return () => document.removeEventListener("fullscreenchange", handleFsChange);
-  }, []);
+  }, [image]);
 
   const toggleFullscreen = async () => {
     try {
@@ -166,9 +236,8 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
     if (!image || confirmDeleteOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if user is typing into an input/textarea
-      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
-      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      if (isInteractiveKeyboardTarget(e.target)) return;
+      resetInactivityTimer();
 
       if (e.key === "ArrowLeft") {
         e.preventDefault();
@@ -193,7 +262,7 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [image, confirmDeleteOpen, goToPrev, goToNext, onClose, canCompare]);
+  }, [image, confirmDeleteOpen, goToPrev, goToNext, onClose, canCompare, resetInactivityTimer]);
 
   if (!image) return null;
 
@@ -218,9 +287,14 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
   };
 
   const handleCopyPrompt = async (): Promise<void> => {
-    await navigator.clipboard.writeText(image.prompt);
-    setCopiedPrompt(true);
-    setTimeout(() => setCopiedPrompt(false), 1800);
+    try {
+      await navigator.clipboard.writeText(image.prompt);
+      setCopiedPrompt(true);
+      if (copiedPromptTimerRef.current) clearTimeout(copiedPromptTimerRef.current);
+      copiedPromptTimerRef.current = setTimeout(() => setCopiedPrompt(false), 1800);
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : "Prompt could not be copied.", "error");
+    }
   };
 
   const handleAddTag = async (e: React.FormEvent): Promise<void> => {
@@ -283,10 +357,20 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-label={`Inspect ${image.fileName}`}
+        aria-hidden={confirmDeleteOpen}
+        inert={confirmDeleteOpen}
         ref={panelRef}
       >
         {/* TOP FLOATING HUD BAR */}
-        <header className="absolute top-0 inset-x-0 z-40 flex items-center justify-between p-3.5 bg-gradient-to-b from-black/85 via-black/40 to-transparent pointer-events-auto">
+        <header
+          aria-hidden={!areControlsVisible}
+          inert={!areControlsVisible}
+          className={`absolute top-0 inset-x-0 z-40 flex items-center justify-between p-3.5 bg-gradient-to-b from-[#0B0C10]/95 via-[#0B0C10]/60 to-transparent transition-opacity duration-300 ease-out motion-reduce:transition-none ${
+            areControlsVisible
+              ? "opacity-100 pointer-events-auto"
+              : "opacity-0 pointer-events-none"
+          }`}
+        >
           {/* Left Metadata / Index Badges */}
           <div className="flex items-center gap-2.5 min-w-0">
             {hasMultiple && (
@@ -328,63 +412,8 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
             )}
           </div>
 
-          {/* Right Action Buttons */}
+          {/* Right Header Navigation & Modals */}
           <div className="flex items-center gap-1.5 shrink-0">
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                onReuseSettings(image);
-                onClose();
-              }}
-              title="Reuse generation prompt and settings in Create"
-              className="bg-white/10 hover:bg-white/20 text-white border-white/15"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Reuse Settings</span>
-            </Button>
-
-            {onUpscaleImage && (
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => {
-                  onUpscaleImage(image);
-                  onClose();
-                }}
-                title="Send to AI Upscaler"
-                className="bg-white/10 hover:bg-white/20 text-white border-white/15"
-              >
-                <Maximize2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Upscale</span>
-              </Button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => void handleDownloadOriginal()}
-              disabled={isExporting}
-              aria-label="Download original image"
-              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white border border-white/15 transition-colors cursor-pointer disabled:opacity-50"
-              title="Download original unmodified file"
-            >
-              <Download className="w-4 h-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => void onToggleFavorite(image.id)}
-              aria-label={image.favorite ? "Remove favorite" : "Favorite"}
-              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white border border-white/15 transition-colors cursor-pointer"
-              title="Favorite (Heart)"
-            >
-              <Heart
-                className={`w-4 h-4 ${
-                  image.favorite ? "fill-danger text-danger" : "text-white/80"
-                }`}
-              />
-            </button>
-
             <button
               type="button"
               onClick={() => setShowDetails((p) => !p)}
@@ -421,8 +450,8 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
           </div>
         </header>
 
-        {/* MAIN VISUAL CANVAS: 1ST FULL SCREEN */}
-        <main className="relative w-full h-full flex items-center justify-center overflow-hidden p-2 sm:p-4 md:p-6">
+        {/* MAIN VISUAL CANVAS: IMMERSIVE FULL SCREEN */}
+        <main className="relative w-full h-full flex items-center justify-center overflow-hidden p-0 m-0">
           {compareMode && effectiveSourcePath ? (
             <div className="w-full h-full max-w-full max-h-full flex items-center justify-center">
               <ComparisonSlider
@@ -442,15 +471,19 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
           )}
 
           {/* FLOATING PREVIOUS / NEXT NAVIGATION BUTTONS */}
-          {hasMultiple && (
+          {hasMultiple && areControlsVisible && (
             <>
               <button
                 type="button"
                 onClick={goToPrev}
                 disabled={!canGoPrev}
-                aria-label="Previous generation"
-                title="Previous generation (←)"
-                className="absolute left-4 top-1/2 -translate-y-1/2 z-30 p-3 rounded-full bg-black/60 hover:bg-accent text-white backdrop-blur border border-white/15 shadow-2xl transition-all hover:scale-110 active:scale-95 cursor-pointer disabled:opacity-20"
+                aria-label="Previous artwork (Arrow Left)"
+                title="Previous artwork (←)"
+                className={`absolute left-4 top-1/2 -translate-y-1/2 z-30 p-3 rounded-full bg-[#0B0C10]/80 hover:bg-[#1E3BFF] text-white border border-white/20 shadow-2xl transition-all hover:scale-110 active:scale-95 cursor-pointer disabled:opacity-20 motion-reduce:transition-none ${
+                  areControlsVisible
+                    ? "opacity-100 pointer-events-auto"
+                    : "opacity-0 pointer-events-none"
+                }`}
               >
                 <ChevronLeft className="w-6 h-6 stroke-[2.5]" />
               </button>
@@ -459,25 +492,190 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
                 type="button"
                 onClick={goToNext}
                 disabled={!canGoNext}
-                aria-label="Next generation"
-                title="Next generation (→)"
-                className="absolute right-4 top-1/2 -translate-y-1/2 z-30 p-3 rounded-full bg-black/60 hover:bg-accent text-white backdrop-blur border border-white/15 shadow-2xl transition-all hover:scale-110 active:scale-95 cursor-pointer disabled:opacity-20"
+                aria-label="Next artwork (Arrow Right)"
+                title="Next artwork (→)"
+                className={`absolute right-4 top-1/2 -translate-y-1/2 z-30 p-3 rounded-full bg-[#0B0C10]/80 hover:bg-[#1E3BFF] text-white border border-white/20 shadow-2xl transition-all hover:scale-110 active:scale-95 cursor-pointer disabled:opacity-20 motion-reduce:transition-none ${
+                  areControlsVisible
+                    ? "opacity-100 pointer-events-auto"
+                    : "opacity-0 pointer-events-none"
+                }`}
               >
                 <ChevronRight className="w-6 h-6 stroke-[2.5]" />
               </button>
             </>
           )}
-
-          {/* BOTTOM FLOATING PROMPT SNIPPET */}
-          <footer className="absolute bottom-4 inset-x-4 z-30 flex items-center justify-center pointer-events-none">
-            <div className="max-w-2xl px-4 py-2 rounded-full bg-black/75 border border-white/10 text-white/90 text-xs truncate backdrop-blur pointer-events-auto text-center shadow-lg">
-              {image.prompt || "No prompt recorded"}
-            </div>
-          </footer>
         </main>
+
+        {/* CONTEXTUAL ACTION DOCK (7 REQUIRED ACTIONS) */}
+        <div
+          aria-hidden={!areControlsVisible}
+          inert={!areControlsVisible}
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 p-2 rounded-xl bg-[#0B0C10]/90 border border-white/20 shadow-2xl backdrop-blur-md transition-opacity duration-300 ease-out motion-reduce:transition-none ${
+            areControlsVisible
+              ? "opacity-100 pointer-events-auto"
+              : "opacity-0 pointer-events-none"
+          }`}
+        >
+          {/* 1. Upscale */}
+          {onUpscaleImage && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                onUpscaleImage(image);
+                onClose();
+              }}
+              title="Send artwork to AI Upscaler"
+              className="bg-white/10 hover:bg-white/20 text-white border-white/15 text-xs font-mono uppercase"
+            >
+              <Maximize2 className="w-3.5 h-3.5 mr-1 text-[#1E3BFF]" />
+              Upscale
+            </Button>
+          )}
+
+          {/* 2. Reuse Settings */}
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              onReuseSettings(image);
+              onClose();
+            }}
+            title="Restore prompt, model, seed and parameters in Create Studio"
+            className="bg-white/10 hover:bg-white/20 text-white border-white/15 text-xs font-mono uppercase"
+          >
+            <Sparkles className="w-3.5 h-3.5 mr-1 text-[#1E3BFF]" />
+            Reuse Settings
+          </Button>
+
+          {/* 3. Copy Prompt */}
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => void handleCopyPrompt()}
+            title="Copy positive prompt to clipboard"
+            className={`text-xs font-mono uppercase transition-colors ${
+              copiedPrompt
+                ? "bg-[#1E3BFF]/20 text-[#1E3BFF] border-[#1E3BFF]"
+                : "bg-white/10 hover:bg-white/20 text-white border-white/15"
+            }`}
+          >
+            {copiedPrompt ? (
+              <>
+                <Check className="w-3.5 h-3.5 mr-1 text-[#1E3BFF]" />
+                [COPIED ✓]
+              </>
+            ) : (
+              <>
+                <Copy className="w-3.5 h-3.5 mr-1" />
+                Copy Prompt
+              </>
+            )}
+          </Button>
+
+          {/* 4. Inpaint */}
+          {onSendToWorkflow && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                onSendToWorkflow(image, "inpaint");
+                onClose();
+              }}
+              title="Send image to Inpainting workflow"
+              className="bg-white/10 hover:bg-white/20 text-white border-white/15 text-xs font-mono uppercase"
+            >
+              <Paintbrush className="w-3.5 h-3.5 mr-1 text-[#1E3BFF]" />
+              Inpaint
+            </Button>
+          )}
+
+          {/* 5. Outpaint */}
+          {onSendToWorkflow && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                onSendToWorkflow(image, "outpaint");
+                onClose();
+              }}
+              title="Send image to Outpainting canvas"
+              className="bg-white/10 hover:bg-white/20 text-white border-white/15 text-xs font-mono uppercase"
+            >
+              <Expand className="w-3.5 h-3.5 mr-1 text-[#1E3BFF]" />
+              Outpaint
+            </Button>
+          )}
+
+          {/* 6. Save to Collection */}
+          <div className="relative flex items-center">
+            <select
+              value={image.collectionId ?? ""}
+              onChange={(e) => {
+                const colId = e.target.value ? e.target.value : null;
+                void onUpdateMeta(image.id, { collectionId: colId });
+                onToast(colId ? "Added to collection." : "Removed from collection.");
+              }}
+              className="h-8 px-2 text-xs font-mono bg-white/10 hover:bg-white/20 text-white border border-white/15 rounded-md cursor-pointer focus:outline-none"
+              title="Assign or remove from collection"
+            >
+              <option value="" className="bg-[#0B0C10] text-[#F2F2EE]">
+                📁 No Collection
+              </option>
+              {collections.map((col) => (
+                <option key={col.id} value={col.id} className="bg-[#0B0C10] text-[#F2F2EE]">
+                  📁 {col.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="h-4 w-px bg-white/20 mx-0.5" />
+
+          {/* Favorite */}
+          <button
+            type="button"
+            onClick={() => void onToggleFavorite(image.id)}
+            aria-label={image.favorite ? "Remove favorite" : "Favorite"}
+            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white border border-white/15 transition-colors cursor-pointer"
+            title="Favorite (Heart)"
+          >
+            <Heart
+              className={`w-4 h-4 ${
+                image.favorite ? "fill-danger text-danger" : "text-white/80"
+              }`}
+            />
+          </button>
+
+          {/* Download Original */}
+          <button
+            type="button"
+            onClick={() => void handleDownloadOriginal()}
+            disabled={isExporting}
+            aria-label="Download original image"
+            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white border border-white/15 transition-colors cursor-pointer disabled:opacity-50"
+            title="Download original file"
+          >
+            <Download className="w-4 h-4" />
+          </button>
+
+          {/* 7. Delete */}
+          <Button
+            size="sm"
+            variant="danger"
+            onClick={() => setConfirmDeleteOpen(true)}
+            className="text-xs font-mono uppercase"
+            title="Delete this artwork (requires confirmation)"
+          >
+            <Trash2 className="w-3.5 h-3.5 mr-1" />
+            Delete
+          </Button>
+        </div>
 
         {/* SLIDE-OUT METADATA & PARAMETERS DRAWER */}
         <aside
+          aria-hidden={!showDetails}
+          inert={!showDetails}
           className={`fixed top-0 right-0 bottom-0 z-50 w-full max-w-sm sm:max-w-md bg-surface/95 backdrop-blur-xl border-l border-border shadow-2xl flex flex-col transition-transform duration-250 ease-out ${
             showDetails ? "translate-x-0" : "translate-x-full"
           }`}
@@ -772,13 +970,15 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
 
       <ConfirmDialog
         open={confirmDeleteOpen}
+        zIndexClass="z-[60]"
         onClose={() => setConfirmDeleteOpen(false)}
         onConfirm={() => {
           void onDelete(image.id).then(onClose);
         }}
         title="Delete Generated Image"
-        description={`Remove '${image.fileName}' from disk and from your Kirea Studio library? This cannot be undone.`}
+        description={`Permanently remove '${image.fileName}' (${image.width}×${image.height} · ${getModelRefDisplayName(models, image.checkpoint)}) from your disk and library? This action cannot be undone.`}
         confirmLabel="Delete Permanently"
+        defaultFocusConfirm
         danger
       />
     </>

@@ -84,13 +84,13 @@ function makeModelRecord(overrides: Partial<ModelRecord> = {}): ModelRecord {
 }
 
 describe("StudioDatabase & StudioRepository", () => {
-  it("initializes schema v7 and persists settings, images, collections, and prompts across restarts", () => {
+  it("initializes the current schema and persists settings, images, collections, and prompts across restarts", () => {
     const dir = makeTempDir();
     const dbPath = path.join(dir, "studio.db");
 
     const db1 = new StudioDatabase(dbPath);
     expect(db1.recoveredFromCorruption).toBe(false);
-    expect(db1.getSchemaVersion()).toBe(12);
+    expect(db1.getSchemaVersion()).toBe(17);
 
     const repo1 = new StudioRepository(db1);
     repo1.upsertWorkflowMetadata(WORKFLOW_TEMPLATES);
@@ -309,7 +309,7 @@ describe("StudioDatabase & StudioRepository", () => {
 
     const db = new StudioDatabase(dbPath);
     expect(db.recoveredFromCorruption).toBe(true);
-    expect(db.getSchemaVersion()).toBe(12);
+    expect(db.getSchemaVersion()).toBe(17);
     db.close();
 
     const files = fs.readdirSync(dir);
@@ -344,7 +344,7 @@ describe("StudioDatabase & StudioRepository", () => {
     raw.close();
 
     const db = new StudioDatabase(dbPath);
-    expect(db.getSchemaVersion()).toBe(12);
+    expect(db.getSchemaVersion()).toBe(17);
 
     const tableNames = (
       db.db
@@ -446,7 +446,7 @@ describe("StudioDatabase & StudioRepository", () => {
     raw.close();
 
     const db = new StudioDatabase(dbPath);
-    expect(db.getSchemaVersion()).toBe(12);
+    expect(db.getSchemaVersion()).toBe(17);
     const rows = db.db
       .prepare(
         "SELECT frame_index, name, duration_ms, frame_id FROM pixel_frames WHERE asset_id = ? ORDER BY frame_index"

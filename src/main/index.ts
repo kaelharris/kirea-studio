@@ -25,11 +25,17 @@ import { HuggingFaceService } from "./huggingface/hf-service";
 import { HuggingFaceTokenStore } from "./huggingface/token-store";
 import { detectHardwareStats } from "./hardware/gpu-detector";
 import { registerIpcHandlers } from "./ipc/register-handlers";
+import { shutdownTraining } from "./ipc/handlers/stories-handlers";
 import { JobOrchestrator } from "./jobs/job-orchestrator";
 import { StudioLogger } from "./logger";
 import { ModelScanner } from "./models/model-scanner";
 import { resolveStudioPaths, type StudioPaths } from "./paths";
 import { isPathInsideAnyRoot } from "./security";
+import {
+  getSplashPresentation,
+  shouldRevealMainWindow,
+} from "./startup/splash-gate";
+import { reconcileInterruptedTrainingJobs } from "./training/training-manager";
 import { createElectronUpdaterHandle } from "./updater/electron-updater-adapter";
 import { createFileUpdatePreferenceStore } from "./updater/update-preference-store";
 import { UpdateService } from "./updater/update-service";
@@ -63,6 +69,11 @@ if (!SINGLE_LOCK) {
 let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
 let splashShownAt = 0;
+let splashRevealTimer: NodeJS.Timeout | null = null;
+let splashDismissed = false;
+let mainWindowReady = false;
+let runtimeStartupFinished = false;
+let openAnywayRequested = false;
 const SPLASH_MIN_VISIBLE_MS = 1600;
 const SPLASH_EXIT_FADE_MS = 220;
 let isQuitting = false;
@@ -158,17 +169,77 @@ function createSplashWindow(): BrowserWindow | null {
   void splash.loadFile(htmlPath).catch(() => {
     if (!splash.isDestroyed()) splash.close();
   });
+  splash.once("closed", () => {
+    if (splashWindow === splash) splashWindow = null;
+    if (splashDismissed) return;
+    openAnywayRequested = true;
+    if (mainWindowReady) revealMainWindow();
+  });
   return splash;
 }
 
-function dismissSplashWithCrossFade(): void {
-  const splash = splashWindow;
-  splashWindow = null;
-
+function revealMainWindow(): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.show();
     mainWindow.focus();
   }
+}
+
+function updateSplashFromRuntime(runtime: ComfyRuntimeManager): void {
+  const splash = splashWindow;
+  if (!splash || splash.isDestroyed() || splash.webContents.isLoading()) return;
+  const state = runtime.getState();
+  const presentation = getSplashPresentation(
+    state.status,
+    state.lastError,
+    state.isConfiguredPathValid
+  );
+  void splash.webContents
+    .executeJavaScript(`window.kireaSplash?.update(${JSON.stringify(presentation)})`, true)
+    .catch(() => undefined);
+}
+
+function maybeDismissSplash(runtime: ComfyRuntimeManager): void {
+  if (!mainWindow || mainWindow.isDestroyed() || splashDismissed) return;
+  const minimumVisibleElapsed =
+    !splashShownAt || Date.now() - splashShownAt >= SPLASH_MIN_VISIBLE_MS;
+  const gateState = {
+    mainWindowReady,
+    minimumVisibleElapsed,
+    runtimeStartupFinished,
+    runtimeStatus: runtime.getState().status,
+    openAnywayRequested,
+  };
+
+  if (!shouldRevealMainWindow(gateState)) {
+    const readyAfterHold = shouldRevealMainWindow({
+      ...gateState,
+      minimumVisibleElapsed: true,
+    });
+    if (readyAfterHold && !splashRevealTimer) {
+      const holdMs = Math.max(0, SPLASH_MIN_VISIBLE_MS - (Date.now() - splashShownAt));
+      splashRevealTimer = setTimeout(() => {
+        splashRevealTimer = null;
+        maybeDismissSplash(runtime);
+      }, holdMs);
+    }
+    return;
+  }
+
+  if (splashRevealTimer) {
+    clearTimeout(splashRevealTimer);
+    splashRevealTimer = null;
+  }
+  dismissSplashWithCrossFade();
+}
+
+function dismissSplashWithCrossFade(): void {
+  if (splashDismissed) return;
+  splashDismissed = true;
+  const splash = splashWindow;
+  splashWindow = null;
+
+  revealMainWindow();
 
   if (!splash || splash.isDestroyed()) return;
   if (splash.webContents.isDestroyed() || splash.webContents.isLoading()) {
@@ -285,6 +356,7 @@ async function bootstrapApplication(): Promise<void> {
   }
   const repo = new StudioRepository(studioDb);
   repo.upsertWorkflowMetadata(WORKFLOW_TEMPLATES);
+  reconcileInterruptedTrainingJobs(repo, logger);
 
   const detectedComfy = discoverExistingComfyPaths();
   const defaultSettings = buildDefaultSettings(paths, detectedComfy[0] ?? "");
@@ -477,6 +549,8 @@ async function bootstrapApplication(): Promise<void> {
   };
 
   runtime.on("stateChanged", (state) => {
+    updateSplashFromRuntime(runtime);
+    maybeDismissSplash(runtime);
     pushToRenderer(IPC_CHANNELS.EVENT_RUNTIME_CHANGED, state);
   });
   jobOrchestrator.on("jobUpdated", (job) => {
@@ -553,10 +627,8 @@ async function bootstrapApplication(): Promise<void> {
   });
 
   mainWindow.once("ready-to-show", () => {
-    const holdMs = splashShownAt
-      ? Math.max(0, SPLASH_MIN_VISIBLE_MS - (Date.now() - splashShownAt))
-      : 0;
-    setTimeout(dismissSplashWithCrossFade, holdMs);
+    mainWindowReady = true;
+    maybeDismissSplash(runtime);
   });
 
   mainWindow.on("closed", () => {
@@ -569,7 +641,26 @@ async function bootstrapApplication(): Promise<void> {
     await mainWindow.loadFile(expectedHtmlPath);
   }
 
-  // Background startup tasks (read-only GPU probe, initial model scan, passive ComfyUI probe)
+  const runtimeStartupPromise = (async () => {
+    try {
+      updateSplashFromRuntime(runtime);
+      const connection = await runtime.testConnection();
+      if (connection.status !== "connected") {
+        if (!connection.isConfiguredPathValid) {
+          throw new Error("No local ComfyUI installation is configured.");
+        }
+        await runtime.startRuntime();
+      }
+    } catch (err) {
+      logger.warn("startup", "ComfyUI startup failed", String(err));
+    } finally {
+      runtimeStartupFinished = true;
+      updateSplashFromRuntime(runtime);
+      maybeDismissSplash(runtime);
+    }
+  })();
+
+  // Background startup tasks (read-only GPU probe and initial model scan)
   void (async () => {
     try {
       const hw = await detectHardwareStats([
@@ -580,15 +671,7 @@ async function bootstrapApplication(): Promise<void> {
       ]);
       vramTotalMB = hw.vramTotalMB;
 
-      const connState = await runtime.testConnection();
-      if (connState.status !== "connected" && currentSettings.autoStartRuntime && connState.isConfiguredPathValid) {
-        try {
-          await runtime.startRuntime();
-        } catch (err) {
-          logger.warn("startup", "Auto-start ComfyUI failed", String(err));
-        }
-      }
-
+      await runtimeStartupPromise;
       const liveApi =
         runtime.getState().status === "connected" ? runtime.getApiClient() : null;
       const scanned = await modelScanner.scanAll(
@@ -604,7 +687,9 @@ async function bootstrapApplication(): Promise<void> {
   })();
 
   cleanupFn = async () => {
+    jobOrchestrator.prepareShutdown();
     civitaiDownloadManager.prepareShutdown();
+    shutdownTraining();
     await runtime.stopRuntime().catch(() => undefined);
     studioDb.close();
     logger.info("shutdown", "Kirea Studio shut down cleanly.");
@@ -638,6 +723,7 @@ app.on("before-quit", (event) => {
   }, 2500);
   fallbackTimer.unref();
   void (async () => {
+    shutdownTraining();
     if (cleanupFn) {
       await cleanupFn().catch(() => undefined);
     }

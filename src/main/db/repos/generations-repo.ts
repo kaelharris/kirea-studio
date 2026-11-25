@@ -30,23 +30,45 @@ export class GenerationsRepository {
           checkpoint, workflow_id, workflow_version, mode, settings_json,
           progress_step, progress_max, current_node, output_paths_json,
           submitted_at, started_at, completed_at, batch_index, batch_total,
-          character_id, lora_recipe_id, story_id, story_scene_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          character_id, lora_recipe_id, story_id, story_scene_id, startup_interrupted
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           prompt_id = excluded.prompt_id,
-          status = excluded.status,
-          error_kind = excluded.error_kind,
-          error_message = excluded.error_message,
-          progress_step = excluded.progress_step,
-          progress_max = excluded.progress_max,
-          current_node = excluded.current_node,
-          output_paths_json = excluded.output_paths_json,
-          started_at = excluded.started_at,
-          completed_at = excluded.completed_at,
-          character_id = excluded.character_id,
-          lora_recipe_id = excluded.lora_recipe_id,
-          story_id = excluded.story_id,
-          story_scene_id = excluded.story_scene_id`
+          status = CASE
+            WHEN generation_jobs.status = 'COMPLETED' THEN 'COMPLETED'
+            ELSE excluded.status
+          END,
+          error_kind = CASE
+            WHEN generation_jobs.status = 'COMPLETED' THEN 'NONE'
+            ELSE excluded.error_kind
+          END,
+          error_message = CASE
+            WHEN generation_jobs.status = 'COMPLETED' THEN NULL
+            ELSE excluded.error_message
+          END,
+          progress_step = CASE
+            WHEN generation_jobs.status = 'COMPLETED' THEN generation_jobs.progress_step
+            ELSE excluded.progress_step
+          END,
+          progress_max = CASE
+            WHEN generation_jobs.status = 'COMPLETED' THEN generation_jobs.progress_max
+            ELSE excluded.progress_max
+          END,
+          current_node = CASE
+            WHEN generation_jobs.status = 'COMPLETED' THEN NULL
+            ELSE excluded.current_node
+          END,
+          output_paths_json = CASE
+            WHEN generation_jobs.status = 'COMPLETED' AND excluded.output_paths_json = '[]' THEN generation_jobs.output_paths_json
+            ELSE excluded.output_paths_json
+          END,
+          started_at = COALESCE(generation_jobs.started_at, excluded.started_at),
+          completed_at = COALESCE(generation_jobs.completed_at, excluded.completed_at),
+          character_id = COALESCE(excluded.character_id, generation_jobs.character_id),
+          lora_recipe_id = COALESCE(excluded.lora_recipe_id, generation_jobs.lora_recipe_id),
+          story_id = COALESCE(excluded.story_id, generation_jobs.story_id),
+          story_scene_id = COALESCE(excluded.story_scene_id, generation_jobs.story_scene_id),
+          startup_interrupted = MAX(generation_jobs.startup_interrupted, excluded.startup_interrupted)`
       )
       .run(
         job.id,
@@ -73,7 +95,8 @@ export class GenerationsRepository {
         job.characterId ?? null,
         job.loraRecipeId ?? null,
         job.storyId ?? null,
-        job.storySceneId ?? null
+        job.storySceneId ?? null,
+        job.startupInterrupted ? 1 : 0
       );
 
     this.onSyncStoryScene(job);
@@ -111,6 +134,7 @@ export class GenerationsRepository {
       loraRecipeId: r.lora_recipe_id ? String(r.lora_recipe_id) : null,
       storyId: r.story_id ? String(r.story_id) : null,
       storySceneId: r.story_scene_id ? String(r.story_scene_id) : null,
+      startupInterrupted: Boolean(r.startup_interrupted),
     }));
   }
 
@@ -146,7 +170,40 @@ export class GenerationsRepository {
       loraRecipeId: row.lora_recipe_id ? String(row.lora_recipe_id) : null,
       storyId: row.story_id ? String(row.story_id) : null,
       storySceneId: row.story_scene_id ? String(row.story_scene_id) : null,
+      startupInterrupted: Boolean(row.startup_interrupted),
     };
+  }
+
+  hasOutputsForJob(jobId: string): boolean {
+    const img = this.studioDb.db
+      .prepare("SELECT 1 FROM generated_images WHERE job_id = ? LIMIT 1")
+      .get(jobId);
+    if (img) return true;
+    const vid = this.studioDb.db
+      .prepare("SELECT 1 FROM generated_videos WHERE job_id = ? LIMIT 1")
+      .get(jobId);
+    return Boolean(vid);
+  }
+
+  deleteJob(jobId: string): boolean {
+    const res = this.studioDb.db
+      .prepare("DELETE FROM generation_jobs WHERE id = ?")
+      .run(jobId);
+    return res.changes > 0;
+  }
+
+  deleteJobs(jobIds: string[]): number {
+    if (jobIds.length === 0) return 0;
+    const stmt = this.studioDb.db.prepare("DELETE FROM generation_jobs WHERE id = ?");
+    let count = 0;
+    const runTx = this.studioDb.db.transaction(() => {
+      for (const id of jobIds) {
+        const res = stmt.run(id);
+        if (res.changes > 0) count++;
+      }
+    });
+    runTx();
+    return count;
   }
 
   recordCompletedGenerationTx(

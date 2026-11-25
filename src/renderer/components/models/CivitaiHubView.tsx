@@ -80,10 +80,63 @@ const HUB_PROVIDERS: { id: HubProvider; label: string }[] = [
   { id: "local", label: "Local" },
 ];
 
+export type HubCategoryChip =
+  | "ALL"
+  | "CHARACTER"
+  | "STYLE"
+  | "CONCEPT"
+  | "CLOTHING"
+  | "BASE MODEL"
+  | "BACKGROUND"
+  | "TOOL"
+  | "POSES"
+  | "ASSETS"
+  | "VEHICLE"
+  | "BUILDINGS"
+  | "OBJECTS"
+  | "ACTION"
+  | "ANIMAL";
+
+export const CIVITAI_CATEGORY_CHIPS: HubCategoryChip[] = [
+  "ALL",
+  "CHARACTER",
+  "STYLE",
+  "CONCEPT",
+  "CLOTHING",
+  "BASE MODEL",
+  "BACKGROUND",
+  "TOOL",
+  "POSES",
+  "ASSETS",
+  "VEHICLE",
+  "BUILDINGS",
+  "OBJECTS",
+  "ACTION",
+  "ANIMAL",
+];
+
+export const CIVITAI_BASE_MODEL_SUB_OPTIONS = [
+  "SDXL 1.0",
+  "Illustrious",
+  "Pony",
+  "Flux.1 D",
+  "SD 1.5",
+  "Wan Video",
+];
+
+export const CIVITAI_PERIOD_PILLS: { id: CivitaiPeriod; label: string }[] = [
+  { id: "Day", label: "DAY" },
+  { id: "Week", label: "WEEK" },
+  { id: "Month", label: "MONTH" },
+  { id: "Year", label: "YEAR" },
+  { id: "AllTime", label: "ALL TIME" },
+];
+
 const PERIOD_LABELS: Record<CivitaiPeriod, string> = {
   Day: "Today",
   Week: "This week",
   Month: "This month",
+  Year: "This year",
   AllTime: "All time",
 };
 
@@ -113,6 +166,10 @@ interface CivitaiHubViewProps {
   setHubSort: (s: CivitaiSort) => void;
   hubPeriod: CivitaiPeriod;
   setHubPeriod: (p: CivitaiPeriod) => void;
+  hubCategoryChip: HubCategoryChip;
+  setHubCategoryChip: (c: HubCategoryChip) => void;
+  hubBaseModelSub: string;
+  setHubBaseModelSub: (b: string) => void;
   hubTab: HubTab;
   selectHubTab: (tab: HubTab) => void;
   hubProvider: HubProvider;
@@ -152,6 +209,10 @@ export const CivitaiHubView: React.FC<CivitaiHubViewProps> = ({
   setHubSort,
   hubPeriod,
   setHubPeriod,
+  hubCategoryChip,
+  setHubCategoryChip,
+  hubBaseModelSub,
+  setHubBaseModelSub,
   hubTab,
   selectHubTab,
   hubProvider,
@@ -430,22 +491,76 @@ export const CivitaiHubView: React.FC<CivitaiHubViewProps> = ({
       </Card>
     ) : (
       <>
-        <div className="p-3 rounded-xl bg-surface border border-border flex flex-wrap items-center gap-2">
+        {/* Horizontal Category Filter Bar */}
+        <div className="space-y-2">
+          <div
+            role="toolbar"
+            aria-label="Civitai Categories"
+            className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin"
+          >
+            {CIVITAI_CATEGORY_CHIPS.map((chip) => {
+              const isActive = hubCategoryChip === chip;
+              return (
+                <button
+                  key={chip}
+                  type="button"
+                  onClick={() => setHubCategoryChip(chip)}
+                  aria-pressed={isActive}
+                  className={`shrink-0 font-mono text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-none select-none cursor-pointer transition-none ${
+                    isActive
+                      ? "bg-[#1E3BFF] text-[#F2F2EE] border-2 border-[#F2F2EE]"
+                      : "bg-[#0B0C10] text-[#F2F2EE] border-2 border-[#F2F2EE]/30 hover:border-[#F2F2EE]"
+                  }`}
+                >
+                  {chip}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Crisp Sub-Selector when BASE MODEL is active */}
+          {hubCategoryChip === "BASE MODEL" && (
+            <div className="flex items-center gap-1.5 overflow-x-auto p-1.5 bg-[#0B0C10] border-2 border-[#1E3BFF] shadow-[2px_2px_0px_#1E3BFF]">
+              <span className="font-mono text-[10px] font-bold text-[#1E3BFF] uppercase tracking-wider px-1 shrink-0">
+                BASE_ARCH:
+              </span>
+              {CIVITAI_BASE_MODEL_SUB_OPTIONS.map((opt) => {
+                const isSubActive = hubBaseModelSub === opt;
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setHubBaseModelSub(opt)}
+                    className={`shrink-0 font-mono text-[11px] font-bold uppercase px-2 py-0.5 rounded-none cursor-pointer transition-none ${
+                      isSubActive
+                        ? "bg-[#1E3BFF] text-[#F2F2EE] border-2 border-[#F2F2EE]"
+                        : "bg-[#0B0C10] text-[#F2F2EE]/80 border-2 border-[#F2F2EE]/30 hover:border-[#F2F2EE]"
+                    }`}
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="p-3 rounded-none bg-surface border-2 border-border flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[220px]">
-            <Search className="w-4 h-4 text-fg-subtle absolute left-3 top-2.5" />
+            <Search className="w-4 h-4 text-fg-subtle absolute left-3 top-2.5" strokeWidth={2} />
             <Input
               value={hubQuery}
               onChange={(e) => setHubQuery(e.target.value)}
               aria-label="Search Civitai"
               placeholder="Search Civitai models, creators, styles..."
-              className="pl-9"
+              className="pl-9 rounded-none border-2"
             />
           </div>
-          <div className="w-40 shrink-0">
+          <div className="w-36 shrink-0">
             <Select
               value={hubType}
               onChange={(e) => setHubType(e.target.value as "all" | CivitaiModelType)}
-              className="h-9 text-xs"
+              className="h-9 text-xs rounded-none border-2"
               aria-label="Filter by model type"
             >
               <option value="all">All types</option>
@@ -456,11 +571,11 @@ export const CivitaiHubView: React.FC<CivitaiHubViewProps> = ({
               ))}
             </Select>
           </div>
-          <div className="w-40 shrink-0">
+          <div className="w-36 shrink-0">
             <Select
               value={hubBase}
               onChange={(e) => setHubBase(e.target.value as "all" | CivitaiBaseModel)}
-              className="h-9 text-xs"
+              className="h-9 text-xs rounded-none border-2"
               aria-label="Filter by base architecture"
             >
               <option value="all">All architectures</option>
@@ -471,11 +586,11 @@ export const CivitaiHubView: React.FC<CivitaiHubViewProps> = ({
               ))}
             </Select>
           </div>
-          <div className="w-40 shrink-0">
+          <div className="w-36 shrink-0">
             <Select
               value={hubSort}
               onChange={(e) => setHubSort(e.target.value as CivitaiSort)}
-              className="h-9 text-xs"
+              className="h-9 text-xs rounded-none border-2"
               aria-label="Sort results"
             >
               {CIVITAI_SORTS.map((sort) => (
@@ -485,19 +600,34 @@ export const CivitaiHubView: React.FC<CivitaiHubViewProps> = ({
               ))}
             </Select>
           </div>
-          <div className="w-32 shrink-0">
-            <Select
-              value={hubPeriod}
-              onChange={(e) => setHubPeriod(e.target.value as CivitaiPeriod)}
-              className="h-9 text-xs"
-              aria-label="Time period"
-            >
-              {CIVITAI_PERIODS.map((period) => (
-                <option key={period} value={period}>
-                  {PERIOD_LABELS[period]}
-                </option>
-              ))}
-            </Select>
+
+          {/* Visible Period Selector Pill Bar */}
+          <div
+            role="group"
+            aria-label="Time period selector"
+            className="flex items-center gap-1 bg-[#0B0C10] p-1 border-2 border-border"
+          >
+            <span className="font-mono text-[10px] font-bold uppercase text-fg-subtle px-1 shrink-0">
+              PERIOD:
+            </span>
+            {CIVITAI_PERIOD_PILLS.map((pill) => {
+              const isPeriodActive = hubPeriod === pill.id;
+              return (
+                <button
+                  key={pill.id}
+                  type="button"
+                  onClick={() => setHubPeriod(pill.id)}
+                  aria-pressed={isPeriodActive}
+                  className={`font-mono text-[11px] font-bold uppercase px-2 py-0.5 rounded-none cursor-pointer transition-none ${
+                    isPeriodActive
+                      ? "bg-[#1E3BFF] text-[#F2F2EE] border-2 border-[#F2F2EE]"
+                      : "bg-[#0B0C10] text-[#F2F2EE]/70 border-2 border-[#F2F2EE]/30 hover:border-[#F2F2EE] hover:text-[#F2F2EE]"
+                  }`}
+                >
+                  {pill.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 

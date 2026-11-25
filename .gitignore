@@ -41,6 +41,39 @@ desktop.ini
 .env.*
 !.env.example
 
+# Local training tools and environments
+# Keep external/training source tracked; only generated weights/data are ignored below.
+external/sd-scripts/
+external/sd-scripts-venv/
+
+# Temporary generation and training work
+temp/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Large local model weights and datasets
+/models/
+/datasets/
+/training-data/
+/training-output/
+external/training/models/
+external/training/datasets/
+external/training/data/
+external/training/checkpoints/
+external/training/output/
+external/training/outputs/
+external/training/**/*.safetensors
+external/training/**/*.ckpt
+external/training/**/*.pt
+external/training/**/*.pth
+external/training/**/*.gguf
+external/training/**/*.onnx
+
 # Vendored pixel engines
 # SpriteKiln is GPL-3.0 and inspection-only; its source is never committed or packaged.
 external/pixel-engines/spritekiln/

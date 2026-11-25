@@ -1,13 +1,17 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
+  CheckSquare,
   Clock,
   Download,
+  Eraser,
   Pause,
   Play,
   RotateCcw,
   Square,
+  Square as SquareIcon,
+  Trash2,
   X,
 } from "lucide-react";
 import type {
@@ -22,6 +26,7 @@ import {
   Badge,
   Button,
   Card,
+  ConfirmDialog,
   EmptyState,
   SectionHeader,
 } from "../components/ui/Primitives";
@@ -38,8 +43,13 @@ interface QueuePageProps {
   models: ModelRecord[];
   downloads: DownloadTask[];
   onNavigate: (page: NavSection) => void;
+  onClearDownloads?: () => void;
+  onDeleteJob?: (jobId: string) => Promise<void>;
+  onDeleteJobs?: (jobIds: string[]) => Promise<void>;
   onToast: (msg: string, tone?: "info" | "error") => void;
 }
+
+type JobFilter = "all" | "active" | "failed" | "completed";
 
 function errorAdvice(kind: JobErrorKind): string | null {
   switch (kind) {
@@ -54,17 +64,118 @@ function errorAdvice(kind: JobErrorKind): string | null {
   }
 }
 
+function isJobActive(status: GenerationJob["status"]): boolean {
+  return (
+    status === "IDLE" ||
+    status === "VALIDATING" ||
+    status === "SUBMITTING" ||
+    status === "QUEUED" ||
+    status === "RUNNING" ||
+    status === "PROCESSING_OUTPUT"
+  );
+}
+
 export const QueuePage: React.FC<QueuePageProps> = ({
   jobs,
   models,
   downloads,
   onNavigate,
+  onClearDownloads,
+  onDeleteJob,
+  onDeleteJobs,
   onToast,
 }) => {
+  const [filter, setFilter] = useState<JobFilter>("all");
+  const [selectedFailedIds, setSelectedFailedIds] = useState<Set<string>>(new Set());
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [bulkDeleteTarget, setBulkDeleteTarget] = useState<{
+    ids: string[];
+    label: string;
+  } | null>(null);
+
+  const activeJobs = useMemo(
+    () => jobs.filter((j) => isJobActive(j.status)),
+    [jobs]
+  );
+  const failedJobs = useMemo(
+    () => jobs.filter((j) => j.status === "FAILED" || j.status === "CANCELLED"),
+    [jobs]
+  );
+  const completedJobs = useMemo(
+    () => jobs.filter((j) => j.status === "COMPLETED"),
+    [jobs]
+  );
+
+  const filteredJobs = useMemo(() => {
+    switch (filter) {
+      case "active":
+        return activeJobs;
+      case "failed":
+        return failedJobs;
+      case "completed":
+        return completedJobs;
+      case "all":
+      default:
+        return jobs;
+    }
+  }, [filter, jobs, activeJobs, failedJobs, completedJobs]);
+
   const handleRetry = async (jobId: string): Promise<void> => {
     try {
       await window.kirea.retryJob(jobId);
       onToast("Job re-queued.");
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : String(err), "error");
+    }
+  };
+
+  const handleToggleSelectFailed = (id: string) => {
+    setSelectedFailedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAllFailed = () => {
+    if (selectedFailedIds.size === failedJobs.length) {
+      setSelectedFailedIds(new Set());
+    } else {
+      setSelectedFailedIds(new Set(failedJobs.map((j) => j.id)));
+    }
+  };
+
+  const handleConfirmSingleDelete = async () => {
+    if (!deleteTargetId || !onDeleteJob) return;
+    try {
+      await onDeleteJob(deleteTargetId);
+      setSelectedFailedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(deleteTargetId);
+        return next;
+      });
+      setDeleteTargetId(null);
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : String(err), "error");
+    }
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    if (!bulkDeleteTarget || !onDeleteJobs) return;
+    try {
+      await onDeleteJobs(bulkDeleteTarget.ids);
+      setSelectedFailedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of bulkDeleteTarget.ids) {
+          next.delete(id);
+        }
+        return next;
+      });
+      setBulkDeleteTarget(null);
     } catch (err) {
       onToast(err instanceof Error ? err.message : String(err), "error");
     }
@@ -85,9 +196,28 @@ export const QueuePage: React.FC<QueuePageProps> = ({
       {/* Active Downloads Section */}
       {downloads.length > 0 && (
         <div className="space-y-3">
-          <h2 className="label-mono text-label">
-            Download Manager ({downloads.length})
-          </h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="label-mono text-label">
+              Download Manager ({downloads.length})
+            </h2>
+            {downloads.some(
+              (dl) =>
+                dl.status === "completed" ||
+                dl.status === "failed" ||
+                dl.status === "cancelled"
+            ) && onClearDownloads && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={onClearDownloads}
+                className="font-mono text-xs uppercase"
+                title="Clear finished downloads from list (files on disk are preserved)"
+              >
+                <Eraser className="w-3.5 h-3.5 mr-1" />
+                Clear History
+              </Button>
+            )}
+          </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {downloads.map((dl) => {
               const pct =
@@ -199,27 +329,117 @@ export const QueuePage: React.FC<QueuePageProps> = ({
       )}
 
       {/* Generation Jobs */}
-      <div className="space-y-3">
-        <h2 className="label-mono text-label">
-          Generation Job History ({jobs.length})
-        </h2>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <h2 className="label-mono text-label">
+              Generation Job History ({jobs.length})
+            </h2>
 
-        {jobs.length === 0 ? (
+            {/* Status Filter Chips */}
+            <div className="flex items-center gap-1.5 p-1 bg-surface-subtle border border-border">
+              {(
+                [
+                  { id: "all", label: "ALL", count: jobs.length },
+                  { id: "active", label: "ACTIVE", count: activeJobs.length },
+                  { id: "failed", label: "FAILED", count: failedJobs.length },
+                  { id: "completed", label: "COMPLETED", count: completedJobs.length },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setFilter(tab.id)}
+                  className={`px-2.5 py-1 text-xs font-mono font-medium transition-colors ${
+                    filter === tab.id
+                      ? "bg-[#1E3BFF] text-[#F2F2EE]"
+                      : "text-fg-muted hover:text-fg hover:bg-surface"
+                  }`}
+                >
+                  {tab.label} ({tab.count})
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Bulk Action Controls */}
+          {failedJobs.length > 0 && onDeleteJobs && (
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleSelectAllFailed}
+                className="font-mono text-xs uppercase"
+              >
+                {selectedFailedIds.size === failedJobs.length && failedJobs.length > 0 ? (
+                  <>
+                    <CheckSquare className="w-3.5 h-3.5 mr-1 text-[#1E3BFF]" />
+                    Deselect All
+                  </>
+                ) : (
+                  <>
+                    <SquareIcon className="w-3.5 h-3.5 mr-1" />
+                    Select All Failed
+                  </>
+                )}
+              </Button>
+
+              {selectedFailedIds.size > 0 && (
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() =>
+                    setBulkDeleteTarget({
+                      ids: Array.from(selectedFailedIds),
+                      label: `${selectedFailedIds.size} Selected`,
+                    })
+                  }
+                  className="font-mono text-xs uppercase"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1" />
+                  Delete Selected ({selectedFailedIds.size})
+                </Button>
+              )}
+
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() =>
+                  setBulkDeleteTarget({
+                    ids: failedJobs.map((j) => j.id),
+                    label: "All Failed Jobs",
+                  })
+                }
+                className="font-mono text-xs uppercase"
+                title="Permanently remove all failed generation records from history"
+              >
+                <Eraser className="w-3.5 h-3.5 mr-1" />
+                Clear All Failed ({failedJobs.length})
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {filteredJobs.length === 0 ? (
           <EmptyState
             icon={<Clock className="w-5 h-5" />}
-            title="No generation jobs yet"
-            description="Jobs submitted from Create Studio appear here with real-time step progress and retry controls."
+            title={
+              filter === "all"
+                ? "No generation jobs yet"
+                : `No ${filter} generation jobs`
+            }
+            description={
+              filter === "all"
+                ? "Jobs submitted from Create Studio appear here with real-time step progress, deletion, and retry controls."
+                : `There are currently no jobs matching the '${filter}' filter.`
+            }
           />
         ) : (
           <div className="space-y-2.5">
-            {jobs.map((job) => {
-              const isActive =
-                job.status === "IDLE" ||
-                job.status === "VALIDATING" ||
-                job.status === "SUBMITTING" ||
-                job.status === "QUEUED" ||
-                job.status === "RUNNING" ||
-                job.status === "PROCESSING_OUTPUT";
+            {filteredJobs.map((job) => {
+              const isActive = isJobActive(job.status);
+              const isFailed = job.status === "FAILED" || job.status === "CANCELLED";
+              const isSelected = selectedFailedIds.has(job.id);
               const pct =
                 job.progressMax > 0
                   ? Math.min(100, Math.round((job.progressStep / job.progressMax) * 100))
@@ -227,8 +447,29 @@ export const QueuePage: React.FC<QueuePageProps> = ({
               const advice = errorAdvice(job.errorKind);
 
               return (
-                <Card key={job.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <Card
+                  key={job.id}
+                  className={`p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors ${
+                    isSelected ? "border-[#1E3BFF] bg-[#1E3BFF]/5" : ""
+                  }`}
+                >
                   <div className="flex items-start gap-3 min-w-0 flex-1">
+                    {/* Batch Selection Checkbox for Failed / Cancelled Jobs */}
+                    {isFailed && onDeleteJobs && (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleSelectFailed(job.id)}
+                        className="mt-1 text-fg-subtle hover:text-fg focus:outline-none shrink-0"
+                        title={isSelected ? "Deselect job" : "Select job for bulk deletion"}
+                      >
+                        {isSelected ? (
+                          <CheckSquare className="w-4 h-4 text-[#1E3BFF]" />
+                        ) : (
+                          <SquareIcon className="w-4 h-4 text-fg-muted" />
+                        )}
+                      </button>
+                    )}
+
                     {job.outputPaths[0] ? (
                       <MediaImage
                         src={toMediaUrl(job.outputPaths[0])}
@@ -310,24 +551,49 @@ export const QueuePage: React.FC<QueuePageProps> = ({
                         Cancel
                       </Button>
                     )}
-                    {(job.status === "FAILED" || job.status === "CANCELLED") && (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => void handleRetry(job.id)}
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        Retry
-                      </Button>
+                    {isFailed && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => void handleRetry(job.id)}
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          Retry
+                        </Button>
+                        {onDeleteJob && (
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            onClick={() => setDeleteTargetId(job.id)}
+                            title="Delete failed generation from history"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Delete
+                          </Button>
+                        )}
+                      </>
                     )}
                     {job.status === "COMPLETED" && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => onNavigate("library")}
-                      >
-                        View in Library
-                      </Button>
+                      <>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => onNavigate("library")}
+                        >
+                          View in Library
+                        </Button>
+                        {onDeleteJob && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setDeleteTargetId(job.id)}
+                            title="Remove job record from queue history (image remains in Library)"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-fg-subtle hover:text-danger" />
+                          </Button>
+                        )}
+                      </>
                     )}
                   </div>
                 </Card>
@@ -336,7 +602,32 @@ export const QueuePage: React.FC<QueuePageProps> = ({
           </div>
         )}
       </div>
+
+      {/* Confirmation Dialog for Single Job Deletion */}
+      <ConfirmDialog
+        open={Boolean(deleteTargetId)}
+        onClose={() => setDeleteTargetId(null)}
+        onConfirm={() => void handleConfirmSingleDelete()}
+        title="Delete Generation Job Record"
+        description="Are you sure you want to remove this generation record from history? Output images already saved to your library will not be affected."
+        confirmLabel="Delete"
+        danger={true}
+        defaultFocusConfirm={true}
+      />
+
+      {/* Confirmation Dialog for Bulk Job Deletion */}
+      <ConfirmDialog
+        open={Boolean(bulkDeleteTarget)}
+        onClose={() => setBulkDeleteTarget(null)}
+        onConfirm={() => void handleConfirmBulkDelete()}
+        title={`Delete ${bulkDeleteTarget?.ids.length ?? 0} Generation Records`}
+        description={`Are you sure you want to remove ${
+          bulkDeleteTarget?.label ?? "these records"
+        } from history? Output images in your Library will remain intact.`}
+        confirmLabel="Delete All"
+        danger={true}
+        defaultFocusConfirm={true}
+      />
     </div>
   );
 };
-

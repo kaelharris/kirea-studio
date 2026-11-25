@@ -27,7 +27,9 @@ The repository, release notes, installer, docs, issues, and license links are re
 - `site/assets/brand/` contains the existing Kirea mark and favicons.
 - `site/assets/fonts/` contains the existing Manrope and Geist Mono faces used by the application.
 
-Screenshots and the release link are pinned to the verified v1.0.1 Windows installer. Update the download URL and displayed version/size only after a new release is published.
+Screenshots and the release link are pinned to the verified v1.1.1 Windows installer. Update the download URL and displayed version/size only after a new release is published.
+
+`scripts/capture-site-shots.mjs` captures the app in a fresh temporary profile, lets the app initialize its schema, and seeds only the curated non-NSFW fixtures. It never copies the live database or links private model previews. Each capture writes `site/assets/shots/manifest.json` with the app version, git SHA, viewport, and screenshot filenames.
 
 ## Product tour
 
@@ -44,6 +46,7 @@ The "See KIREA in action" section is a tabbed showcase of six real application s
 ## Checks run
 
 ```bash
+node scripts/verify-release-version.mjs
 npm run build:site
 npm run typecheck
 npm test

@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   CloudDownload,
+  Eraser,
   FolderOpen,
   HardDrive,
   Loader2,
@@ -65,6 +66,7 @@ interface DownloadsQueueViewProps {
   onPauseHfDownload: (task: DownloadTask) => void;
   onResumeHfDownload: (task: DownloadTask) => void;
   onCancelHfDownload: (task: DownloadTask) => void;
+  onClearHistory?: () => void;
   onOpenPath: (targetPath: string) => void;
 }
 
@@ -81,9 +83,35 @@ export const DownloadsQueueView: React.FC<DownloadsQueueViewProps> = ({
   onPauseHfDownload,
   onResumeHfDownload,
   onCancelHfDownload,
+  onClearHistory,
   onOpenPath,
 }) => {
-    if (civitaiDownloads.length === 0 && hfDownloads.length === 0) {
+  const activeHfCount = hfDownloads.filter(
+    (t) =>
+      t.status === "pending" ||
+      t.status === "downloading" ||
+      t.status === "verifying" ||
+      t.status === "extracting"
+  ).length;
+  const completedHfCount = hfDownloads.filter((t) => t.status === "completed").length;
+  const totalActiveCount = activeDownloads.length + activeHfCount;
+  const totalCompletedCount = completedDownloads.length + completedHfCount;
+
+  const historyItemsCount =
+    civitaiDownloads.filter(
+      (t) =>
+        t.status === "completed" ||
+        t.status === "failed" ||
+        t.status === "cancelled"
+    ).length +
+    hfDownloads.filter(
+      (t) =>
+        t.status === "completed" ||
+        t.status === "failed" ||
+        t.status === "cancelled"
+    ).length;
+
+  if (civitaiDownloads.length === 0 && hfDownloads.length === 0) {
       return (
         <EmptyState
           icon={<HardDrive className="w-5 h-5" />}
@@ -101,6 +129,35 @@ export const DownloadsQueueView: React.FC<DownloadsQueueViewProps> = ({
 
     return (
       <div className="space-y-4">
+        {/* Top Control Bar with Clear History */}
+        <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-surface border border-border rounded-xl">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {totalActiveCount > 0 && (
+              <Badge tone="accent">{totalActiveCount} active</Badge>
+            )}
+            <Badge tone="success">{totalCompletedCount} installed</Badge>
+            {historyItemsCount > 0 && (
+              <Badge tone="neutral">{historyItemsCount} in history</Badge>
+            )}
+            <span className="text-fg-subtle text-[11px]">
+              Downloads stream to your model vault. Clearing history only clears records from view; model files on disk are never deleted.
+            </span>
+          </div>
+
+          {historyItemsCount > 0 && onClearHistory && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={onClearHistory}
+              className="font-mono text-xs uppercase"
+              title="Clear completed, failed, and cancelled downloads from this list without deleting model files from disk"
+            >
+              <Eraser className="w-3.5 h-3.5 mr-1" />
+              Clear History
+            </Button>
+          )}
+        </div>
+
         {hfDownloads.length > 0 && (
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2 text-xs text-fg-muted">

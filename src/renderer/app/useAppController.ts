@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   dimensionBoundsFromWorkflow,
   inferModelArchitecture,
@@ -45,7 +46,6 @@ import {
   DEFAULT_SETTINGS,
   DEFAULT_UPDATE_STATE,
   INITIAL_DRAFT,
-  type ToastItem,
 } from "./app-constants";
 import type {
   UpdateChannel,
@@ -60,6 +60,103 @@ import {
   watchSystemTheme,
   type ResolvedTheme,
 } from "./theme";
+import type { CreationDraft } from "../components/create/useCreateController";
+
+export type ImageWorkflowTarget =
+  | "edit"
+  | "inpaint"
+  | "outpaint"
+  | "variations"
+  | "upscale";
+
+export function resolveImageWorkflowHandoff(
+  img: Pick<GeneratedImageRecord, "checkpoint" | "workflowId">,
+  targetWorkflow: ImageWorkflowTarget,
+  workflows: WorkflowTemplate[]
+): { workflowId: string; workspaceMode: Exclude<ImageWorkflowTarget, "upscale"> } | null {
+  if (targetWorkflow === "upscale") return null;
+
+  const arch = inferModelArchitecture(img.checkpoint);
+  const compatible = workflows.filter(
+    (candidate) =>
+      candidate.mode === "img2img" &&
+      (candidate.supportedArchitectures.includes(arch) ||
+        candidate.supportedArchitectures.includes("unknown"))
+  );
+  const searchText = (candidate: WorkflowTemplate): string =>
+    ` ${[candidate.id, candidate.name, candidate.description, ...candidate.tags]
+      .join(" ")
+      .toLowerCase()
+      .replace(/inpainting/g, "inpaint")
+      .replace(/outpainting/g, "outpaint")
+      .replace(/variations/g, "variation")
+      .replace(/[^a-z0-9]+/g, " ")} `;
+  const taskTerm =
+    targetWorkflow === "variations"
+      ? "variation"
+      : targetWorkflow === "edit"
+        ? "edit"
+        : targetWorkflow;
+  const taskSpecific = compatible.filter((candidate) =>
+    searchText(candidate).includes(` ${taskTerm} `)
+  );
+  const selected =
+    taskSpecific.find((candidate) => candidate.supportedArchitectures.includes(arch)) ??
+    taskSpecific[0] ??
+    compatible.find((candidate) => candidate.supportedArchitectures.includes(arch)) ??
+    compatible[0];
+
+  if (!selected) {
+    throw new Error(`No registered image-to-image workflow is available for ${arch}.`);
+  }
+
+  return { workflowId: selected.id, workspaceMode: targetWorkflow };
+}
+
+export function removeJobIfConfirmed<T extends { id: string }>(
+  jobs: T[],
+  jobId: string,
+  confirmed: boolean
+): T[] {
+  return confirmed ? jobs.filter((job) => job.id !== jobId) : jobs;
+}
+
+export function removeJobsIfConfirmed<T extends { id: string }>(
+  jobs: T[],
+  jobIds: string[],
+  removedCount: number
+): T[] {
+  const uniqueIds = [...new Set(jobIds)];
+  if (removedCount < uniqueIds.length) return jobs;
+  const removedIds = new Set(uniqueIds);
+  return jobs.filter((job) => !removedIds.has(job.id));
+}
+
+export function summarizeJobDeletion(
+  jobIds: string[],
+  removedCount: number
+): {
+  requestedCount: number;
+  removedCount: number;
+  complete: boolean;
+  tone: "info" | "error";
+  message: string;
+} {
+  const requestedCount = new Set(jobIds).size;
+  const confirmedCount = Math.min(
+    requestedCount,
+    Math.max(0, Math.floor(Number.isFinite(removedCount) ? removedCount : 0))
+  );
+  const complete = confirmedCount === requestedCount;
+  const tone = complete ? "info" : "error";
+  const message =
+    confirmedCount === 0
+      ? "No generation jobs were removed."
+      : complete
+        ? `Removed ${confirmedCount} generation job${confirmedCount === 1 ? "" : "s"}.`
+        : `Removed ${confirmedCount} of ${requestedCount} generation jobs.`;
+  return { requestedCount, removedCount: confirmedCount, complete, tone, message };
+}
 
 export function useAppController() {
   const [activePage, setActivePage] = useState<NavSection>("home");
@@ -96,18 +193,14 @@ export function useAppController() {
   const [canvases, setCanvases] = useState<StoryCanvas[]>([]);
   const [activeCharacterId, setActiveCharacterId] = useState<string | null>(null);
   const [activeRecipeId, setActiveRecipeId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<GenerationRequest>(INITIAL_DRAFT);
+  const [draft, setDraft] = useState<CreationDraft>(INITIAL_DRAFT);
   const [inspectedImage, setInspectedImage] = useState<GeneratedImageRecord | null>(null);
   const [startingRuntime, setStartingRuntime] = useState(false);
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
   const appliedStartupPageRef = useRef(false);
 
   const pushToast = useCallback((message: string, tone: "info" | "error" = "info") => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    setToasts((prev) => [...prev.slice(-3), { id, message, tone }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4500);
+    if (tone === "error") toast.error(message);
+    else toast.info(message);
   }, []);
 
   // Keep the HTML data-theme attribute synchronized; follow the OS while on "system".
@@ -452,6 +545,12 @@ export function useAppController() {
       ...prev,
       mode: preset.mode,
       workflowId: targetWfId,
+      workspaceWorkflow:
+        preset.mode === "upscale"
+          ? "upscale"
+          : preset.mode === "img2img"
+            ? "edit"
+            : "generate",
       checkpoint: matchingCheckpoint?.relativePath ?? prev.checkpoint,
       aspectRatio: preset.aspectRatio,
       width: dims.width,
@@ -483,6 +582,7 @@ export function useAppController() {
       ...prev,
       mode: "upscale",
       workflowId: "upscale_model_v1",
+      workspaceWorkflow: "upscale",
       inputImagePath: img.filePath,
       width: img.width,
       height: img.height,
@@ -521,6 +621,12 @@ export function useAppController() {
       ...prev,
       workflowId: fallbackWf,
       mode: img.mode,
+      workspaceWorkflow:
+        img.mode === "upscale"
+          ? "upscale"
+          : img.mode === "img2img"
+            ? "edit"
+            : "generate",
       prompt: img.prompt,
       negativePrompt: img.negativePrompt,
       checkpoint: img.checkpoint,
@@ -542,21 +648,27 @@ export function useAppController() {
 
   const handleSendImageToWorkflow = (
     img: GeneratedImageRecord,
-    targetWorkflow: "edit" | "inpaint" | "outpaint" | "variations" | "upscale"
+    targetWorkflow: ImageWorkflowTarget
   ): void => {
     if (targetWorkflow === "upscale") {
       handleUpscaleImage(img);
       return;
     }
-    const arch = inferModelArchitecture(img.checkpoint);
-    const fallbackWf =
-      img.workflowId ||
-      (arch === "sd15" ? "i2i_sd15_base" : "i2i_sdxl_base");
+
+    let handoff: ReturnType<typeof resolveImageWorkflowHandoff>;
+    try {
+      handoff = resolveImageWorkflowHandoff(img, targetWorkflow, workflows);
+    } catch (err) {
+      pushToast(err instanceof Error ? err.message : String(err), "error");
+      return;
+    }
+    if (!handoff) return;
 
     setDraft((prev) => ({
       ...prev,
       mode: "img2img",
-      workflowId: fallbackWf,
+      workflowId: handoff.workflowId,
+      workspaceWorkflow: handoff.workspaceMode,
       prompt: img.prompt,
       negativePrompt: img.negativePrompt,
       checkpoint: img.checkpoint,
@@ -615,6 +727,92 @@ export function useAppController() {
     pushToast("Deleted image from library.");
   };
 
+  const handleDeleteJob = async (jobId: string): Promise<void> => {
+    try {
+      const removed = await window.kirea.deleteJob(jobId);
+      if (!removed) {
+        pushToast("Generation job could not be removed.", "error");
+        return;
+      }
+      setJobs((prev) => removeJobIfConfirmed(prev, jobId, removed));
+      pushToast("Removed generation job.");
+    } catch (err) {
+      pushToast(
+        err instanceof Error ? err.message : "Generation job could not be removed.",
+        "error"
+      );
+    }
+  };
+
+  const handleDeleteJobs = async (jobIds: string[]): Promise<void> => {
+    const uniqueJobIds = [...new Set(jobIds)];
+    if (uniqueJobIds.length === 0) return;
+    try {
+      const removedCount = await window.kirea.deleteJobs(uniqueJobIds);
+      const result = summarizeJobDeletion(uniqueJobIds, removedCount);
+      if (result.removedCount === 0) {
+        pushToast(result.message, result.tone);
+        return;
+      }
+
+      setJobs((prev) =>
+        removeJobsIfConfirmed(prev, uniqueJobIds, result.removedCount)
+      );
+      if (!result.complete) {
+        try {
+          setJobs(await window.kirea.listJobs());
+        } catch (err) {
+          pushToast(
+            `${result.message} The queue could not be refreshed: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+            "error"
+          );
+          return;
+        }
+      }
+      pushToast(result.message, result.tone);
+    } catch (err) {
+      pushToast(
+        err instanceof Error ? err.message : "Generation jobs could not be removed.",
+        "error"
+      );
+    }
+  };
+
+  const handleClearDownloadHistory = async (): Promise<void> => {
+    try {
+      const res = await window.kirea.clearDownloadHistory();
+      setDownloads((prev) =>
+        prev.filter(
+          (d) =>
+            d.status !== "completed" &&
+            d.status !== "failed" &&
+            d.status !== "cancelled"
+        )
+      );
+      setCivitaiDownloads((prev) =>
+        prev.filter(
+          (t) =>
+            t.status !== "completed" &&
+            t.status !== "failed" &&
+            t.status !== "cancelled"
+        )
+      );
+      const total = res.generic + res.civitai;
+      pushToast(
+        total > 0
+          ? `Cleared ${total} finished download record${total === 1 ? "" : "s"} (files on disk preserved).`
+          : "Download history already clean."
+      );
+    } catch (err) {
+      pushToast(
+        err instanceof Error ? err.message : "Failed to clear download history.",
+        "error"
+      );
+    }
+  };
+
   /** Clears library entries whose files were moved or deleted outside Kirea. */
   const handleRemoveMissingImages = async (ids: string[]): Promise<void> => {
     if (ids.length === 0) return;
@@ -666,6 +864,7 @@ export function useAppController() {
       ...prev,
       mode: recipe.mode === "img2img" ? "img2img" : "txt2img",
       workflowId: recipe.workflowId ?? prev.workflowId,
+      workspaceWorkflow: recipe.mode === "img2img" ? "edit" : "generate",
       checkpoint: checkpoint?.relativePath ?? prev.checkpoint,
       prompt: recipe.basePrompt,
       negativePrompt: recipe.negativePrompt,
@@ -954,7 +1153,6 @@ export function useAppController() {
     inspectedImage,
     setInspectedImage,
     startingRuntime,
-    toasts,
     pushToast,
     activeWorkCount,
     handleUpdateSettings,
@@ -974,6 +1172,9 @@ export function useAppController() {
     handleToggleFavorite,
     handleUpdateImageMeta,
     handleDeleteImage,
+    handleDeleteJob,
+    handleDeleteJobs,
+    handleClearDownloadHistory,
     handleRemoveMissingImages,
     handleSaveRecipe,
     handleDeleteRecipe,

@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "appVersion": "1.1.1",
+  "gitSha": "c8d4acd646c84086cb120e6fcae86899841bec13",
+  "workingTreeDirty": true,
+  "fixtureSet": "curated-non-nsfw-v1",
+  "profile": "ephemeral-user-data",
+  "viewport": {
+    "width": 1600,
+    "height": 940,
+    "deviceScaleFactor": 1
+  },
+  "screenshots": [
+    {
+      "file": "home-dark.webp",
+      "width": 1600,
+      "height": 940
+    },
+    {
+      "file": "create-dark.webp",
+      "width": 1600,
+      "height": 940
+    },
+    {
+      "file": "models-dark.webp",
+      "width": 1600,
+      "height": 940
+    },
+    {
+      "file": "workflows-dark.webp",
+      "width": 1600,
+      "height": 940
+    },
+    {
+      "file": "explore-dark.webp",
+      "width": 1600,
+      "height": 940
+    },
+    {
+      "file": "create-light.webp",
+      "width": 1600,
+      "height": 940
+    },
+    {
+      "file": "home-light.webp",
+      "width": 1600,
+      "height": 940
+    }
+  ]
+}

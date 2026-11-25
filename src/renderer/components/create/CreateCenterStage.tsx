@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   AlertTriangle,
@@ -26,16 +26,20 @@ import {
   Maximize2,
   Pencil,
   Plus,
+  RotateCcw,
   Search,
   SlidersHorizontal,
   Sparkles,
   Square,
   Tags,
   Trash2,
+  Unlock,
   Upload,
   Users,
   Wand2,
 } from "lucide-react";
+import { CopyPromptButton } from "../CopyPromptButton";
+import { ReticleCornerBrackets } from "../BrandIcons";
 import {
   ASPECT_RATIOS,
   IMAGE_UPSCALER_LANCZOS,
@@ -65,6 +69,7 @@ import { ModelPreview } from "../ModelPreview";
 import {
   Badge,
   Button,
+  ConfirmDialog,
   Input,
   Modal,
   Select,
@@ -91,6 +96,7 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
     models,
     workflows,
     samplersAndSchedulers,
+    jobs,
     images,
     recipes,
     characters,
@@ -101,6 +107,8 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
     onSavePrompt,
     onInspectImage,
     onToggleFavorite,
+    onDeleteImage,
+    onDeleteJob,
     onToast,
     validationIssues,
     submitting,
@@ -186,6 +194,27 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
   const [resultFilter, setResultFilter] = useState<"all" | "kept" | "upscaled">("all");
   const [resultLayout, setResultLayout] = useState<"grid" | "list">("grid");
   const [composerExpanded, setComposerExpanded] = useState(false);
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{
+    type: "job" | "image";
+    id: string;
+    label: string;
+  } | null>(null);
+
+  const failedJob = useMemo(() => {
+    if (!jobs || jobs.length === 0) return null;
+    const latestImageTime = images[0] ? new Date(images[0].createdAt).getTime() : 0;
+    return (
+      jobs.find((j) => {
+        if (j.status !== "FAILED") return false;
+        if (j.startupInterrupted) return false;
+        if (j.errorMessage?.includes("Interrupted when application previously")) return false;
+        if (latestImageTime && new Date(j.submittedAt).getTime() <= latestImageTime) {
+          return false;
+        }
+        return true;
+      }) ?? null
+    );
+  }, [jobs, images]);
 
   // When latestImage updates (new generation arrives) or activeJob starts, ALWAYS reset comparison mode
   useEffect(() => {
@@ -233,7 +262,7 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
     }
   }, [hasMultipleImages, displayedIndex, images]);
 
-  // Keyboard navigation when user is not focused on an input/textarea
+  // Keyboard navigation & deletion when user is not focused on an input/textarea
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
@@ -245,12 +274,31 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
         goToNextImage();
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        if (deleteConfirmTarget) return;
+        if (failedJob && !activeJob) {
+          e.preventDefault();
+          setDeleteConfirmTarget({
+            type: "job",
+            id: failedJob.id,
+            label: failedJob.prompt
+              ? `Failed Generation: "${failedJob.prompt.slice(0, 36)}..."`
+              : `Failed Generation #${failedJob.id.slice(0, 8)}`,
+          });
+        } else if (displayedImage) {
+          e.preventDefault();
+          setDeleteConfirmTarget({
+            type: "image",
+            id: displayedImage.id,
+            label: `Generation (${displayedImage.width}×${displayedImage.height}, Seed ${displayedImage.seed})`,
+          });
+        }
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [goToPrevImage, goToNextImage]);
+  }, [goToPrevImage, goToNextImage, deleteConfirmTarget, failedJob, activeJob, displayedImage]);
 
   // Determine if comparison is possible for the currently displayed image
   const canvasSourcePath =
@@ -344,6 +392,20 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
           label: "Reveal in File Explorer",
           icon: <FolderOpen className="w-3.5 h-3.5" />,
           onClick: () => void window.kirea.openPath(img.filePath),
+        },
+        {
+          id: "delete-generation",
+          label: "Delete Generation",
+          icon: <Trash2 className="w-3.5 h-3.5 text-danger" />,
+          destructive: true,
+          separator: true,
+          onClick: () => {
+            setDeleteConfirmTarget({
+              type: "image",
+              id: img.id,
+              label: `Generation (${img.width}×${img.height}, Seed ${img.seed})`,
+            });
+          },
         },
       ];
 
@@ -443,7 +505,7 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
       {/* CENTER CANVAS + PROMPT DOCK */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
         {draft.mode === "upscale" ? (
-          <div className="shrink-0 space-y-3 rounded-xl border border-border bg-surface p-3.5">
+          <div className="shrink-0 space-y-3 border-b border-border bg-bg px-2.5 py-2.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-label">
@@ -522,15 +584,14 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
             </div>
           </div>
         ) : (
-          /* Compact Content-Aware Prompt Composer with Danbooru Assistant */
           <CompactPromptComposer
             prompt={draft.prompt}
             negativePrompt={draft.negativePrompt}
             onPromptChange={(newPrompt) =>
               setDraft((p) => ({ ...p, prompt: newPrompt }))
             }
-            onNegativePromptChange={(newNeg) =>
-              setDraft((p) => ({ ...p, negativePrompt: newNeg }))
+            onNegativePromptChange={(newNegative) =>
+              setDraft((p) => ({ ...p, negativePrompt: newNegative }))
             }
             onGenerate={() => void handleGenerate()}
             onCancel={
@@ -558,7 +619,7 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
         )}
 
         {/* Results Workspace Toolbar */}
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-surface px-2.5 py-2">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-2.5 py-2">
           <WorkflowSelector
             currentMode={workflowMode}
             onSelectMode={(mode) => handleSelectWorkflowMode(mode, displayedImage)}
@@ -650,7 +711,7 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
         </div>
 
         {/* Live Canvas / Result Stage */}
-        <div className="order-1 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-surface">
+        <div className="order-1 flex min-h-0 flex-1 flex-col overflow-hidden bg-bg">
           {resultsView === "history" ? (
             <div className="flex-1 min-h-0 overflow-y-auto p-3">
               {filteredHistory.length === 0 ? (
@@ -803,6 +864,45 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
             </div>
           ) : (
           <>
+          {failedJob && !activeJob && (
+            <div className="mx-3 mt-3 px-3 py-2 bg-danger/10 border-2 border-danger/40 rounded-lg flex items-center justify-between gap-3 text-xs shrink-0 shadow-[2px_2px_0px_#0B0C10]">
+              <div className="flex items-center gap-2 min-w-0">
+                <AlertTriangle className="w-4 h-4 text-danger shrink-0" />
+                <span className="font-semibold text-danger truncate font-mono">
+                  Generation failed: {failedJob.errorMessage || "ComfyUI execution error"}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void window.kirea.retryJob(failedJob.id)}
+                  className="font-mono text-xs uppercase"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                  Retry
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() => {
+                    setDeleteConfirmTarget({
+                      type: "job",
+                      id: failedJob.id,
+                      label: failedJob.prompt
+                        ? `Failed Generation: "${failedJob.prompt.slice(0, 36)}..."`
+                        : `Failed Generation #${failedJob.id.slice(0, 8)}`,
+                    });
+                  }}
+                  className="font-mono text-xs uppercase"
+                  title="Delete failed generation (Delete key)"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1" />
+                  Delete
+                </Button>
+              </div>
+            </div>
+          )}
           {activeJob ? (
             <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 gap-4 bg-bg/60">
               {activeJob.previewDataUrl ? (
@@ -856,6 +956,7 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
                   }
                 }}
               >
+                <ReticleCornerBrackets />
                 {workflowMode === "inpaint" || workflowMode === "outpaint" ? (
                   <EditingCanvas
                     imageSrc={draft.inputImagePath || displayedImage.filePath}
@@ -926,38 +1027,6 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
                   )}
                 </div>
 
-                <div className="absolute top-3 right-3 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                  {canCompare && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowCanvasComparison((p) => !p);
-                      }}
-                      className={`px-2.5 py-1 rounded-full text-xs font-semibold backdrop-blur-md border shadow-md transition-all cursor-pointer flex items-center gap-1.5 ${
-                        showCanvasComparison
-                          ? "bg-accent text-white border-accent-hover shadow-accent/20"
-                          : "bg-black/60 hover:bg-black/85 text-white/90 hover:text-white border-white/20"
-                      }`}
-                      title="Toggle Interactive Comparison Slider"
-                    >
-                      <SlidersHorizontal className="w-3.5 h-3.5" />
-                      <span>{showCanvasComparison ? "Exit Compare" : "Compare"}</span>
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onInspectImage(displayedImage, images);
-                    }}
-                    className="p-1.5 rounded-full bg-black/60 hover:bg-black/85 text-white/90 hover:text-white backdrop-blur-md border border-white/20 shadow-md transition-all cursor-pointer"
-                    title="Open Fullscreen Lightbox (1st Full Screen)"
-                    aria-label="Open fullscreen lightbox"
-                  >
-                    <Maximize2 className="w-4 h-4" />
-                  </button>
-                </div>
               </div>
 
               {/* Bottom Stage Action Row */}
@@ -975,6 +1044,19 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
                   <span className="text-fg-muted tabular-nums">
                     Seed {displayedImage.seed}
                   </span>
+                  <CopyPromptButton
+                    prompt={displayedImage.prompt}
+                    negativePrompt={displayedImage.negativePrompt}
+                    seed={displayedImage.seed}
+                    steps={displayedImage.steps}
+                    cfg={displayedImage.cfg}
+                    sampler={displayedImage.sampler}
+                    checkpoint={displayedImage.checkpoint}
+                    loras={displayedImage.loras}
+                    width={displayedImage.width}
+                    height={displayedImage.height}
+                    onToast={onToast}
+                  />
                   <span className="text-fg-subtle truncate max-w-md">
                     {getModelRefDisplayName(models, displayedImage.checkpoint)} • {displayedImage.sampler}
                   </span>
@@ -1031,18 +1113,37 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
                   </Button>
                   <Button
                     size="sm"
-                    variant="ghost"
-                    onClick={() =>
-                      setDraft((p) => ({
-                        ...p,
-                        randomSeed: false,
-                        seed: displayedImage.seed,
-                      }))
+                    variant={!draft.randomSeed && draft.seed === displayedImage.seed ? "accent" : "ghost"}
+                    onClick={() => {
+                      if (!draft.randomSeed && draft.seed === displayedImage.seed) {
+                        setDraft((p) => ({ ...p, randomSeed: true, seed: -1 }));
+                        onToast("Seed unlocked (random on next render).");
+                      } else {
+                        setDraft((p) => ({
+                          ...p,
+                          randomSeed: false,
+                          seed: displayedImage.seed,
+                        }));
+                        onToast(`Seed locked to ${displayedImage.seed}.`);
+                      }
+                    }}
+                    title={
+                      !draft.randomSeed && draft.seed === displayedImage.seed
+                        ? "Seed is locked to this image. Click to randomize."
+                        : "Lock draft to reuse this exact seed"
                     }
-                    title="Lock this seed"
                   >
-                    <Lock className="w-3.5 h-3.5" />
-                    Lock Seed
+                    {!draft.randomSeed && draft.seed === displayedImage.seed ? (
+                      <>
+                        <Lock className="w-3.5 h-3.5 mr-1" strokeWidth={2} />
+                        [SEED LOCKED]
+                      </>
+                    ) : (
+                      <>
+                        <Unlock className="w-3.5 h-3.5 mr-1" strokeWidth={2} />
+                        Lock Seed
+                      </>
+                    )}
                   </Button>
                   <Button
                     size="sm"
@@ -1059,8 +1160,26 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
                     size="sm"
                     variant="ghost"
                     onClick={() => void window.kirea.openPath(displayedImage.filePath)}
+                    title="Reveal in file explorer"
                   >
                     <FolderOpen className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-danger hover:bg-danger/10 hover:text-danger"
+                    onClick={() => {
+                      setDeleteConfirmTarget({
+                        type: "image",
+                        id: displayedImage.id,
+                        label: `Generation (${displayedImage.width}×${displayedImage.height}, Seed ${displayedImage.seed})`,
+                      });
+                    }}
+                    title="Delete generation (Delete key)"
+                    aria-label="Delete generation"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-1" />
+                    <span className="hidden xl:inline">Delete</span>
                   </Button>
                   <Button
                     size="sm"
@@ -1167,6 +1286,51 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
                 </div>
               )}
             </div>
+          ) : failedJob ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-bg/40">
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border-2 border-danger/40 bg-danger/10 text-danger shadow-[4px_4px_0px_#0B0C10]">
+                <AlertTriangle className="w-8 h-8" />
+              </div>
+              <h3 className="text-base font-bold text-fg uppercase tracking-wide">
+                Generation Failed
+              </h3>
+              <p className="mt-1 text-xs text-danger max-w-md font-mono line-clamp-3">
+                {failedJob.errorMessage || "ComfyUI execution error occurred during rendering."}
+              </p>
+              {failedJob.prompt && (
+                <p className="mt-2 text-[11px] text-fg-subtle max-w-md truncate font-mono">
+                  Brief: {failedJob.prompt}
+                </p>
+              )}
+              <div className="mt-5 flex items-center gap-3">
+                <Button
+                  size="md"
+                  variant="secondary"
+                  onClick={() => void window.kirea.retryJob(failedJob.id)}
+                  className="font-mono text-xs uppercase"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                  Retry Generation
+                </Button>
+                <Button
+                  size="md"
+                  variant="danger"
+                  onClick={() => {
+                    setDeleteConfirmTarget({
+                      type: "job",
+                      id: failedJob.id,
+                      label: failedJob.prompt
+                        ? `Failed Generation: "${failedJob.prompt.slice(0, 36)}..."`
+                        : `Failed Generation #${failedJob.id.slice(0, 8)}`,
+                    });
+                  }}
+                  className="font-mono text-xs uppercase"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1" />
+                  Delete Failed Generation
+                </Button>
+              </div>
+            </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
               <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-xl border border-border bg-surface-subtle text-fg-muted">
@@ -1192,29 +1356,62 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
               {images.slice(0, 16).map((img) => {
                 const isSelected = img.id === displayedImage?.id;
                 return (
-                  <button
-                    key={img.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedImageId(img.id);
-                      setShowCanvasComparison(false);
-                    }}
-                    onDoubleClick={() => onInspectImage(img, images.slice(0, 16))}
-                    onContextMenu={(e) => handleImageContextMenu(e, img)}
-                    title={`View ${img.width}×${img.height} (Double-click to expand)`}
-                    className={`w-12 h-12 rounded-lg overflow-hidden border shrink-0 cursor-pointer transition-all flex items-center justify-center bg-surface-subtle p-0.5 ${
-                      isSelected
-                        ? "border-accent ring-2 ring-accent/50 shadow-sm"
-                        : "border-border hover:border-fg-muted"
-                    }`}
-                  >
-                    <MediaImage
-                      src={toMediaUrl(img.filePath)}
-                      alt={img.fileName}
-                      compact
-                      className="w-full h-full bg-surface-subtle object-contain"
-                    />
-                  </button>
+                  <div key={img.id} className="relative shrink-0 group/thumb">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedImageId(img.id);
+                        setShowCanvasComparison(false);
+                      }}
+                      onDoubleClick={() => onInspectImage(img, images.slice(0, 16))}
+                      onContextMenu={(e) => handleImageContextMenu(e, img)}
+                      title={`View ${img.width}×${img.height} (Double-click to expand)`}
+                      className={`w-12 h-12 rounded-none overflow-hidden border-2 shrink-0 cursor-pointer transition-all flex items-center justify-center bg-surface-subtle p-0.5 ${
+                        isSelected
+                          ? "border-[#1E3BFF] ring-2 ring-[#1E3BFF]/50 shadow-sm"
+                          : "border-border hover:border-[#F2F2EE]"
+                      }`}
+                    >
+                      <MediaImage
+                        src={toMediaUrl(img.filePath)}
+                        alt={img.fileName}
+                        compact
+                        className="w-full h-full bg-surface-subtle object-contain"
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteConfirmTarget({
+                          type: "image",
+                          id: img.id,
+                          label: `Generation (${img.width}×${img.height}, Seed ${img.seed})`,
+                        });
+                      }}
+                      className="absolute top-0.5 left-0.5 p-0.5 bg-[#0B0C10]/80 text-[#F2F2EE]/70 hover:text-danger border border-[#F2F2EE]/20 opacity-0 group-hover/thumb:opacity-100 transition-opacity z-10 cursor-pointer"
+                      title="Delete this generation"
+                      aria-label="Delete generation"
+                    >
+                      <Trash2 className="w-2.5 h-2.5" />
+                    </button>
+                    <div className="opacity-0 group-hover/thumb:opacity-100 focus-within:opacity-100 transition-opacity">
+                      <CopyPromptButton
+                        variant="filmstrip"
+                        prompt={img.prompt}
+                        negativePrompt={img.negativePrompt}
+                        seed={img.seed}
+                        steps={img.steps}
+                        cfg={img.cfg}
+                        sampler={img.sampler}
+                        checkpoint={img.checkpoint}
+                        loras={img.loras}
+                        width={img.width}
+                        height={img.height}
+                        onToast={onToast}
+                      />
+                    </div>
+                  </div>
                 );
               })}
             </div>
@@ -1223,6 +1420,35 @@ export const CreateCenterStage: React.FC<{ ctrl: CreateController }> = ({ ctrl }
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={Boolean(deleteConfirmTarget)}
+        onClose={() => setDeleteConfirmTarget(null)}
+        onConfirm={() => {
+          if (!deleteConfirmTarget) return;
+          if (deleteConfirmTarget.type === "job") {
+            if (onDeleteJob) {
+              void onDeleteJob(deleteConfirmTarget.id);
+            } else {
+              void window.kirea.deleteJob(deleteConfirmTarget.id);
+            }
+            onToast?.("Failed generation deleted.");
+          } else {
+            if (onDeleteImage) {
+              void onDeleteImage(deleteConfirmTarget.id);
+            } else {
+              void window.kirea.deleteImage(deleteConfirmTarget.id);
+            }
+            onToast?.("Generation deleted.");
+          }
+          setDeleteConfirmTarget(null);
+        }}
+        title="Delete Generation?"
+        description={`Are you sure you want to delete ${deleteConfirmTarget?.label ?? "this generation"}? This action cannot be undone.`}
+        confirmLabel="Yes, Delete"
+        danger
+        defaultFocusConfirm
+      />
     </>
   );
 };

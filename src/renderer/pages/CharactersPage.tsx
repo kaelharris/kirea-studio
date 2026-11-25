@@ -36,6 +36,8 @@ import type {
   ModelRecord,
 } from "../../shared/types";
 import { toMediaUrl } from "../utils/format";
+import { CharacterDetailModal } from "../components/characters/CharacterDetailModal";
+import { CharacterWizardModal } from "../components/characters/CharacterWizardModal";
 import {
   Badge,
   Button,
@@ -216,6 +218,8 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
   onFocusApplied,
 }) => {
   const [search, setSearch] = useState("");
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [detailCharacter, setDetailCharacter] = useState<CharacterProfile | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<CharacterProfile | null>(null);
   const [form, setForm] = useState<EditorFormState>(() => toFormState(null));
@@ -306,7 +310,19 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
     );
   }, [characters, search]);
 
+  // Synchronize detail character with latest state from characters prop
+  useEffect(() => {
+    if (detailCharacter) {
+      const refreshed = characters.find((c) => c.id === detailCharacter.id);
+      if (refreshed) setDetailCharacter(refreshed);
+    }
+  }, [characters, detailCharacter?.id]);
+
   const openNew = (): void => {
+    setWizardOpen(true);
+  };
+
+  const openQuickCreate = (): void => {
     setEditing(null);
     const baseForm = toFormState(null);
     const savedDraftRaw = localStorage.getItem("kirea_character_draft_new");
@@ -328,24 +344,7 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
   };
 
   const openEdit = (character: CharacterProfile): void => {
-    setEditing(character);
-    const baseForm = toFormState(character);
-    const savedDraftRaw = localStorage.getItem(`kirea_character_draft_${character.id}`);
-    if (savedDraftRaw) {
-      try {
-        const parsed = JSON.parse(savedDraftRaw) as EditorFormState;
-        setForm(parsed);
-        setDraftRestored(true);
-      } catch {
-        setForm(baseForm);
-        setDraftRestored(false);
-      }
-    } else {
-      setForm(baseForm);
-      setDraftRestored(false);
-    }
-    setReferenceRole("secondary");
-    setEditorOpen(true);
+    setDetailCharacter(character);
   };
 
   const requestClose = (): void => {
@@ -595,10 +594,16 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
         title="Character Hub"
         subtitle="Reusable identity profiles that inject prompt tokens, checkpoints, LoRA recipes, and stock img2img references into Create Studio."
         actions={
-          <Button variant="primary" onClick={openNew}>
-            <Plus className="w-4 h-4" />
-            New Character
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="primary" onClick={openNew}>
+              <Sparkles className="w-4 h-4" />
+              Guided Character Wizard
+            </Button>
+            <Button variant="secondary" onClick={openQuickCreate}>
+              <Plus className="w-4 h-4" />
+              Quick Create
+            </Button>
+          </div>
         }
       />
 
@@ -622,8 +627,8 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
           description="Create your first identity profile to keep a consistent face, outfit, checkpoint, and LoRA recipe across generations."
           action={
             <Button variant="primary" onClick={openNew}>
-              <Plus className="w-4 h-4" />
-              Create Character
+              <Sparkles className="w-4 h-4" />
+              Guided Character Wizard
             </Button>
           }
         />
@@ -634,10 +639,12 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
             const recipe = character.loraRecipeId
               ? recipes.find((r) => r.id === character.loraRecipeId)
               : null;
+            const trigger = character.dna?.triggerToken || character.triggerWords?.[0];
             return (
               <Card
                 key={character.id}
-                className="overflow-hidden flex flex-col"
+                className="overflow-hidden flex flex-col hover:border-border-strong transition-colors cursor-pointer"
+                onClick={() => openEdit(character)}
                 onContextMenu={(e) => handleCharacterContextMenu(e, character)}
               >
                 <div className="relative aspect-[4/3] bg-surface-subtle flex items-center justify-center overflow-hidden p-1.5">
@@ -658,9 +665,14 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
                       {ARCHITECTURE_LABELS[character.architecture]}
                     </Badge>
                   </div>
+                  {character.dna?.dnaLocked && (
+                    <div className="absolute bottom-2 left-2 bg-[#1E3BFF] text-white px-2 py-0.5 text-[10px] font-mono font-bold border border-white">
+                      DNA LOCKED
+                    </div>
+                  )}
                 </div>
 
-                <div className="p-4 flex-1 flex flex-col gap-3">
+                <div className="p-4 flex-1 flex flex-col gap-2.5">
                   <div>
                     <h3 className="truncate text-h3 text-fg">
                       {character.name}
@@ -672,15 +684,54 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
                     </p>
                   </div>
 
-                  <div className="flex flex-wrap gap-1.5 text-caption text-fg-subtle">
-                    <span>{character.references.length} references</span>
+                  {trigger && (
+                    <div
+                      className="flex items-center gap-1.5 bg-accent/10 border border-accent/20 px-2 py-0.5 w-fit"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span className="font-mono text-[10px] text-accent font-bold">
+                        {trigger}
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void navigator.clipboard.writeText(trigger);
+                          onToast("Trigger token copied!");
+                        }}
+                        className="text-accent hover:text-white"
+                        title="Copy trigger token"
+                      >
+                        <Copy className="w-2.5 h-2.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-1.5 text-caption text-fg-subtle font-mono text-[11px]">
+                    {character.dna?.gender && (
+                      <span className="px-1.5 py-0.5 bg-accent text-white font-bold text-[10px]">
+                        {character.dna.gender}
+                      </span>
+                    )}
+                    {character.dna?.species && (
+                      <span className="px-1.5 py-0.5 bg-surface border border-border text-[10px] text-fg font-medium">
+                        {character.dna.species}
+                      </span>
+                    )}
+                    {character.dna?.archetype && (
+                      <span className="px-1.5 py-0.5 bg-accent/10 border border-accent/30 text-accent font-bold text-[10px]">
+                        {character.dna.archetype}
+                      </span>
+                    )}
+                    <span>{character.references.length} refs</span>
                     <span aria-hidden="true">·</span>
-                    <span>{recipe ? recipe.name : "No LoRA recipe"}</span>
+                    <span>{character.adapters?.length ?? 0} adapters</span>
+                    <span aria-hidden="true">·</span>
+                    <span>{character.outfits?.length ?? 0} outfits</span>
                     <span aria-hidden="true">·</span>
                     <span>{character.usageCount} uses</span>
                   </div>
 
-                  <div className="mt-auto flex items-center gap-2">
+                  <div className="mt-auto pt-2 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                     <Button
                       size="sm"
                       variant="primary"
@@ -691,8 +742,8 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
                       Use
                     </Button>
                     <Button size="sm" variant="secondary" onClick={() => openEdit(character)}>
-                      <Pencil className="w-3.5 h-3.5" />
-                      Edit
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Studio & DNA
                     </Button>
                     <Button
                       size="sm"
@@ -1082,6 +1133,28 @@ export const CharactersPage: React.FC<CharactersPageProps> = ({
             : ""
         }
         confirmLabel="Delete Character"
+      />
+
+      <CharacterWizardModal
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        models={models}
+        onSaveCharacter={onSaveCharacter}
+        onUseCharacter={onUseCharacter}
+        onToast={onToast}
+      />
+
+      <CharacterDetailModal
+        open={detailCharacter !== null}
+        onClose={() => setDetailCharacter(null)}
+        character={detailCharacter}
+        models={models}
+        onSaveCharacter={onSaveCharacter}
+        onPickReference={onPickReference}
+        onUpdateReference={onUpdateReference}
+        onRemoveReference={onRemoveReference}
+        onUseCharacter={onUseCharacter}
+        onToast={onToast}
       />
     </div>
   );

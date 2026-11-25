@@ -151,7 +151,7 @@ export const CreateUpscaleSidebar: React.FC<{ ctrl: CreateController }> = ({ ctr
     <>
             <>
               {/* Standalone Upscale Input Image */}
-              <div className="p-3 rounded-xl bg-bg border border-border space-y-3">
+              <div className="space-y-3 border-t border-border pt-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-semibold text-fg">Source Image</span>
                   <div className="flex items-center gap-1.5">

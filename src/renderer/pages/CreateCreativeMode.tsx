@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   AlertTriangle,
@@ -6,8 +6,10 @@ import {
   FolderOpen,
   Heart,
   ImagePlus,
+  RotateCcw,
   Sparkles,
   Square,
+  Trash2,
   Users,
   Wand2,
   X,
@@ -33,11 +35,38 @@ import type {
   RuntimeState,
   ValidationIssue,
 } from "../../shared/types";
-import { Badge, Button, useContextMenu, type ContextMenuItem } from "../components/ui/Primitives";
+import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  isInteractiveKeyboardTarget,
+  useContextMenu,
+  type ContextMenuItem,
+} from "../components/ui/Primitives";
 import { imageWorkflowLabel } from "../../shared/image-labels";
 import { MediaImage } from "../components/ui/MediaImage";
 import { MagicPromptModal } from "../components/create/MagicPromptModal";
 import { shortModelLabel, toMediaUrl } from "../utils/format";
+
+export function shouldHandleGenerationDeleteKey(
+  event: Pick<
+    KeyboardEvent,
+    "key" | "ctrlKey" | "altKey" | "metaKey" | "repeat" | "defaultPrevented"
+  >,
+  target: unknown,
+  confirmationOpen: boolean
+): boolean {
+  return (
+    !confirmationOpen &&
+    !event.defaultPrevented &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.metaKey &&
+    !event.repeat &&
+    (event.key === "Delete" || event.key === "Backspace") &&
+    !isInteractiveKeyboardTarget(target)
+  );
+}
 
 interface CreateCreativeModeProps {
   draft: GenerationRequest;
@@ -68,6 +97,10 @@ interface CreateCreativeModeProps {
   onCancel: () => void;
   onInspectImage: (img: GeneratedImageRecord) => void;
   onToggleFavorite: (id: string) => void;
+  jobs?: GenerationJob[];
+  onDeleteImage?: (id: string) => Promise<void> | void;
+  onDeleteJob?: (jobId: string) => Promise<void> | void;
+  onToast?: (msg: string, tone?: "info" | "error") => void;
 }
 
 export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
@@ -97,10 +130,36 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
   onCancel,
   onInspectImage,
   onToggleFavorite,
+  jobs,
+  onDeleteImage,
+  onDeleteJob,
+  onToast,
 }) => {
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const [showNegative, setShowNegative] = useState(false);
   const [magicModalOpen, setMagicModalOpen] = useState(false);
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{
+    type: "job" | "image";
+    id: string;
+    label: string;
+  } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const failedJob = useMemo(() => {
+    if (!jobs || jobs.length === 0) return null;
+    const latestImageTime = images[0] ? new Date(images[0].createdAt).getTime() : 0;
+    return (
+      jobs.find((j) => {
+        if (j.status !== "FAILED") return false;
+        if (j.startupInterrupted) return false;
+        if (j.errorMessage?.includes("Interrupted when application previously")) return false;
+        if (latestImageTime && new Date(j.submittedAt).getTime() <= latestImageTime) {
+          return false;
+        }
+        return true;
+      }) ?? null
+    );
+  }, [jobs, images]);
   const { showContextMenu } = useContextMenu();
 
   const handlePromptContextMenu = (e: React.MouseEvent<HTMLTextAreaElement>) => {
@@ -356,6 +415,20 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
         icon: <FolderIcon className="w-3.5 h-3.5" />,
         onClick: () => void window.kirea.openPath(img.filePath),
       },
+      {
+        id: "img-delete",
+        label: "Delete Generation",
+        icon: <Trash2 className="w-3.5 h-3.5 text-danger" />,
+        destructive: true,
+        separator: true,
+        onClick: () => {
+          setDeleteConfirmTarget({
+            type: "image",
+            id: img.id,
+            label: `Generation (${img.width}×${img.height}, Seed ${img.seed})`,
+          });
+        },
+      },
     ];
 
     showContextMenu({
@@ -374,7 +447,36 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
     const nextHeight = Math.min(220, Math.max(52, el.scrollHeight));
     el.style.height = `${nextHeight}px`;
   }, [draft.prompt]);
+
   const threadImages = images.slice(0, 10);
+
+  // Keyboard deletion shortcut
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!shouldHandleGenerationDeleteKey(e, e.target, Boolean(deleteConfirmTarget))) return;
+
+      if (failedJob && !activeJob) {
+        e.preventDefault();
+        setDeleteConfirmTarget({
+          type: "job",
+          id: failedJob.id,
+          label: failedJob.prompt
+            ? `Failed Generation: "${failedJob.prompt.slice(0, 36)}..."`
+            : `Failed Generation #${failedJob.id.slice(0, 8)}`,
+        });
+      } else if (threadImages[0]) {
+        e.preventDefault();
+        setDeleteConfirmTarget({
+          type: "image",
+          id: threadImages[0].id,
+          label: `Generation (${threadImages[0].width}×${threadImages[0].height}, Seed ${threadImages[0].seed})`,
+        });
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [deleteConfirmTarget, failedJob, activeJob, threadImages]);
   const characterAvatar = activeCharacter?.references[0]?.filePath;
   const hasReference = draft.mode === "img2img" && Boolean(draft.inputImagePath);
   const engineOnline = runtime.status === "connected";
@@ -394,10 +496,39 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
     promptRef.current?.focus();
   };
 
+  const handleConfirmDelete = async (): Promise<void> => {
+    if (!deleteConfirmTarget || deleting) return;
+    setDeleting(true);
+    try {
+      if (deleteConfirmTarget.type === "job") {
+        if (onDeleteJob) {
+          await onDeleteJob(deleteConfirmTarget.id);
+        } else {
+          const removed = await window.kirea.deleteJob(deleteConfirmTarget.id);
+          if (!removed) throw new Error("Failed generation could not be deleted.");
+          onToast?.("Failed generation deleted.");
+        }
+      } else if (onDeleteImage) {
+        await onDeleteImage(deleteConfirmTarget.id);
+      } else {
+        await window.kirea.deleteImage(deleteConfirmTarget.id);
+        onToast?.("Generation deleted.");
+      }
+      setDeleteConfirmTarget(null);
+    } catch (err) {
+      onToast?.(
+        err instanceof Error ? err.message : "Generation could not be deleted.",
+        "error"
+      );
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-surface">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-bg">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[980px] px-6 py-6">
+        <div className="mx-auto w-full max-w-[1240px] px-4 sm:px-5 py-4">
           <div className="flex items-baseline justify-between gap-3">
             <h2 className="text-h2 text-fg">Studio thread</h2>
             <span className="font-mono text-tech tabular-nums text-fg-subtle">
@@ -405,6 +536,53 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
               {checkpointLabel(draft.checkpoint)}
             </span>
           </div>
+
+          {failedJob && !activeJob && (
+            <div className="mt-4 rounded-xl border-2 border-danger/40 bg-danger/10 p-4 shadow-[2px_2px_0px_#0B0C10]">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <AlertTriangle className="h-4 w-4 text-danger shrink-0" />
+                  <span className="text-small font-semibold text-danger truncate font-mono">
+                    Generation failed: {failedJob.errorMessage || "ComfyUI execution error"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void window.kirea.retryJob(failedJob.id)}
+                    className="font-mono text-xs uppercase"
+                  >
+                    <RotateCcw className="h-3 w-3 mr-1" />
+                    Retry
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    onClick={() => {
+                      setDeleteConfirmTarget({
+                        type: "job",
+                        id: failedJob.id,
+                        label: failedJob.prompt
+                          ? `Failed Generation: "${failedJob.prompt.slice(0, 36)}..."`
+                          : `Failed Generation #${failedJob.id.slice(0, 8)}`,
+                      });
+                    }}
+                    className="font-mono text-xs uppercase"
+                    title="Delete failed generation (Delete key)"
+                  >
+                    <Trash2 className="h-3 w-3 mr-1" />
+                    Delete
+                  </Button>
+                </div>
+              </div>
+              {failedJob.prompt && (
+                <p className="mt-2 text-caption text-fg-subtle truncate font-mono">
+                  Brief: {failedJob.prompt}
+                </p>
+              )}
+            </div>
+          )}
 
           {activeJob && (
             <div className="mt-4 rounded-xl border border-border bg-bg/60 p-4">
@@ -451,7 +629,7 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
           )}
 
           {threadImages.length === 0 ? (
-            <div className="mt-6 rounded-xl border border-dashed border-border px-6 py-8">
+            <div className="mt-4 rounded-xl border border-dashed border-border px-4 py-6">
               <p className="max-w-[52ch] text-body text-fg">
                 Nothing briefed yet. Describe the render in the composer below;
                 Kirea keeps the prompt, seed, and model attached to the result.
@@ -474,11 +652,11 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
               </div>
             </div>
           ) : (
-            <ol className="mt-4 divide-y divide-divider">
+            <ol className="mt-3 divide-y divide-divider">
               {threadImages.map((img) => (
                 <li
                   key={img.id}
-                  className="grid gap-5 py-5 sm:grid-cols-[200px_minmax(0,1fr)] md:grid-cols-[220px_minmax(0,1fr)] items-start"
+                  className="grid gap-3 py-3 sm:grid-cols-[112px_minmax(0,1fr)] md:grid-cols-[128px_minmax(0,1fr)] xl:grid-cols-[144px_minmax(0,1fr)] items-start"
                 >
                   <button
                     type="button"
@@ -531,13 +709,6 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
                     <div className="mt-3 flex flex-wrap items-center gap-1.5">
                       <Button
                         size="sm"
-                        variant="secondary"
-                        onClick={() => onInspectImage(img)}
-                      >
-                        Inspect
-                      </Button>
-                      <Button
-                        size="sm"
                         variant="ghost"
                         onClick={() => onToggleFavorite(img.id)}
                         aria-label={
@@ -560,6 +731,23 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
                       >
                         <FolderOpen className="h-3.5 w-3.5" />
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-danger hover:bg-danger/10 hover:text-danger"
+                        onClick={() => {
+                          setDeleteConfirmTarget({
+                            type: "image",
+                            id: img.id,
+                            label: `Generation (${img.width}×${img.height}, Seed ${img.seed})`,
+                          });
+                        }}
+                        aria-label="Delete generation"
+                        title="Delete generation (Delete key)"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1" />
+                        <span className="hidden sm:inline">Delete</span>
+                      </Button>
                     </div>
                   </div>
                 </li>
@@ -570,7 +758,7 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
       </div>
 
       <div className="shrink-0 border-t border-border bg-surface-elevated">
-        <div className="mx-auto w-full max-w-[980px] space-y-2.5 px-6 py-4">
+        <div className="mx-auto w-full max-w-[1240px] space-y-2 px-4 sm:px-5 py-3">
           {(activeCharacter || hasReference || activeRecipe) && (
             <div className="flex flex-wrap items-center gap-1.5">
               {activeCharacter && (
@@ -759,7 +947,7 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
                 <button
                   type="button"
                   onClick={() => setMagicModalOpen(true)}
-                  className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent-soft/40 px-2.5 py-1 text-caption font-medium text-accent hover:border-accent hover:bg-accent-soft transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1 rounded-full border border-terracotta/40 bg-terracotta-soft/40 px-2.5 py-1 text-caption font-medium text-terracotta hover:border-terracotta hover:bg-terracotta-soft transition-colors cursor-pointer"
                   title="Enhance brief into model-aware Danbooru tags"
                 >
                   <Sparkles className="h-3 w-3 animate-pulse" />
@@ -859,6 +1047,17 @@ export const CreateCreativeMode: React.FC<CreateCreativeModeProps> = ({
           setDraft((p) => ({ ...p, prompt: appendedPrompt }));
           setMagicModalOpen(false);
         }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(deleteConfirmTarget)}
+        onClose={() => setDeleteConfirmTarget(null)}
+        onConfirm={handleConfirmDelete}
+        title="Delete Generation?"
+        description={`Are you sure you want to delete ${deleteConfirmTarget?.label ?? "this generation"}? This action cannot be undone.`}
+        confirmLabel="Yes, Delete"
+        danger
+        defaultFocusConfirm
       />
     </div>
   );

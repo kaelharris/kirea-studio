@@ -334,6 +334,56 @@ describe("MOSS-Image Architecture & Workflow Tests", () => {
     expect(graph["3"]?.inputs.scheduler).toBe("simple");
   });
 
+  it("compiles MOSS Turbo 4-step graph and auto-injects distilled LoRA with CFG 1.0", () => {
+    const turboReq: GenerationRequest = {
+      ...BASE_MOSS_REQ,
+      workflowId: "t2i_moss_image_turbo",
+      steps: 4,
+      cfg: 1.0,
+      sampler: "euler",
+      scheduler: "simple",
+      loras: [],
+    };
+
+    const { graph } = buildComfyPromptGraph({
+      request: turboReq,
+      availableModels: [
+        ...MOSS_SAMPLE_MODELS,
+        {
+          id: "m_moss_turbo_lora",
+          name: "moss_image_sft_4_steps_lora_v2_600_avg_rank_72_bf16",
+          relativePath: "moss_image_sft_4_steps_lora_v2_600_avg_rank_72_bf16.safetensors",
+          filePath: "C:\\models\\loras\\moss_image\\moss_image_sft_4_steps_lora_v2_600_avg_rank_72_bf16.safetensors",
+          category: "lora",
+          architecture: "moss_image",
+          sizeBytes: 380_000_000,
+          sha256: null,
+          sourceRoot: "C:\\models\\loras",
+          isDuplicate: false,
+          duplicateOf: null,
+          isIncomplete: false,
+          compatibleWorkflows: ["t2i_moss_image_turbo"],
+          license: null,
+          description: null,
+          installed: true,
+          lastSeenAt: "2026-11-21T00:00:00Z",
+        },
+      ],
+    });
+
+    // Auto-injected 4-step turbo LoRA
+    expect(graph["4_turbo"]).toBeDefined();
+    expect(graph["4_turbo"]?.class_type).toBe("LoraLoaderModelOnly");
+    expect(graph["4_turbo"]?.inputs.strength_model).toBe(1.0);
+    expect(graph["4_turbo"]?.inputs.lora_name).toContain("4_steps_lora");
+
+    // KSampler configured for fast 4-step single pass
+    expect(graph["3"]?.inputs.steps).toBe(4);
+    expect(graph["3"]?.inputs.cfg).toBe(1.0);
+    expect(graph["3"]?.inputs.sampler_name).toBe("euler");
+    expect(graph["3"]?.inputs.scheduler).toBe("simple");
+  });
+
   it("strictly rejects pairing a MOSS checkpoint with an Anima workflow", () => {
     const invalidReq: GenerationRequest = {
       mode: "txt2img",

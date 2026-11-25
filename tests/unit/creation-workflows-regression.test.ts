@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { GenerationRequestSchema } from "../../src/main/ipc/schemas";
+import { INITIAL_DRAFT } from "../../src/renderer/app/app-constants";
 import {
   buildComfyPromptGraph,
   validateGenerationRequest,
@@ -208,5 +210,14 @@ describe("Creation Workflows Integration & Regression Suite", () => {
     const oddW = snapDimension(850, 64, 512, 2048);
     expect(oddW % 64).toBe(0);
     expect(oddW).toBe(832);
+  });
+
+  it("defaults INITIAL_DRAFT to seed -1 (random) and validates through GenerationRequestSchema", () => {
+    expect(INITIAL_DRAFT.seed).toBe(-1);
+    expect(INITIAL_DRAFT.randomSeed).toBe(true);
+
+    const parsed = GenerationRequestSchema.parse(INITIAL_DRAFT);
+    expect(parsed.seed).toBe(-1);
+    expect(parsed.randomSeed).toBe(true);
   });
 });

@@ -1,6 +1,10 @@
 import type {
+  CharacterAdapter,
+  CharacterOutfit,
   CharacterProfile,
   CharacterReference,
+  CharacterReferenceApproval,
+  CharacterReferenceCategory,
   CharacterReferenceMode,
   CharacterReferenceRole,
   ModelArchitecture,
@@ -19,6 +23,25 @@ export const CHARACTER_REFERENCE_ROLE_LABELS: Record<CharacterReferenceRole, str
   expression: "Expression",
   outfit: "Outfit",
   pose: "Pose",
+};
+
+export const CHARACTER_REFERENCE_CATEGORY_LABELS: Record<CharacterReferenceCategory, string> = {
+  canonical_face: "Canonical Face",
+  front_view: "Front View",
+  three_quarter: "3/4 View",
+  side_profile: "Side Profile",
+  full_body: "Full Body",
+  expression: "Expression",
+  pose: "Pose",
+  clothing_variant: "Clothing Variant",
+  approved_artwork: "Approved Artwork",
+  other: "Other Reference",
+};
+
+export const CHARACTER_REFERENCE_APPROVAL_LABELS: Record<CharacterReferenceApproval, string> = {
+  approved: "Approved",
+  pending: "Pending Review",
+  rejected: "Rejected",
 };
 
 const CHARACTER_REFERENCE_DENOISE_MIN = 0.35;
@@ -44,6 +67,7 @@ export function getCharacterCoverReference(
   return (
     getPrimaryCharacterReference(character) ??
     character.references.find((ref) => ref.role === "outfit") ??
+    character.references.find((ref) => ref.category === "canonical_face") ??
     character.references[0] ??
     null
   );
@@ -60,29 +84,111 @@ function normalizeToken(value: string): string {
 export function getCharacterIdentityTokens(
   character: Pick<
     CharacterProfile,
-    "promptPrefix" | "appearance" | "clothing" | "triggerWords"
-  >
+    | "promptPrefix"
+    | "appearance"
+    | "clothing"
+    | "triggerWords"
+    | "dna"
+    | "outfits"
+    | "activeOutfitId"
+  >,
+  overrideOutfitId?: string | null
 ): string[] {
-  const raw = [
-    character.promptPrefix,
-    character.appearance,
-    character.clothing,
-    ...(character.triggerWords ?? []),
-  ];
-  const seen = new Set<string>();
   const tokens: string[] = [];
-  for (const item of raw) {
-    // Split multi-clause fields so prompt composition and token removal stay
-    // symmetric (removal works on comma-separated prompt segments).
-    for (const piece of (item ?? "").split(",")) {
-      const token = normalizeToken(piece);
-      if (!token) continue;
-      const key = token.toLowerCase();
+  const seen = new Set<string>();
+
+  const addToken = (token: string) => {
+    for (const piece of token.split(",")) {
+      const clean = normalizeToken(piece);
+      if (!clean) continue;
+      const key = clean.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
-      tokens.push(token);
+      tokens.push(clean);
+    }
+  };
+
+  const dna = character.dna;
+
+  if (!dna) {
+    const raw = [
+      character.promptPrefix,
+      character.appearance,
+      character.clothing,
+      ...(character.triggerWords ?? []),
+    ];
+    for (const item of raw) {
+      if (item) addToken(item);
+    }
+    return tokens;
+  }
+
+  // 1. Primary trigger token
+  if (dna.triggerToken) {
+    addToken(dna.triggerToken);
+  } else if (character.triggerWords && character.triggerWords.length > 0) {
+    for (const tw of character.triggerWords) {
+      if (tw) addToken(tw);
     }
   }
+
+  // 2. Fixed appearance traits
+  if (dna.gender) {
+    const g = dna.gender.trim().toLowerCase();
+    if (g === "female") {
+      addToken("1girl");
+    } else if (g === "male") {
+      addToken("1boy");
+    } else {
+      addToken(dna.gender);
+    }
+  }
+  if (dna.hairColor && !dna.hairColor.toLowerCase().includes("hair")) {
+    addToken(`${dna.hairColor} hair`);
+  } else if (dna.hairColor) {
+    addToken(dna.hairColor);
+  }
+  if (dna.hairStyle) addToken(dna.hairStyle);
+  if (dna.eyeColor && !dna.eyeColor.toLowerCase().includes("eyes") && !dna.eyeColor.toLowerCase().includes("eye")) {
+    addToken(`${dna.eyeColor} eyes`);
+  } else if (dna.eyeColor) {
+    addToken(dna.eyeColor);
+  }
+  if (dna.skinTone) addToken(dna.skinTone);
+  if (dna.species && dna.species.toLowerCase() !== "human") addToken(dna.species);
+  if (dna.archetype) addToken(dna.archetype);
+  for (const feat of dna.distinctiveFeatures ?? []) {
+    if (feat) addToken(feat);
+  }
+  for (const trait of dna.fixedTraits ?? []) {
+    if (trait) addToken(trait);
+  }
+  if (dna.facialCharacteristics) addToken(dna.facialCharacteristics);
+  if (dna.bodyCharacteristics) addToken(dna.bodyCharacteristics);
+  for (const acc of dna.signatureAccessories ?? []) {
+    if (acc) addToken(acc);
+  }
+  if (dna.preferredStyle) addToken(dna.preferredStyle);
+
+  // 3. Outfits
+  const targetOutfitId =
+    overrideOutfitId !== undefined ? overrideOutfitId : character.activeOutfitId;
+  if (targetOutfitId && character.outfits) {
+    const outfit = character.outfits.find((o) => o.id === targetOutfitId);
+    if (outfit) {
+      for (const t of outfit.promptTokens ?? []) {
+        if (t) addToken(t);
+      }
+      if (outfit.description && (!outfit.promptTokens || outfit.promptTokens.length === 0)) {
+        addToken(outfit.description);
+      }
+    }
+  }
+
+  // 4. Legacy fields fallback
+  if (character.promptPrefix) addToken(character.promptPrefix);
+  if (!targetOutfitId && character.clothing) addToken(character.clothing);
+
   return tokens;
 }
 
@@ -100,11 +206,18 @@ function splitPromptSegments(prompt: string): string[] {
 export function composeCharacterPrompt(
   character: Pick<
     CharacterProfile,
-    "promptPrefix" | "appearance" | "clothing" | "triggerWords"
+    | "promptPrefix"
+    | "appearance"
+    | "clothing"
+    | "triggerWords"
+    | "dna"
+    | "outfits"
+    | "activeOutfitId"
   >,
-  basePrompt: string
+  basePrompt: string,
+  outfitId?: string | null
 ): string {
-  const tokens = getCharacterIdentityTokens(character);
+  const tokens = getCharacterIdentityTokens(character, outfitId);
   if (tokens.length === 0) return basePrompt.trim();
 
   const segments = splitPromptSegments(basePrompt);
@@ -117,11 +230,18 @@ export function removeCharacterIdentityTokens(
   prompt: string,
   character: Pick<
     CharacterProfile,
-    "promptPrefix" | "appearance" | "clothing" | "triggerWords"
-  >
+    | "promptPrefix"
+    | "appearance"
+    | "clothing"
+    | "triggerWords"
+    | "dna"
+    | "outfits"
+    | "activeOutfitId"
+  >,
+  outfitId?: string | null
 ): string {
   const tokens = new Set(
-    getCharacterIdentityTokens(character).map((token) => token.toLowerCase())
+    getCharacterIdentityTokens(character, outfitId).map((token) => token.toLowerCase())
   );
   if (tokens.size === 0) return prompt;
   return splitPromptSegments(prompt)
@@ -129,10 +249,43 @@ export function removeCharacterIdentityTokens(
     .join(", ");
 }
 
+/**
+ * Finds the best compatible trained character visual adapter for the active model architecture.
+ */
+export function resolveCharacterAdapter(
+  character: Pick<CharacterProfile, "adapters" | "activeAdapterId">,
+  architecture: ModelArchitecture
+): CharacterAdapter | null {
+  if (!character.adapters || character.adapters.length === 0) return null;
+  const targetFamily = architecture.toLowerCase();
+
+  const isFamilyMatch = (family: string) => {
+    const f = family.toLowerCase();
+    if (f === targetFamily) return true;
+    if ((targetFamily === "pony" || targetFamily === "illustrious") && (f === "sdxl" || f === "illustrious")) {
+      return true;
+    }
+    if (targetFamily === "sdxl" && f === "sdxl") return true;
+    return false;
+  };
+
+  // Check active adapter first
+  if (character.activeAdapterId) {
+    const active = character.adapters.find((a) => a.id === character.activeAdapterId);
+    if (active && isFamilyMatch(active.baseModelFamily)) {
+      return active;
+    }
+  }
+
+  // Fallback to first compatible adapter
+  return character.adapters.find((a) => isFamilyMatch(a.baseModelFamily)) ?? null;
+}
+
 export function characterTextWorkflowId(architecture: ModelArchitecture): string {
   if (architecture === "illustrious") return "t2i_illustrious_base";
   if (architecture === "moss_image") return "t2i_moss_image";
   if (architecture === "anima") return "t2i_anima_base";
+  if (architecture === "krea2") return "t2i_krea2_base";
   if (architecture === "z_image") return "t2i_z_image_turbo";
   if (architecture === "sd15") return "t2i_sd15_base";
   return "t2i_sdxl_base";
@@ -144,6 +297,7 @@ export function characterImg2ImgWorkflowId(
   if (architecture === "illustrious") return "i2i_illustrious_base";
   if (architecture === "moss_image") return "i2i_moss_image_edit";
   if (architecture === "anima") return "i2i_anima_base";
+  if (architecture === "krea2") return "i2i_krea2_base";
   if (architecture === "sd15") return "i2i_sd15_base";
   if (
     architecture === "sdxl" ||

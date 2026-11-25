@@ -361,6 +361,26 @@ export class CivitaiDownloadManager extends EventEmitter {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
+  clearCompleted(): number {
+    let cleared = 0;
+    const toRemove: string[] = [];
+    for (const [id, entry] of this.entries.entries()) {
+      const s = entry.task.status;
+      if (s === "completed" || s === "failed" || s === "cancelled") {
+        toRemove.push(id);
+      }
+    }
+    for (const id of toRemove) {
+      this.entries.delete(id);
+      cleared++;
+    }
+    if (cleared > 0) {
+      this.savePersisted();
+      this.emit("historyCleared", cleared);
+    }
+    return cleared;
+  }
+
   getTask(id: string): CivitaiDownloadTask | undefined {
     const entry = this.entries.get(id);
     return entry ? { ...entry.task } : undefined;

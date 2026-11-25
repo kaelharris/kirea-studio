@@ -792,5 +792,172 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 13,
+    name: "character_dna_system",
+    up: (db) => {
+      db.exec(`
+        -- 1. Character DNA Core & Knowledge columns
+        ALTER TABLE characters ADD COLUMN trigger_token TEXT;
+        ALTER TABLE characters ADD COLUMN age_category TEXT;
+        ALTER TABLE characters ADD COLUMN species TEXT;
+        ALTER TABLE characters ADD COLUMN hair_color TEXT;
+        ALTER TABLE characters ADD COLUMN hair_style TEXT;
+        ALTER TABLE characters ADD COLUMN eye_color TEXT;
+        ALTER TABLE characters ADD COLUMN skin_tone TEXT;
+        ALTER TABLE characters ADD COLUMN facial_characteristics TEXT;
+        ALTER TABLE characters ADD COLUMN distinctive_features_json TEXT DEFAULT '[]';
+        ALTER TABLE characters ADD COLUMN body_characteristics TEXT;
+        ALTER TABLE characters ADD COLUMN signature_accessories_json TEXT DEFAULT '[]';
+        ALTER TABLE characters ADD COLUMN canonical_description TEXT;
+        ALTER TABLE characters ADD COLUMN fixed_traits_json TEXT DEFAULT '[]';
+        ALTER TABLE characters ADD COLUMN variable_traits_json TEXT DEFAULT '[]';
+        ALTER TABLE characters ADD COLUMN preferred_style TEXT;
+        ALTER TABLE characters ADD COLUMN negative_constraints TEXT;
+        ALTER TABLE characters ADD COLUMN personality TEXT;
+        ALTER TABLE characters ADD COLUMN speech_style TEXT;
+        ALTER TABLE characters ADD COLUMN background TEXT;
+        ALTER TABLE characters ADD COLUMN history TEXT;
+        ALTER TABLE characters ADD COLUMN relationships_json TEXT DEFAULT '[]';
+        ALTER TABLE characters ADD COLUMN motivations TEXT;
+        ALTER TABLE characters ADD COLUMN likes_json TEXT DEFAULT '[]';
+        ALTER TABLE characters ADD COLUMN dislikes_json TEXT DEFAULT '[]';
+        ALTER TABLE characters ADD COLUMN rules_json TEXT DEFAULT '[]';
+        ALTER TABLE characters ADD COLUMN worldbuilding TEXT;
+        ALTER TABLE characters ADD COLUMN dialogue_examples_json TEXT DEFAULT '[]';
+        ALTER TABLE characters ADD COLUMN dna_locked INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE characters ADD COLUMN active_adapter_id TEXT;
+        ALTER TABLE characters ADD COLUMN active_outfit_id TEXT;
+
+        -- 2. Extended Character Reference metadata
+        ALTER TABLE character_references ADD COLUMN category TEXT NOT NULL DEFAULT 'other';
+        ALTER TABLE character_references ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'pending';
+        ALTER TABLE character_references ADD COLUMN associated_outfit_id TEXT;
+        ALTER TABLE character_references ADD COLUMN included_in_training INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE character_references ADD COLUMN width INTEGER;
+        ALTER TABLE character_references ADD COLUMN height INTEGER;
+        ALTER TABLE character_references ADD COLUMN aspect_ratio TEXT;
+
+        -- 3. Character Outfits table
+        CREATE TABLE IF NOT EXISTS character_outfits (
+          id TEXT PRIMARY KEY,
+          character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '',
+          prompt_tokens_json TEXT NOT NULL DEFAULT '[]',
+          is_default INTEGER NOT NULL DEFAULT 0,
+          preview_image_path TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_character_outfits_char
+          ON character_outfits(character_id);
+
+        -- 4. Character Adapters table (Model Memory)
+        CREATE TABLE IF NOT EXISTS character_adapters (
+          id TEXT PRIMARY KEY,
+          character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+          base_model_family TEXT NOT NULL,
+          checkpoint_path TEXT,
+          checkpoint_name TEXT,
+          trigger_token TEXT NOT NULL,
+          file_location TEXT NOT NULL,
+          training_config_json TEXT,
+          dataset_version TEXT,
+          rank INTEGER NOT NULL DEFAULT 16,
+          alpha INTEGER NOT NULL DEFAULT 16,
+          recommended_strength REAL NOT NULL DEFAULT 0.85,
+          status TEXT NOT NULL DEFAULT 'trained',
+          validation_images_json TEXT NOT NULL DEFAULT '[]',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_character_adapters_char
+          ON character_adapters(character_id, base_model_family);
+
+        -- 5. Character Datasets table
+        CREATE TABLE IF NOT EXISTS character_datasets (
+          id TEXT PRIMARY KEY,
+          character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+          version TEXT NOT NULL,
+          name TEXT NOT NULL,
+          item_count INTEGER NOT NULL DEFAULT 0,
+          manifest_json TEXT NOT NULL DEFAULT '[]',
+          export_path TEXT,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_character_datasets_char
+          ON character_datasets(character_id);
+
+        -- 6. Character Training Jobs table
+        CREATE TABLE IF NOT EXISTS character_training_jobs (
+          id TEXT PRIMARY KEY,
+          character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+          adapter_id TEXT REFERENCES character_adapters(id) ON DELETE SET NULL,
+          base_model_family TEXT NOT NULL,
+          status TEXT NOT NULL,
+          progress_step INTEGER NOT NULL DEFAULT 0,
+          progress_max INTEGER NOT NULL DEFAULT 0,
+          current_epoch INTEGER DEFAULT 0,
+          total_epochs INTEGER DEFAULT 0,
+          loss REAL,
+          config_json TEXT NOT NULL,
+          error_message TEXT,
+          logs_text TEXT NOT NULL DEFAULT '',
+          output_adapter_path TEXT,
+          submitted_at TEXT NOT NULL,
+          started_at TEXT,
+          completed_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_character_training_char
+          ON character_training_jobs(character_id, status);
+      `);
+    },
+  },
+  {
+    version: 14,
+    name: "character_archetype",
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE characters ADD COLUMN archetype TEXT;
+      `);
+    },
+  },
+  {
+    version: 15,
+    name: "character_gender",
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE characters ADD COLUMN gender TEXT;
+      `);
+    },
+  },
+  {
+    version: 16,
+    name: "character_reference_vision_tags",
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE character_references ADD COLUMN suggested_tags_json TEXT DEFAULT '[]';
+        ALTER TABLE character_references ADD COLUMN image_hash TEXT;
+        CREATE TABLE IF NOT EXISTS visual_tag_cache (
+          image_hash TEXT PRIMARY KEY,
+          tags_json TEXT NOT NULL,
+          tagger_version TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+      `);
+    },
+  },
+  {
+    version: 17,
+    name: "generation_job_startup_interrupted",
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE generation_jobs
+          ADD COLUMN startup_interrupted INTEGER NOT NULL DEFAULT 0
+          CHECK (startup_interrupted IN (0, 1));
+      `);
+    },
+  },
 ];
 

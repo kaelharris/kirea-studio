@@ -4,6 +4,7 @@ export const MOSS_IMAGE_WORKFLOW_ID = "t2i_moss_image";
 
 export const MOSS_IMAGE_WORKFLOW_IDS = [
   "t2i_moss_image",
+  "t2i_moss_image_turbo",
   "t2i_moss_image_base",
   "t2i_moss_image_layout",
   "i2i_moss_image_edit",
@@ -126,6 +127,7 @@ export const MOSS_IMAGE_DEPENDENCIES: MossImageDependency[] = [
 
 const MOSS_REQUIREMENTS: Record<MossImageWorkflowId, MossComponentId[]> = {
   t2i_moss_image: ["moss-sft", "moss-encoder", "moss-vae"],
+  t2i_moss_image_turbo: ["moss-sft", "moss-encoder", "moss-vae"],
   t2i_moss_image_base: ["moss-base", "moss-encoder", "moss-vae"],
   t2i_moss_image_layout: ["moss-sft", "moss-encoder", "moss-vae"],
   i2i_moss_image_edit: ["moss-sft", "moss-encoder", "moss-vae", "moss-edit-lora"],

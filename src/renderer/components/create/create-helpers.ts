@@ -40,6 +40,8 @@ export interface CreatePageProps {
     collection?: GeneratedImageRecord[]
   ) => void;
   onToggleFavorite: (id: string) => Promise<void>;
+  onDeleteImage?: (id: string) => Promise<void>;
+  onDeleteJob?: (jobId: string) => Promise<void>;
   onSavePrompt: (record: {
     title: string;
     prompt: string;
@@ -61,6 +63,11 @@ export const DEFAULT_UPSCALE_CONFIG: UpscaleConfig = {
   upscaler: "",
   scale: 4,
 };
+
+export const LORA_PREVIEW_SIZES = {
+  picker: 72,
+  stack: 52,
+} as const;
 
 export function describeUpscalerLabel(name: string): string {
   const lower = name.toLowerCase();

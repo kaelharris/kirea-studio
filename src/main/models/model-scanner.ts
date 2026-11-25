@@ -182,6 +182,9 @@ function getCompatibleWorkflowIds(category: ModelCategory, arch: ModelArchitectu
     if (arch === "anima") {
       return ["t2i_anima_base", "i2i_anima_base"];
     }
+    if (arch === "krea2") {
+      return ["t2i_krea2_base", "i2i_krea2_base"];
+    }
     return WORKFLOW_TEMPLATES.filter(
       (wf) =>
         wf.mode !== "upscale" &&
@@ -189,6 +192,8 @@ function getCompatibleWorkflowIds(category: ModelCategory, arch: ModelArchitectu
         wf.id !== "t2i_z_image_turbo" &&
         wf.id !== "t2i_anima_base" &&
         wf.id !== "i2i_anima_base" &&
+        wf.id !== "t2i_krea2_base" &&
+        wf.id !== "i2i_krea2_base" &&
         (arch === "unknown"
           ? wf.supportedArchitectures.includes("unknown")
           : wf.supportedArchitectures.includes(arch))
@@ -201,6 +206,9 @@ function getCompatibleWorkflowIds(category: ModelCategory, arch: ModelArchitectu
     }
     if (arch === "anima") {
       return ["t2i_anima_base", "i2i_anima_base"];
+    }
+    if (arch === "krea2") {
+      return ["t2i_krea2_base", "i2i_krea2_base"];
     }
     if (arch === "moss_image") {
       return WORKFLOW_TEMPLATES.filter((wf) =>

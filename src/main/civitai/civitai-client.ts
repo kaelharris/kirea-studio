@@ -24,7 +24,7 @@ import type { StudioLogger } from "../logger";
 export const CIVITAI_API_BASE = "https://civitai.com/api/v1";
 export const CIVITAI_DOWNLOAD_BASE = "https://civitai.com/api/download/models";
 
-const USER_AGENT = "KireaStudio/1.0.1 (Windows Desktop)";
+const USER_AGENT = "KireaStudio/1.1.1 (Windows Desktop)";
 
 interface RawCivitaiFile {
   id?: number;
@@ -559,15 +559,49 @@ export class CivitaiClient {
     const limit = Math.min(Math.max(query.limit ?? 24, 1), 50);
     params.set("limit", String(limit));
     params.set("sort", mapCivitaiSort(query.sort));
-    if (query.period) params.set("period", query.period);
+    params.set("period", query.period ?? "Month");
     params.set("nsfw", String(query.nsfw === true));
-    if (query.query?.trim()) params.set("query", query.query.trim());
-    if (query.type) params.set("types", query.type);
-    if (query.baseModel) {
+
+    if (query.tag?.trim()) {
+      params.set("tag", query.tag.trim());
+    }
+
+    if (query.types?.trim()) {
+      params.set("types", query.types.trim());
+    } else if (query.type) {
+      params.set("types", query.type);
+    }
+
+    if (query.baseModels) {
+      if (Array.isArray(query.baseModels)) {
+        for (const bm of query.baseModels) {
+          const mapped = mapCivitaiBaseModelQuery(bm);
+          if (mapped) params.append("baseModels", mapped);
+        }
+      } else {
+        const mapped = mapCivitaiBaseModelQuery(query.baseModels);
+        if (mapped) params.set("baseModels", mapped);
+      }
+    } else if (query.baseModel) {
       const mapped = mapCivitaiBaseModelQuery(query.baseModel);
       if (mapped) params.set("baseModels", mapped);
     }
-    if (query.cursor) params.set("cursor", query.cursor);
+
+    // Pagination: Civitai Meilisearch endpoint strictly requires cursor-based pagination
+    // when query is non-empty; combining query + page throws HTTP 400.
+    const trimmedQuery = query.query?.trim();
+    if (trimmedQuery) {
+      params.set("query", trimmedQuery);
+      if (query.cursor) {
+        params.set("cursor", query.cursor);
+      }
+    } else {
+      if (query.cursor) {
+        params.set("cursor", query.cursor);
+      } else if (query.page) {
+        params.set("page", String(query.page));
+      }
+    }
 
     const payload = await this.requestJson<RawSearchResponse>(
       `${CIVITAI_API_BASE}/models?${params.toString()}`,

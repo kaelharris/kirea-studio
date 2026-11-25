@@ -89,7 +89,7 @@ export const LoraRecipeSettingsSchema = z
     cfg: z.number().min(0.5).max(30).optional(),
     sampler: z.string().max(100).optional(),
     scheduler: z.string().max(100).optional(),
-    seed: z.number().int().min(0).max(4294967295).optional(),
+    seed: z.number().int().min(-1).max(4294967295).optional(),
     denoise: z.number().min(0.05).max(1.0).optional(),
     batchCount: z.number().int().min(1).max(8).optional(),
     outputFormat: z.enum(["png", "jpeg", "webp"]).optional(),
@@ -217,7 +217,7 @@ export const GenerationRequestSchema = z.object({
   cfg: z.number().min(0.5).max(30),
   sampler: z.string().min(1).max(100),
   scheduler: z.string().min(1).max(100),
-  seed: z.number().int().min(0).max(4294967295),
+  seed: z.number().int().min(-1).max(4294967295),
   randomSeed: z.boolean(),
   batchCount: z.number().int().min(1).max(8),
   batchSize: z.number().int().min(1).max(4),
@@ -316,12 +316,179 @@ export const CharacterReferenceRoleSchema = z.enum([
   "pose",
 ]);
 
+export const CharacterReferenceCategorySchema = z.enum([
+  "canonical_face",
+  "front_view",
+  "three_quarter",
+  "side_profile",
+  "full_body",
+  "expression",
+  "pose",
+  "clothing_variant",
+  "approved_artwork",
+  "other",
+]);
+
+export const CharacterReferenceApprovalSchema = z.enum([
+  "approved",
+  "pending",
+  "rejected",
+]);
+
+export const VisualTagCategorySchema = z.enum([
+  "identity",
+  "clothing",
+  "pose_expression",
+  "environment",
+]);
+
+export const VisualTagApprovalSchema = z.enum([
+  "approved",
+  "rejected",
+  "pending",
+]);
+
+export const VisualTagSchema = z
+  .object({
+    id: z.string().min(1).max(64),
+    tag: z.string().min(1).max(200),
+    category: VisualTagCategorySchema,
+    confidence: z.number().min(0).max(1),
+    approvalStatus: VisualTagApprovalSchema,
+    source: z.enum(["wd14_neural", "visual_heuristic", "manual"]),
+  })
+  .strict();
+
+export const CharacterReferenceCropInputSchema = z
+  .object({
+    left: z.number().int().min(0),
+    top: z.number().int().min(0),
+    width: z.number().int().min(1),
+    height: z.number().int().min(1),
+    category: CharacterReferenceCategorySchema.optional(),
+    caption: z.string().max(500).optional(),
+  })
+  .strict();
+
+export const CharacterIdentityCoreSchema = z
+  .object({
+    triggerToken: z.string().max(200).optional(),
+    gender: z.string().max(100).optional(),
+    ageCategory: z.string().max(100).optional(),
+    species: z.string().max(100).optional(),
+    archetype: z.string().max(100).optional(),
+    hairColor: z.string().max(100).optional(),
+    hairStyle: z.string().max(200).optional(),
+    eyeColor: z.string().max(100).optional(),
+    skinTone: z.string().max(100).optional(),
+    facialCharacteristics: z.string().max(1000).optional(),
+    distinctiveFeatures: z.array(z.string().max(200)).max(64).optional(),
+    bodyCharacteristics: z.string().max(1000).optional(),
+    signatureAccessories: z.array(z.string().max(200)).max(64).optional(),
+    canonicalDescription: z.string().max(5000).optional(),
+    fixedTraits: z.array(z.string().max(200)).max(64).optional(),
+    variableTraits: z.array(z.string().max(200)).max(64).optional(),
+    preferredStyle: z.string().max(200).optional(),
+    negativeConstraints: z.string().max(5000).optional(),
+    dnaLocked: z.boolean().optional(),
+  })
+  .strict();
+
+export const CharacterKnowledgeSchema = z
+  .object({
+    personality: z.string().max(2000).optional(),
+    speechStyle: z.string().max(1000).optional(),
+    background: z.string().max(5000).optional(),
+    history: z.string().max(5000).optional(),
+    relationships: z
+      .array(
+        z.object({
+          target: z.string().max(200),
+          relation: z.string().max(100),
+          notes: z.string().max(1000),
+        })
+      )
+      .max(32)
+      .optional(),
+    motivations: z.string().max(2000).optional(),
+    likes: z.array(z.string().max(200)).max(64).optional(),
+    dislikes: z.array(z.string().max(200)).max(64).optional(),
+    rules: z.array(z.string().max(500)).max(64).optional(),
+    worldbuilding: z.string().max(5000).optional(),
+    dialogueExamples: z
+      .array(
+        z.object({
+          context: z.string().max(500),
+          quote: z.string().max(1000),
+        })
+      )
+      .max(32)
+      .optional(),
+  })
+  .strict();
+
+export const CharacterOutfitInputSchema = z
+  .object({
+    id: z.string().max(64).optional(),
+    characterId: z.string().min(1).max(64),
+    name: z.string().trim().min(1).max(200),
+    description: z.string().max(2000).optional(),
+    promptTokens: z.array(z.string().max(200)).max(64).optional(),
+    isDefault: z.boolean().optional(),
+    previewImagePath: z.string().nullable().optional(),
+  })
+  .strict();
+
+export const CharacterAdapterInputSchema = z
+  .object({
+    id: z.string().max(64).optional(),
+    characterId: z.string().min(1).max(64),
+    baseModelFamily: z.string().min(1).max(100),
+    checkpointPath: z.string().nullable().optional(),
+    checkpointName: z.string().nullable().optional(),
+    triggerToken: z.string().min(1).max(200),
+    fileLocation: z.string().min(1),
+    datasetVersion: z.string().nullable().optional(),
+    rank: z.number().int().min(1).max(256).optional(),
+    alpha: z.number().min(1).max(256).optional(),
+    recommendedStrength: z.number().min(0).max(2).optional(),
+    status: z.enum(["trained", "validating", "active", "disabled"]).optional(),
+  })
+  .strict();
+
+export const CharacterTrainingConfigSchema = z
+  .object({
+    baseModelFamily: z.enum(["sdxl", "illustrious", "pony"]),
+    baseCheckpointPath: z.string().min(1).max(1024),
+    triggerToken: z.string().min(1).max(200),
+    datasetId: z.string().optional(),
+    datasetVersion: z.string().optional(),
+    rank: z.number().int().min(1).max(256),
+    alpha: z.number().min(1).max(256),
+    learningRate: z.number().positive(),
+    epochs: z.number().int().min(1).max(1000),
+    batchSize: z.number().int().min(1).max(32),
+    resolution: z.number().int().min(256).max(2048),
+    gradientAccumulationSteps: z.number().int().min(1).max(64).optional(),
+    gradientCheckpointing: z.boolean().optional(),
+    precision: z.enum(["fp16", "bf16", "fp32"]).optional(),
+    outputDirectory: z.string().min(1).max(1024).optional(),
+    saveEveryNEpochs: z.number().int().min(1).max(1000).optional(),
+  })
+  .strict();
+
 export const CharacterReferenceUpdateInputSchema = z
   .object({
     id: z.string().min(1).max(64),
-    role: CharacterReferenceRoleSchema,
+    role: CharacterReferenceRoleSchema.optional(),
     caption: z.string().max(500).optional(),
     weight: z.number().min(0).max(1).optional(),
+    category: CharacterReferenceCategorySchema.optional(),
+    approvalStatus: CharacterReferenceApprovalSchema.optional(),
+    associatedOutfitId: z.string().nullable().optional(),
+    includedInTraining: z.boolean().optional(),
+    suggestedTags: z.array(VisualTagSchema).optional(),
+    imageHash: z.string().nullable().optional(),
   })
   .strict();
 
@@ -349,14 +516,33 @@ export const CharacterProfileInputSchema = z
     tags: z.array(z.string().max(64)).max(32).optional(),
     favorite: z.boolean().optional(),
     references: z.array(CharacterReferenceUpdateInputSchema).max(32).optional(),
+
+    // Character DNA
+    dna: CharacterIdentityCoreSchema.partial().optional(),
+    knowledge: CharacterKnowledgeSchema.partial().optional(),
+    activeAdapterId: z.string().max(64).nullable().optional(),
+    activeOutfitId: z.string().max(64).nullable().optional(),
   })
   .strict();
+
+export const CharacterProfilePatchSchema = CharacterProfileInputSchema.extend({
+  id: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{1,64}$/, "Invalid character identifier."),
+  name: z.string().trim().min(1).max(200).optional(),
+}).strict();
 
 export const CharacterReferencePatchSchema = z
   .object({
     role: CharacterReferenceRoleSchema.optional(),
     caption: z.string().max(500).optional(),
     weight: z.number().min(0).max(1).optional(),
+    category: CharacterReferenceCategorySchema.optional(),
+    approvalStatus: CharacterReferenceApprovalSchema.optional(),
+    associatedOutfitId: z.string().nullable().optional(),
+    includedInTraining: z.boolean().optional(),
+    suggestedTags: z.array(VisualTagSchema).optional(),
+    imageHash: z.string().nullable().optional(),
   })
   .strict();
 
@@ -509,7 +695,17 @@ export const CivitaiSearchSchema = z
   .object({
     query: z.string().max(200).optional(),
     type: z.string().trim().max(100).nullable().optional(),
+    types: z.string().trim().max(100).nullable().optional(),
     baseModel: z.string().trim().max(120).nullable().optional(),
+    baseModels: z
+      .union([
+        z.string().trim().max(120),
+        z.array(z.string().trim().max(120)),
+      ])
+      .nullable()
+      .optional(),
+    tag: z.string().trim().max(100).nullable().optional(),
+    page: z.number().int().min(1).optional(),
     sort: z
       .enum([
         "Most Downloaded",
@@ -519,7 +715,7 @@ export const CivitaiSearchSchema = z
         "Newest",
       ])
       .optional(),
-    period: z.enum(["Day", "Week", "Month", "AllTime"]).optional(),
+    period: z.enum(["Day", "Week", "Month", "Year", "AllTime"]).optional(),
     nsfw: z.boolean().optional(),
     cursor: z.string().max(2048).nullable().optional(),
     limit: z.number().int().min(1).max(50).optional(),
@@ -665,7 +861,7 @@ export const PixelCharacterInputSchema = z
     projectId: PixelIdSchema,
     name: z.string().trim().min(1).max(120),
     description: z.string().max(4000).optional(),
-    seed: z.number().int().min(0).max(4294967295).optional(),
+    seed: z.number().int().min(-1).max(4294967295).optional(),
     paletteId: PixelPaletteIdSchema.optional(),
     referenceAssetId: z.string().max(64).nullable().optional(),
   })
@@ -680,7 +876,7 @@ export const PixelGenerateSchema = z
     width: z.number().int().min(8).max(256),
     height: z.number().int().min(8).max(256),
     paletteId: PixelPaletteIdSchema,
-    seed: z.number().int().min(0).max(4294967295),
+    seed: z.number().int().min(-1).max(4294967295),
     direction: PixelDirectionSchema.optional(),
     prompt: z.string().max(4000).optional(),
   })
@@ -896,7 +1092,7 @@ export const PixelAiGenerateSchema = z
     width: z.number().int().min(8).max(256),
     height: z.number().int().min(8).max(256),
     paletteId: PixelPaletteIdSchema,
-    seed: z.number().int().min(0).max(4294967295).optional(),
+    seed: z.number().int().min(-1).max(4294967295).optional(),
     style: z.string().max(64).optional(),
     transparent: z.boolean().optional(),
     steps: z.number().int().min(1).max(60).optional(),

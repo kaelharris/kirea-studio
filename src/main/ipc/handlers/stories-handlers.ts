@@ -1,4 +1,5 @@
 import { app, dialog, shell } from "electron";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -13,6 +14,8 @@ import type {
   StoryScenePlan,
 } from "../../../shared/types";
 import { CharacterStorage } from "../../characters/character-storage";
+import { DatasetBuilder } from "../../characters/dataset-builder";
+import { VisionTaggerService } from "../../characters/vision-tagger";
 import { WORKFLOW_TEMPLATES } from "../../comfy/workflow-registry";
 import { isPathInsideAnyRoot } from "../../security";
 import {
@@ -20,10 +23,19 @@ import {
   exportCanvasPng,
   resolveStoryExportDir,
 } from "../../stories/canvas-exporter";
+import { TrainingManager } from "../../training/training-manager";
 import {
+  CharacterAdapterInputSchema,
+  CharacterIdentityCoreSchema,
+  CharacterKnowledgeSchema,
+  CharacterOutfitInputSchema,
   CharacterProfileInputSchema,
+  CharacterProfilePatchSchema,
+  CharacterReferenceCropInputSchema,
   CharacterReferencePatchSchema,
   CharacterReferenceRoleSchema,
+  CharacterTrainingConfigSchema,
+  VisualTagSchema,
   StoryCanvasInputSchema,
   StoryCanvasItemInputSchema,
   StoryInputSchema,
@@ -33,17 +45,55 @@ import {
   type IpcRegistrarHandle,
 } from "../schemas";
 
+let activeTrainingManager: TrainingManager | null = null;
+
+export function shutdownTraining(): void {
+  activeTrainingManager?.dispose();
+  activeTrainingManager = null;
+}
+
 export function registerStoriesHandlers(
   ctx: HandlerContext,
   handle: IpcRegistrarHandle
 ): void {
   const characterStorage = new CharacterStorage(ctx.paths.charactersDir);
+  const trainingManager = new TrainingManager(
+    ctx.repo,
+    ctx.paths,
+    ctx.logger,
+    (channel, payload) => {
+      const win = ctx.getMainWindow();
+      if (win && !win.isDestroyed()) {
+        win.webContents.send(channel, payload);
+      }
+    }
+  );
+  activeTrainingManager?.dispose();
+  activeTrainingManager = trainingManager;
+  const visionTagger = new VisionTaggerService(
+    ctx.repo,
+    ctx.paths,
+    ctx.logger,
+    (channel, payload) => {
+      const win = ctx.getMainWindow();
+      if (win && !win.isDestroyed()) {
+        win.webContents.send(channel, payload);
+      }
+    }
+  );
 
   // --- Characters ---
   handle(IPC_CHANNELS.CHARACTERS_LIST, () => ctx.repo.listCharacters());
 
   handle(IPC_CHANNELS.CHARACTERS_SAVE, (_event, inputRaw: unknown) => {
-    const input = CharacterProfileInputSchema.parse(inputRaw);
+    const isPatch =
+      typeof inputRaw === "object" &&
+      inputRaw !== null &&
+      "id" in inputRaw &&
+      typeof inputRaw.id === "string";
+    const input = isPatch
+      ? CharacterProfilePatchSchema.parse(inputRaw)
+      : CharacterProfileInputSchema.parse(inputRaw);
     return ctx.repo.saveCharacter(input);
   });
 
@@ -83,7 +133,13 @@ export function registerStoriesHandlers(
           filePath: imported.filePath,
           sourcePath: source,
           role,
+          category: role === "expression" ? "expression" : role === "outfit" ? "clothing_variant" : role === "pose" ? "pose" : "canonical_face",
           caption: "",
+          approvalStatus: "approved",
+          width: imported.width,
+          height: imported.height,
+          aspectRatio: imported.aspectRatio,
+          includedInTraining: true,
         });
       } catch (err) {
         await characterStorage.removeReferenceFile(imported.filePath);
@@ -133,7 +189,13 @@ export function registerStoriesHandlers(
           filePath: imported.filePath,
           sourcePath: image.filePath,
           role,
+          category: role === "expression" ? "expression" : role === "outfit" ? "clothing_variant" : role === "pose" ? "pose" : "canonical_face",
           caption,
+          approvalStatus: "approved",
+          width: imported.width,
+          height: imported.height,
+          aspectRatio: imported.aspectRatio,
+          includedInTraining: true,
         });
       } catch (err) {
         await characterStorage.removeReferenceFile(imported.filePath);
@@ -178,6 +240,233 @@ export function registerStoriesHandlers(
     const cover = getCharacterCoverReference(character);
     if (!cover) return null;
     return characterStorage.readPreviewDataUrl(cover.filePath);
+  });
+
+  // --- Character DNA, Outfits, Adapters, Dataset, and Training ---
+  handle(
+    IPC_CHANNELS.CHARACTERS_SAVE_DNA,
+    (_event, characterIdRaw: string, dnaRaw: unknown, knowledgeRaw?: unknown) => {
+      const characterId = z.string().min(1).max(64).parse(characterIdRaw);
+      const character = ctx.repo.getCharacterById(characterId);
+      if (!character) throw new Error(`Unknown character id: ${characterId}`);
+      const dna = CharacterIdentityCoreSchema.partial().parse(dnaRaw);
+      const knowledge =
+        knowledgeRaw !== undefined
+          ? CharacterKnowledgeSchema.partial().parse(knowledgeRaw)
+          : undefined;
+
+      return ctx.repo.saveCharacter({
+        ...character,
+        dna: {
+          ...character.dna,
+          ...dna,
+        },
+        knowledge: knowledge
+          ? { ...character.knowledge, ...knowledge }
+          : character.knowledge,
+      });
+    }
+  );
+
+  handle(IPC_CHANNELS.CHARACTERS_LIST_OUTFITS, (_event, characterIdRaw: string) => {
+    const characterId = z.string().min(1).max(64).parse(characterIdRaw);
+    return ctx.repo.listOutfits(characterId);
+  });
+
+  handle(IPC_CHANNELS.CHARACTERS_SAVE_OUTFIT, (_event, outfitRaw: unknown) => {
+    const outfit = CharacterOutfitInputSchema.parse(outfitRaw);
+    return ctx.repo.saveOutfit({
+      id: outfit.id || `outfit_${crypto.randomUUID().slice(0, 10)}`,
+      characterId: outfit.characterId,
+      name: outfit.name,
+      description: outfit.description || "",
+      promptTokens: outfit.promptTokens || [],
+      isDefault: outfit.isDefault ?? false,
+      previewImagePath: outfit.previewImagePath || null,
+    });
+  });
+
+  handle(
+    IPC_CHANNELS.CHARACTERS_DELETE_OUTFIT,
+    (_event, characterIdRaw: string, outfitIdRaw: string) => {
+      const characterId = z.string().min(1).max(64).parse(characterIdRaw);
+      const outfitId = z.string().min(1).max(64).parse(outfitIdRaw);
+      return ctx.repo.deleteOutfit(outfitId, characterId);
+    }
+  );
+
+  handle(IPC_CHANNELS.CHARACTERS_LIST_ADAPTERS, (_event, characterIdRaw: string) => {
+    const characterId = z.string().min(1).max(64).parse(characterIdRaw);
+    return ctx.repo.listAdapters(characterId);
+  });
+
+  handle(IPC_CHANNELS.CHARACTERS_SAVE_ADAPTER, (_event, adapterRaw: unknown) => {
+    const adapter = CharacterAdapterInputSchema.parse(adapterRaw);
+    return ctx.repo.saveAdapter({
+      id: adapter.id || `adapter_${crypto.randomUUID().slice(0, 10)}`,
+      characterId: adapter.characterId,
+      baseModelFamily: adapter.baseModelFamily,
+      checkpointPath: adapter.checkpointPath || null,
+      checkpointName: adapter.checkpointName || null,
+      triggerToken: adapter.triggerToken,
+      fileLocation: adapter.fileLocation,
+      datasetVersion: adapter.datasetVersion || null,
+      rank: adapter.rank ?? 16,
+      alpha: adapter.alpha ?? 16,
+      recommendedStrength: adapter.recommendedStrength ?? 0.85,
+      status: adapter.status ?? "trained",
+    });
+  });
+
+  handle(
+    IPC_CHANNELS.CHARACTERS_DELETE_ADAPTER,
+    (_event, characterIdRaw: string, adapterIdRaw: string) => {
+      const characterId = z.string().min(1).max(64).parse(characterIdRaw);
+      const adapterId = z.string().min(1).max(64).parse(adapterIdRaw);
+      return ctx.repo.deleteAdapter(adapterId, characterId);
+    }
+  );
+
+  handle(
+    IPC_CHANNELS.CHARACTERS_CROP_REFERENCE,
+    async (_event, characterIdRaw: string, referenceIdRaw: string, cropRaw: unknown) => {
+      const characterId = z.string().min(1).max(64).parse(characterIdRaw);
+      const referenceId = z.string().min(1).max(64).parse(referenceIdRaw);
+      const crop = CharacterReferenceCropInputSchema.parse(cropRaw);
+
+      const character = ctx.repo.getCharacterById(characterId);
+      if (!character) throw new Error(`Unknown character: ${characterId}`);
+      const sourceRef = character.references.find((r) => r.id === referenceId);
+      if (!sourceRef) throw new Error(`Reference ${referenceId} not found`);
+
+      const cropped = await characterStorage.cropReference(
+        characterId,
+        sourceRef.filePath,
+        crop
+      );
+
+      ctx.repo.addCharacterReference({
+        characterId,
+        filePath: cropped.filePath,
+        sourcePath: sourceRef.sourcePath,
+        role: "secondary",
+        category: crop.category ?? "canonical_face",
+        caption: crop.caption || sourceRef.caption || "",
+        approvalStatus: "approved",
+        width: cropped.width,
+        height: cropped.height,
+        aspectRatio: cropped.aspectRatio,
+        includedInTraining: true,
+      });
+
+      return ctx.repo.getCharacterById(characterId);
+    }
+  );
+
+  handle(IPC_CHANNELS.CHARACTERS_VALIDATE_DATASET, (_event, characterIdRaw: string) => {
+    const characterId = z.string().min(1).max(64).parse(characterIdRaw);
+    const character = ctx.repo.getCharacterById(characterId);
+    if (!character) throw new Error(`Unknown character: ${characterId}`);
+    const items = DatasetBuilder.buildDatasetItems(character, false);
+    return DatasetBuilder.validateDataset(items);
+  });
+
+  handle(
+    IPC_CHANNELS.CHARACTERS_EXPORT_DATASET,
+    async (_event, characterIdRaw: string, exportDirRaw?: string) => {
+      const characterId = z.string().min(1).max(64).parse(characterIdRaw);
+      const character = ctx.repo.getCharacterById(characterId);
+      if (!character) throw new Error(`Unknown character: ${characterId}`);
+
+      const exportDir = path.resolve(
+        exportDirRaw?.trim() ||
+          path.join(ctx.paths.charactersDir, characterId, "dataset_export")
+      );
+      const settings = ctx.getSettings();
+      const allowedExportRoots = [
+        ctx.paths.charactersDir,
+        settings.outputDirectory,
+        ctx.paths.defaultOutputDir,
+      ].filter(Boolean);
+      if (!isPathInsideAnyRoot(exportDir, allowedExportRoots)) {
+        throw new Error("Dataset export directory is outside authorized studio folders.");
+      }
+      const items = DatasetBuilder.buildDatasetItems(character, true);
+      const result = await DatasetBuilder.exportDatasetToDisk(exportDir, items, character.name);
+
+      ctx.repo.saveDataset({
+        id: `ds_${crypto.randomUUID().slice(0, 10)}`,
+        characterId,
+        version: "v1.0",
+        name: `${character.name} Dataset`,
+        itemCount: result.exportedCount,
+        items,
+        exportPath: exportDir,
+      });
+
+      return {
+        success: true,
+        exportPath: exportDir,
+        count: result.exportedCount,
+      };
+    }
+  );
+
+  handle(
+    IPC_CHANNELS.CHARACTERS_PREFLIGHT_TRAINING,
+    async (_event, characterIdRaw: string, configRaw?: unknown) => {
+      const characterId = z.string().min(1).max(64).parse(characterIdRaw);
+      const config =
+        configRaw !== undefined
+          ? CharacterTrainingConfigSchema.partial().parse(configRaw)
+          : undefined;
+      return trainingManager.preflightTraining(characterId, config);
+    }
+  );
+
+  handle(
+    IPC_CHANNELS.CHARACTERS_START_TRAINING,
+    async (_event, characterIdRaw: string, configRaw: unknown) => {
+      const characterId = z.string().min(1).max(64).parse(characterIdRaw);
+      const config = CharacterTrainingConfigSchema.parse(configRaw);
+      return trainingManager.startTraining(characterId, config);
+    }
+  );
+
+  handle(IPC_CHANNELS.CHARACTERS_CANCEL_TRAINING, (_event, jobIdRaw: string) => {
+    const jobId = z.string().min(1).max(64).parse(jobIdRaw);
+    return trainingManager.cancelTraining(jobId);
+  });
+
+  handle(
+    IPC_CHANNELS.CHARACTERS_LIST_TRAINING_JOBS,
+    (_event, characterIdRaw: string) => {
+      const characterId = z.string().min(1).max(64).parse(characterIdRaw);
+      return ctx.repo.listTrainingJobs(characterId);
+    }
+  );
+
+  handle(
+    IPC_CHANNELS.CHARACTERS_VISION_INTERROGATE,
+    async (_event, characterIdRaw: string, referenceIdsRaw?: unknown) => {
+      const characterId = z.string().min(1).max(64).parse(characterIdRaw);
+      const referenceIds = referenceIdsRaw ? z.array(z.string().min(1).max(64)).parse(referenceIdsRaw) : undefined;
+      return visionTagger.autoTagReferences(characterId, referenceIds);
+    }
+  );
+
+  handle(
+    IPC_CHANNELS.CHARACTERS_VISION_TAGS_UPDATE,
+    (_event, characterIdRaw: string, referenceIdRaw: string, tagsRaw: unknown) => {
+      const characterId = z.string().min(1).max(64).parse(characterIdRaw);
+      const referenceId = z.string().min(1).max(64).parse(referenceIdRaw);
+      const tags = z.array(VisualTagSchema).parse(tagsRaw);
+      return visionTagger.updateReferenceTags(characterId, referenceId, tags);
+    }
+  );
+
+  handle(IPC_CHANNELS.CHARACTERS_VISION_MODEL_STATUS, () => {
+    return visionTagger.getModelStatus();
   });
 
   // --- Stories ---

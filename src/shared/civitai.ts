@@ -16,7 +16,7 @@ export type CivitaiSort =
   | "Most Discussed"
   | "Highest Rated"
   | "Newest";
-export type CivitaiPeriod = "Day" | "Week" | "Month" | "AllTime";
+export type CivitaiPeriod = "Day" | "Week" | "Month" | "Year" | "AllTime";
 export type CivitaiBaseModel =
   | "SD 1.5"
   | "SDXL 1.0"
@@ -63,6 +63,7 @@ export const CIVITAI_PERIODS: CivitaiPeriod[] = [
   "Day",
   "Week",
   "Month",
+  "Year",
   "AllTime",
 ];
 
@@ -117,7 +118,11 @@ export interface CivitaiModelSummary {
 export interface CivitaiSearchQuery {
   query?: string;
   type?: CivitaiModelType | null;
+  types?: string | null;
   baseModel?: CivitaiBaseModel | null;
+  baseModels?: string[] | string | null;
+  tag?: string | null;
+  page?: number;
   sort?: CivitaiSort;
   period?: CivitaiPeriod;
   nsfw?: boolean;

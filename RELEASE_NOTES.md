@@ -1,3 +1,19 @@
+# Release Notes — Kirea Studio v1.1.1
+
+**Release Date:** 2026-11-23
+
+**Target Platform:** Windows 10 / Windows 11 (x64)
+
+## Highlights
+
+- **MOSS-Image integration:** Native split-pipeline workflows for Base, SFT, Turbo, Layout, Edit, and color/depth control, with component dependency checks, curated model downloads, and provenance-aware labels.
+- **Illustrious 10-LoRA expansion:** Dedicated text-to-image and image-to-image pipelines support up to ten sequential LoRA adapters with architecture-aware validation.
+- **Studio enhancements:** Expanded model discovery and preview metadata, Civitai workflow browsing, Hugging Face Hub support, unified library tools, and Create editing refinements.
+- **Workspace density:** Advanced Create keeps the prompt composer in the center creation flow with Generate embedded at the lower-right of the prompt input, and reserves the left panel for settings. The Create workspace flex-fills the available window height with no residual bottom shell gap, and ordinary cards/panels use open spacing or dividers instead of nested boxes while inputs, dialogs, and selectable media retain clear boundaries.
+- **Release hygiene:** Current version surfaces are synchronized and releases now run a deterministic Node verification check before building.
+
+---
+
 # Release Notes — Kirea Studio v1.0.1
 
 **Release Date:** 2026-11-13  

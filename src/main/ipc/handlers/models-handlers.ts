@@ -339,6 +339,9 @@ export function registerModelsHandlers(
   handle(IPC_CHANNELS.DOWNLOADS_CANCEL, (_event, idRaw: string) =>
     ctx.downloadManager.cancelDownload(z.string().min(1).max(100).parse(idRaw))
   );
+  handle(IPC_CHANNELS.DOWNLOADS_CLEAR_COMPLETED, () =>
+    ctx.downloadManager.clearCompleted()
+  );
 
   // --- Civitai Hub ---
   handle(IPC_CHANNELS.CIVITAI_SEARCH_MODELS, async (_event, queryRaw: unknown) => {
@@ -419,6 +422,10 @@ export function registerModelsHandlers(
 
   handle(IPC_CHANNELS.CIVITAI_LIST_DOWNLOADS, () =>
     ctx.civitaiDownloadManager.listDownloads()
+  );
+
+  handle(IPC_CHANNELS.CIVITAI_CLEAR_DOWNLOADS, () =>
+    ctx.civitaiDownloadManager.clearCompleted()
   );
 
   handle(IPC_CHANNELS.CIVITAI_SET_API_KEY, (_event, apiKeyRaw: unknown) => {

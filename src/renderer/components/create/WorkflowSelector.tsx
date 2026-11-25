@@ -95,7 +95,7 @@ export const WorkflowSelector: React.FC<WorkflowSelectorProps> = ({
     <div
       role="tablist"
       aria-label="Creation workflows"
-      className="flex flex-wrap items-center gap-1 rounded-xl border border-border bg-bg/80 p-1"
+      className="flex flex-wrap items-center gap-1"
     >
       {WORKFLOW_MODES.map((mode) => {
         const isSelected = currentMode === mode.id;

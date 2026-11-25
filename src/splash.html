@@ -108,18 +108,47 @@
 
   .status {
     margin: 13px 0 0;
-    height: 12px;
+    min-height: 12px;
+    max-width: 300px;
     font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
     font-size: 9px;
+    line-height: 1.5;
     letter-spacing: 0.15em;
     text-transform: uppercase;
-    white-space: nowrap;
     color: var(--muted);
-    opacity: 1;
-    transition: opacity 200ms ease;
   }
 
-  .status.is-fading { opacity: 0.35; }
+  .detail {
+    margin: 6px 0 0;
+    max-width: 300px;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    font-size: 10px;
+    line-height: 1.45;
+    color: var(--faint);
+  }
+
+  .open-anyway {
+    margin-top: 12px;
+    padding: 6px 10px;
+    border: 1px solid rgba(30, 59, 255, 0.35);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--blue);
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+  }
+
+  .open-anyway:hover {
+    border-color: var(--blue);
+    background: #ffffff;
+  }
+
+  [hidden] { display: none !important; }
 
   .progress {
     margin-top: 12px;
@@ -134,12 +163,12 @@
   }
 
   .fill {
-    width: 6%;
+    width: 18%;
     height: 100%;
     border-radius: 999px;
     background: linear-gradient(90deg, rgba(30, 59, 255, 0.5) 0%, #1E3BFF 62%, #6E84FF 100%);
     box-shadow: 0 0 10px rgba(30, 59, 255, 0.35);
-    animation: load 3200ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+    transition: width 260ms ease;
   }
 
   .meta {
@@ -165,17 +194,9 @@
     to { transform: scale(1.0); }
   }
 
-  @keyframes load {
-    0% { width: 6%; }
-    35% { width: 42%; }
-    70% { width: 74%; }
-    100% { width: 94%; }
-  }
-
   @media (prefers-reduced-motion: reduce) {
-    .frame, .art, .fill { animation: none; }
-    .fill { width: 62%; }
-    .status { transition: none; }
+    .frame, .art { animation: none; }
+    .fill { transition: none; }
   }
 </style>
 </head>
@@ -186,10 +207,12 @@
 
     <div class="content">
       <h1 class="wordmark">KIREA STUDIO</h1>
-      <p class="edition">ATELIER EDITION &middot; v1.0.1</p>
+      <p class="edition">ATELIER EDITION &middot; v1.1.1</p>
       <div class="rule" aria-hidden="true"></div>
 
-      <p class="status" id="status" aria-live="polite">Initializing neural workspace...</p>
+      <p class="status" id="status" aria-live="polite">Checking ComfyUI runtime...</p>
+      <p class="detail" id="detail">Looking for a local engine on loopback.</p>
+      <button class="open-anyway" id="open-anyway" type="button" hidden>Open anyway</button>
 
       <div class="progress" aria-hidden="true">
         <div class="track"><div class="fill"></div></div>
@@ -203,22 +226,30 @@
 
   <script>
     (function () {
-      var messages = [
-        "Initializing neural workspace...",
-        "Connecting to ComfyUI runtime...",
-        "Loading local model vaults..."
-      ];
-      var label = document.getElementById("status");
-      if (!label) return;
-      var index = 0;
-      window.setInterval(function () {
-        label.classList.add("is-fading");
-        window.setTimeout(function () {
-          index = (index + 1) % messages.length;
-          label.textContent = messages[index];
-          label.classList.remove("is-fading");
-        }, 220);
-      }, 1250);
+      var status = document.getElementById("status");
+      var detail = document.getElementById("detail");
+      var fill = document.querySelector(".fill");
+      var openAnyway = document.getElementById("open-anyway");
+      var frame = document.querySelector(".frame");
+
+      window.kireaSplash = {
+        update: function (state) {
+          if (status) status.textContent = state.message;
+          if (detail) {
+            detail.textContent = state.detail || "";
+            detail.hidden = !state.detail;
+          }
+          if (fill) fill.style.width = Math.max(0, Math.min(100, state.progress)) + "%";
+          if (openAnyway) openAnyway.hidden = !state.showOpenAnyway;
+          if (frame) frame.setAttribute("aria-busy", state.tone === "error" ? "false" : "true");
+        }
+      };
+
+      if (openAnyway) {
+        openAnyway.addEventListener("click", function () {
+          window.close();
+        });
+      }
     })();
   </script>
 </body>

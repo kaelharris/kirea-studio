@@ -55,6 +55,23 @@ export const IPC_CHANNELS = {
   CHARACTERS_UPDATE_REFERENCE: "characters:updateReference",
   CHARACTERS_REMOVE_REFERENCE: "characters:removeReference",
   CHARACTERS_GET_PREVIEW: "characters:getPreview",
+  CHARACTERS_SAVE_DNA: "characters:saveDNA",
+  CHARACTERS_LIST_OUTFITS: "characters:listOutfits",
+  CHARACTERS_SAVE_OUTFIT: "characters:saveOutfit",
+  CHARACTERS_DELETE_OUTFIT: "characters:deleteOutfit",
+  CHARACTERS_LIST_ADAPTERS: "characters:listAdapters",
+  CHARACTERS_SAVE_ADAPTER: "characters:saveAdapter",
+  CHARACTERS_DELETE_ADAPTER: "characters:deleteAdapter",
+  CHARACTERS_CROP_REFERENCE: "characters:cropReference",
+  CHARACTERS_VALIDATE_DATASET: "characters:validateDataset",
+  CHARACTERS_EXPORT_DATASET: "characters:exportDataset",
+  CHARACTERS_PREFLIGHT_TRAINING: "characters:preflightTraining",
+  CHARACTERS_START_TRAINING: "characters:startTraining",
+  CHARACTERS_CANCEL_TRAINING: "characters:cancelTraining",
+  CHARACTERS_LIST_TRAINING_JOBS: "characters:listTrainingJobs",
+  CHARACTERS_VISION_INTERROGATE: "characters:visionInterrogate",
+  CHARACTERS_VISION_TAGS_UPDATE: "characters:visionTagsUpdate",
+  CHARACTERS_VISION_MODEL_STATUS: "characters:visionModelStatus",
 
   // Stories
   STORIES_LIST: "stories:list",
@@ -89,6 +106,7 @@ export const IPC_CHANNELS = {
   DOWNLOADS_PAUSE: "downloads:pause",
   DOWNLOADS_RESUME: "downloads:resume",
   DOWNLOADS_CANCEL: "downloads:cancel",
+  DOWNLOADS_CLEAR_COMPLETED: "downloads:clearCompleted",
 
   // Civitai Hub
   CIVITAI_SEARCH_MODELS: "civitai:searchModels",
@@ -99,6 +117,7 @@ export const IPC_CHANNELS = {
   CIVITAI_CANCEL_DOWNLOAD: "civitai:cancelDownload",
   CIVITAI_RETRY_DOWNLOAD: "civitai:retryDownload",
   CIVITAI_LIST_DOWNLOADS: "civitai:listDownloads",
+  CIVITAI_CLEAR_DOWNLOADS: "civitai:clearDownloads",
   CIVITAI_SET_API_KEY: "civitai:setApiKey",
   CIVITAI_TEST_CONNECTION: "civitai:testConnection",
   CIVITAI_SEARCH_WORKFLOWS: "civitai:searchWorkflows",
@@ -130,6 +149,7 @@ export const IPC_CHANNELS = {
   JOBS_LIST: "jobs:list",
   JOBS_CANCEL: "jobs:cancel",
   JOBS_RETRY: "jobs:retry",
+  JOBS_DELETE: "jobs:delete",
 
   // Library, Prompts & Collections
   LIBRARY_LIST: "library:list",
@@ -205,4 +225,9 @@ export const IPC_CHANNELS = {
   EVENT_PIXEL_AI_JOB_UPDATED: "event:pixelAiJobUpdated",
   EVENT_PIXEL_PACKAGE_PROGRESS: "event:pixelPackageProgress",
   EVENT_UPDATE_STATE_CHANGED: "event:updateStateChanged",
+  EVENT_TRAINING_PROGRESS: "event:trainingProgress",
+  EVENT_TRAINING_LOG: "event:trainingLog",
+  EVENT_TRAINING_COMPLETED: "event:trainingCompleted",
+  EVENT_TRAINING_TELEMETRY: "event:trainingTelemetry",
+  EVENT_VISION_TAGGING_PROGRESS: "event:visionTaggingProgress",
 } as const;

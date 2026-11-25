@@ -63,6 +63,7 @@ import {
   type ContextMenuItem,
 } from "../components/ui/Primitives";
 import { MediaImage } from "../components/ui/MediaImage";
+import { CopyPromptButton } from "../components/CopyPromptButton";
 import {
   formatBytes,
   formatDurationSeconds,
@@ -348,6 +349,18 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
     setSelectedIds(new Set(result.items.map((item) => item.id)));
   }, [result.items]);
 
+  const handleInvertSelection = useCallback(() => {
+    setSelectedIds((prev) => {
+      const next = new Set<string>();
+      for (const item of result.items) {
+        if (!prev.has(item.id)) {
+          next.add(item.id);
+        }
+      }
+      return next;
+    });
+  }, [result.items]);
+
   const handleDeselectAll = useCallback(() => {
     setSelectedIds(new Set());
     setIsSelectMode(false);
@@ -430,6 +443,13 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
       if ((e.ctrlKey || e.altKey) && (e.key === "a" || e.key === "A")) {
         e.preventDefault();
         handleSelectAll();
+        return;
+      }
+
+      // Alt+I or Ctrl+I (Invert Selection)
+      if ((e.ctrlKey || e.altKey) && (e.key === "i" || e.key === "I") && isSelectMode) {
+        e.preventDefault();
+        handleInvertSelection();
         return;
       }
 
@@ -1091,8 +1111,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
     result.counts.all === 0 && result.counts.animation === 0 && !debouncedSearch;
 
   return (
-    <div className="relative space-y-5 pb-16" onContextMenu={handleEmptyAreaContextMenu}>
-      <div className="sticky -top-6 z-10 -mx-6 space-y-3 border-b border-border bg-bg px-6 pb-3 pt-6">
+    <div className="relative space-y-3.5 pb-16" onContextMenu={handleEmptyAreaContextMenu}>
+      <div className="sticky -top-6 z-10 -mx-6 space-y-2.5 border-b border-border bg-bg px-5 pb-2.5 pt-4">
         <SectionHeader
           title="Media Library"
           subtitle="Every image, video, pixel asset, character and animation created in Kirea — inspect, organize, batch export, and jump back into the studio that owns it."
@@ -1362,7 +1382,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
         />
       ) : view === "grid" ? (
         <div
-          className={`grid gap-3.5 ${
+          className={`grid gap-2.5 ${
             density === "compact"
               ? "grid-cols-2 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6"
               : "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4"
@@ -1379,6 +1399,13 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
               galleryMode={galleryMode}
               onToggleSelect={(e) => handleCheckboxClick(index, item, e)}
               onOpen={(e) => handleCardClick(index, item, e)}
+              onInspect={(it) => {
+                if (it.mediaType === "image" && it.image && onInspectImage) {
+                  onInspectImage(it.image, visibleImages);
+                } else {
+                  setSelected(it);
+                }
+              }}
               onFavorite={() => void toggleFavorite(item)}
               onOpenWorkspace={() => openWorkspace(item)}
               onReveal={() => {
@@ -1404,6 +1431,13 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
               isSelectMode={isSelectMode || selectedIds.size > 0}
               onToggleSelect={(e) => handleCheckboxClick(index, item, e)}
               onOpen={(e) => handleCardClick(index, item, e)}
+              onInspect={(it) => {
+                if (it.mediaType === "image" && it.image && onInspectImage) {
+                  onInspectImage(it.image, visibleImages);
+                } else {
+                  setSelected(it);
+                }
+              }}
               onFavorite={() => void toggleFavorite(item)}
               onOpenWorkspace={() => openWorkspace(item)}
               onDelete={() => setDeleteTarget(item)}
@@ -1415,7 +1449,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
       )}
 
       {/* FLOATING BATCH ACTIONS BAR */}
-      {selectedIds.size > 0 && (
+      {(isSelectMode || selectedIds.size > 0) && (
         <div className="fixed bottom-6 left-1/2 z-30 -translate-x-1/2 flex items-center gap-3 rounded-2xl border border-border-strong bg-surface/95 px-5 py-3 shadow-2xl backdrop-blur-md animate-[kirea-panel-in_180ms_ease-out]">
           <div className="flex items-center gap-2 border-r border-border pr-3">
             <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent font-mono text-xs font-semibold text-white">
@@ -1430,8 +1464,16 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
             <Button size="sm" variant="ghost" onClick={handleSelectAll}>
               Select All ({result.items.length})
             </Button>
-            <Button size="sm" variant="ghost" onClick={handleDeselectAll}>
-              Deselect
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={handleInvertSelection}
+              title="Invert Selection (Ctrl+I)"
+            >
+              Invert
+            </Button>
+            <Button size="sm" variant="ghost" onClick={handleDeselectAll} title="Clear Selection">
+              Clear
             </Button>
 
             <div className="h-4 w-px bg-border" />
@@ -1439,6 +1481,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
             <Button
               size="sm"
               variant="secondary"
+              disabled={selectedIds.size === 0}
               loading={batchFavoriting}
               onClick={() => void handleBatchFavorite(true)}
             >
@@ -1449,6 +1492,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
             <Button
               size="sm"
               variant="secondary"
+              disabled={selectedIds.size === 0}
               onClick={() => setBatchCollectionModalOpen(true)}
             >
               <FolderPlus className="h-3.5 w-3.5" />
@@ -1458,6 +1502,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
             <Button
               size="sm"
               variant="secondary"
+              disabled={selectedIds.size === 0}
               loading={batchExporting}
               onClick={() => void handleBatchExport()}
             >
@@ -1468,10 +1513,26 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
             <Button
               size="sm"
               variant="danger"
+              disabled={selectedIds.size === 0}
               onClick={() => setBatchDeleteModalOpen(true)}
             >
               <Trash2 className="h-3.5 w-3.5" />
               Delete
+            </Button>
+
+            <div className="h-4 w-px bg-border" />
+
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setIsSelectMode(false);
+                setSelectedIds(new Set());
+              }}
+              className="text-xs font-mono uppercase text-fg-subtle hover:text-fg"
+              title="Exit selection mode"
+            >
+              Done
             </Button>
           </div>
         </div>
@@ -1764,6 +1825,7 @@ const MediaCard: React.FC<{
   galleryMode: "natural" | "square";
   onToggleSelect: (e?: React.MouseEvent) => void;
   onOpen: (e?: React.MouseEvent) => void;
+  onInspect?: (item: LibraryMediaItem) => void;
   onFavorite: () => void;
   onOpenWorkspace: () => void;
   onReveal: () => void;
@@ -1779,6 +1841,7 @@ const MediaCard: React.FC<{
   galleryMode,
   onToggleSelect,
   onOpen,
+  onInspect,
   onFavorite,
   onOpenWorkspace,
   onReveal,
@@ -1793,14 +1856,23 @@ const MediaCard: React.FC<{
     <div
       data-library-card-id={item.id}
       onContextMenu={onContextMenu}
+      onClick={isSelectMode ? (e) => onOpen(e) : undefined}
+      onDoubleClick={(e) => {
+        if (isSelectMode) {
+          e.stopPropagation();
+          onInspect?.(item);
+        }
+      }}
       className={`group relative flex flex-col overflow-hidden rounded-xl border bg-surface transition-all ${
         isSelected
-          ? "border-accent ring-2 ring-accent/40 shadow-md"
+          ? "border-accent ring-2 ring-accent/60 bg-accent/5 shadow-md"
           : isFocused
             ? "border-accent ring-2 ring-accent/60 shadow-lg"
-            : available
-              ? "border-border hover:border-accent hover:shadow-md"
-              : "border-dashed border-border-strong opacity-80"
+            : isSelectMode
+              ? "border-border hover:border-accent hover:bg-surface-hover shadow-sm cursor-pointer"
+              : available
+                ? "border-border hover:border-accent hover:shadow-md"
+                : "border-dashed border-border-strong opacity-80"
       }`}
     >
       {/* SELECTION CHECKBOX OVERLAY */}
@@ -1826,7 +1898,12 @@ const MediaCard: React.FC<{
       {available ? (
         <button
           type="button"
-          onClick={(e) => onOpen(e)}
+          onClick={(e) => {
+            if (isSelectMode) {
+              e.stopPropagation();
+            }
+            onOpen(e);
+          }}
           style={{
             aspectRatio:
               galleryMode === "square"
@@ -1898,7 +1975,22 @@ const MediaCard: React.FC<{
               {cardMetaText(item)}
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-0.5">
+          <div className="flex shrink-0 items-center gap-1">
+            {item.mediaType === "image" && item.image?.prompt && (
+              <CopyPromptButton
+                variant="compact"
+                prompt={item.image.prompt}
+                negativePrompt={item.image.negativePrompt}
+                seed={item.image.seed}
+                steps={item.image.steps}
+                cfg={item.image.cfg}
+                sampler={item.image.sampler}
+                checkpoint={item.image.checkpoint}
+                loras={item.image.loras}
+                width={item.image.width}
+                height={item.image.height}
+              />
+            )}
             {canFavorite && (
               <button
                 type="button"
@@ -1948,6 +2040,7 @@ const MediaRow: React.FC<{
   isSelectMode: boolean;
   onToggleSelect: (e?: React.MouseEvent) => void;
   onOpen: (e?: React.MouseEvent) => void;
+  onInspect?: (item: LibraryMediaItem) => void;
   onFavorite: () => void;
   onOpenWorkspace: () => void;
   onDelete: () => void;
@@ -1961,6 +2054,7 @@ const MediaRow: React.FC<{
   isSelectMode,
   onToggleSelect,
   onOpen,
+  onInspect,
   onFavorite,
   onOpenWorkspace,
   onDelete,
@@ -1970,7 +2064,16 @@ const MediaRow: React.FC<{
   <div
     data-library-card-id={item.id}
     onContextMenu={onContextMenu}
-    className={`flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0 hover:bg-surface-subtle/60 transition-colors ${
+    onClick={isSelectMode ? (e) => onOpen(e) : undefined}
+    onDoubleClick={(e) => {
+      if (isSelectMode) {
+        e.stopPropagation();
+        onInspect?.(item);
+      }
+    }}
+    className={`flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0 transition-colors ${
+      isSelectMode ? "cursor-pointer hover:bg-surface-subtle" : "hover:bg-surface-subtle/60"
+    } ${
       isSelected
         ? "bg-accent-soft/40 ring-1 ring-accent/30"
         : isFocused
@@ -1995,7 +2098,12 @@ const MediaRow: React.FC<{
     </button>
     <button
       type="button"
-      onClick={(e) => onOpen(e)}
+      onClick={(e) => {
+        if (isSelectMode) {
+          e.stopPropagation();
+        }
+        onOpen(e);
+      }}
       className="relative h-12 w-16 shrink-0 overflow-hidden rounded-md border border-border bg-surface-subtle flex items-center justify-center"
       aria-label={`Inspect ${item.title}`}
     >
@@ -2032,6 +2140,21 @@ const MediaRow: React.FC<{
             }`}
           />
         </button>
+      )}
+      {item.mediaType === "image" && item.image?.prompt && (
+        <CopyPromptButton
+          variant="compact"
+          prompt={item.image.prompt}
+          negativePrompt={item.image.negativePrompt}
+          seed={item.image.seed}
+          steps={item.image.steps}
+          cfg={item.image.cfg}
+          sampler={item.image.sampler}
+          checkpoint={item.image.checkpoint}
+          loras={item.image.loras}
+          width={item.image.width}
+          height={item.image.height}
+        />
       )}
       <Button size="sm" variant="secondary" onClick={onOpenWorkspace}>
         {workspaceActionLabel(item)}
@@ -2648,22 +2771,13 @@ const InspectorImageViewer: React.FC<{
   image: GeneratedImageRecord;
   onToast: (msg: string, tone?: "info" | "error") => void;
 }> = ({ image, onToast }) => {
-  const [copiedPrompt, setCopiedPrompt] = useState(false);
-
-  const copyPrompt = async () => {
-    await navigator.clipboard.writeText(image.prompt);
-    setCopiedPrompt(true);
-    onToast("Prompt copied to clipboard.");
-    setTimeout(() => setCopiedPrompt(false), 2000);
-  };
-
   return (
     <div className="space-y-3">
-      <div className="relative flex max-h-[52vh] items-center justify-center overflow-hidden rounded-xl border border-border bg-well p-2">
+      <div className="relative flex max-h-[52vh] items-center justify-center overflow-hidden rounded-none border-2 border-border bg-well p-2">
         <MediaImage
           src={toMediaUrl(image.filePath)}
           alt={image.prompt}
-          className="max-h-[50vh] max-w-full object-contain rounded-lg shadow-sm"
+          className="max-h-[50vh] max-w-full object-contain rounded-none shadow-sm"
         />
       </div>
 
@@ -2671,10 +2785,19 @@ const InspectorImageViewer: React.FC<{
         <span className="font-mono text-tech tabular-nums text-fg-subtle">
           {image.width}×{image.height} · {image.format.toUpperCase()} · {formatBytes(image.sizeBytes)}
         </span>
-        <Button size="sm" variant="secondary" onClick={() => void copyPrompt()}>
-          {copiedPrompt ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
-          Copy Prompt
-        </Button>
+        <CopyPromptButton
+          prompt={image.prompt}
+          negativePrompt={image.negativePrompt}
+          seed={image.seed}
+          steps={image.steps}
+          cfg={image.cfg}
+          sampler={image.sampler}
+          checkpoint={image.checkpoint}
+          loras={image.loras}
+          width={image.width}
+          height={image.height}
+          onToast={onToast}
+        />
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import React from "react";
 import { Cpu, Play, Wand2 } from "lucide-react";
+import { Toaster } from "sonner";
 import {
   dimensionBoundsFromWorkflow,
   resolveDimensionsForAspect,
@@ -25,7 +26,6 @@ import { VideoStudioPage } from "./pages/VideoStudioPage";
 import { PixelStudioPage } from "./pages/PixelStudioPage";
 import { WorkflowsPage } from "./pages/WorkflowsPage";
 import { SidebarNav } from "./app/SidebarNav";
-import { ToastStack } from "./app/ToastStack";
 import { JobStatusAnnouncer } from "./app/JobStatusAnnouncer";
 import { UpdateNotice } from "./components/UpdateNotice";
 import { useAppController } from "./app/useAppController";
@@ -68,7 +68,6 @@ export const App: React.FC = () => {
     inspectedImage,
     setInspectedImage,
     startingRuntime,
-    toasts,
     pushToast,
     activeWorkCount,
     handleUpdateSettings,
@@ -88,6 +87,9 @@ export const App: React.FC = () => {
     handleToggleFavorite,
     handleUpdateImageMeta,
     handleDeleteImage,
+    handleDeleteJob,
+    handleDeleteJobs,
+    handleClearDownloadHistory,
     handleRemoveMissingImages,
     handleSaveRecipe,
     handleDeleteRecipe,
@@ -177,7 +179,7 @@ export const App: React.FC = () => {
       {/* MAIN CONTENT SHELL */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* TOP STATUS BAR */}
-        <header className="h-12 shrink-0 px-6 border-b border-border bg-surface flex items-center justify-between gap-4">
+        <header className="h-12 shrink-0 px-4 sm:px-5 border-b border-border bg-surface flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5 min-w-0">
             <Cpu className="w-4 h-4 text-fg-subtle shrink-0" />
             <span className="text-small font-semibold text-fg truncate">
@@ -244,12 +246,20 @@ export const App: React.FC = () => {
         </header>
 
         {/* WORKSPACE VIEWPORT */}
-        <main className="flex-1 overflow-y-auto">
+        <main
+          className={
+            activePage === "create"
+              ? "flex-1 min-h-0 overflow-hidden"
+              : "flex-1 overflow-y-auto"
+          }
+        >
           <div
             className={`mx-auto w-full ${
-              activePage === "create" || activePage === "video"
-                ? "max-w-none p-3.5 sm:p-4 space-y-3"
-                : "max-w-[1600px] p-6 space-y-6"
+              activePage === "create"
+                ? "flex h-full min-h-0 flex-col max-w-none gap-2 p-2 sm:p-2.5"
+                : activePage === "video"
+                  ? "max-w-none p-2.5 sm:p-3 space-y-2.5"
+                  : "max-w-[1600px] p-4 sm:p-5 space-y-4 sm:space-y-5"
             }`}
           >
           {showRuntimeBanner && (
@@ -339,6 +349,8 @@ export const App: React.FC = () => {
               }}
               onInspectImage={openImageInspector}
               onToggleFavorite={handleToggleFavorite}
+              onDeleteImage={handleDeleteImage}
+              onDeleteJob={handleDeleteJob}
               onSavePrompt={async (rec) => {
                 const saved = await window.kirea.savePrompt(rec);
                 setPrompts((prev) => [
@@ -524,6 +536,7 @@ export const App: React.FC = () => {
                 }
                 return updated;
               }}
+              onClearDownloadHistory={handleClearDownloadHistory}
               onUpdateSettings={handleUpdateSettings}
               onOpenSettings={() => setActivePage("settings")}
               onUseModel={(model) => {
@@ -580,17 +593,22 @@ export const App: React.FC = () => {
 
                 const arch = getEffectiveArchitecture(model);
                 const isBase = model.relativePath.toLowerCase().includes("moss_image_base_");
+                const isTurbo = model.relativePath.toLowerCase().includes("turbo") || model.name.toLowerCase().includes("turbo");
                 const wfId =
                   arch === "z_image"
                     ? "t2i_z_image_turbo"
                     : arch === "anima"
                       ? "t2i_anima_base"
-                      : arch === "illustrious"
-                        ? "t2i_illustrious_base"
+                      : arch === "krea2"
+                        ? "t2i_krea2_base"
+                        : arch === "illustrious"
+                          ? "t2i_illustrious_base"
                         : arch === "moss_image"
-                          ? isBase
-                            ? "t2i_moss_image_base"
-                            : "t2i_moss_image"
+                          ? isTurbo
+                            ? "t2i_moss_image_turbo"
+                            : isBase
+                              ? "t2i_moss_image_base"
+                              : "t2i_moss_image"
                           : arch === "sd15"
                             ? "t2i_sd15_base"
                             : "t2i_sdxl_base";
@@ -675,6 +693,9 @@ export const App: React.FC = () => {
               models={models}
               downloads={downloads}
               onNavigate={setActivePage}
+              onClearDownloads={handleClearDownloadHistory}
+              onDeleteJob={handleDeleteJob}
+              onDeleteJobs={handleDeleteJobs}
               onToast={pushToast}
             />
           )}
@@ -714,6 +735,7 @@ export const App: React.FC = () => {
         onClose={closeImageInspector}
         onReuseSettings={handleReuseImageSettings}
         onUpscaleImage={handleUpscaleImage}
+        onSendToWorkflow={handleSendImageToWorkflow}
         onToggleFavorite={handleToggleFavorite}
         onUpdateMeta={handleUpdateImageMeta}
         onAddToCharacter={handleAddImageToCharacter}
@@ -729,7 +751,26 @@ export const App: React.FC = () => {
         onInstall={handleInstallUpdate}
       />
 
-      <ToastStack toasts={toasts} />
+      <Toaster
+        theme={resolvedTheme}
+        position="bottom-right"
+        duration={4500}
+        closeButton
+        visibleToasts={3}
+        gap={8}
+        offset={16}
+        toastOptions={{
+          duration: 4500,
+          style: {
+            background: "var(--surface-elevated)",
+            color: "var(--fg)",
+            border: "1px solid var(--border-strong)",
+            borderRadius: "var(--radius-lg)",
+            boxShadow: "var(--shadow-float)",
+            fontFamily: "var(--font-sans)",
+          },
+        }}
+      />
       <JobStatusAnnouncer jobs={jobs} />
     </div>
   </ContextMenuProvider>

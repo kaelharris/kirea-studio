@@ -10,11 +10,18 @@ export function isAnimaWorkflow(workflowId: string): boolean {
   return ANIMA_WORKFLOW_IDS.has(workflowId);
 }
 
+const KREA2_WORKFLOW_IDS = new Set(["t2i_krea2_base", "i2i_krea2_base"]);
+
+export function isKrea2Workflow(workflowId: string): boolean {
+  return KREA2_WORKFLOW_IDS.has(workflowId);
+}
+
 export function usesDiffusionModelLoader(workflowId: string): boolean {
   return (
     workflowId === "t2i_z_image_turbo" ||
     isMossWorkflow(workflowId) ||
     isAnimaWorkflow(workflowId) ||
+    isKrea2Workflow(workflowId) ||
     workflowId === "t2v_wan21_1_3b" ||
     workflowId === "t2v_wan21_14b"
   );
@@ -287,7 +294,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     maxDim: 2048,
     dimStep: 16,
     defaults: {
-      steps: 28,
+      steps: 20,
       cfg: 2.5,
       sampler: "euler",
       scheduler: "simple",
@@ -296,6 +303,42 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       height: 1024,
     },
     tags: ["MOSS-Image", "Qwen3.5", "FLUX.2 VAE", "Split UNET"],
+  },
+  {
+    id: "t2i_moss_image_turbo",
+    version: "1.0.0",
+    name: "MOSS-Image Turbo (4-Step Distilled)",
+    description:
+      "High-speed 4-step distilled MOSS-Image pipeline using the 4-step distilled LoRA with CFG 1.0. Runs 100% in VRAM with single-pass sampling and zero PCIe swapping.",
+    mode: "txt2img",
+    supportedArchitectures: ["moss_image"],
+    requiredNodes: [
+      "UNETLoader",
+      "SkipLayerGuidanceDiTSimple",
+      "CLIPLoader",
+      "VAELoader",
+      "CLIPTextEncode",
+      "EmptyFlux2LatentImage",
+      "KSampler",
+      "VAEDecode",
+      "SaveImage",
+    ],
+    outputNodeId: "9",
+    supportsLora: true,
+    maxLoras: 8,
+    minDim: 512,
+    maxDim: 2048,
+    dimStep: 16,
+    defaults: {
+      steps: 4,
+      cfg: 1.0,
+      sampler: "euler",
+      scheduler: "simple",
+      denoise: 1.0,
+      width: 1024,
+      height: 1024,
+    },
+    tags: ["MOSS-Image", "Turbo", "4-Step", "Fast", "1024px"],
   },
   {
     id: "t2i_moss_image_base",
@@ -569,6 +612,76 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       height: 1024,
     },
     tags: ["Anima", "Img2Img", "Split DiT"],
+  },
+  {
+    id: "t2i_krea2_base",
+    version: "1.0.0",
+    name: "Krea 2 Text-to-Image",
+    description:
+      "Production Krea 2 pipeline: Qwen3-VL-4B text encoder (12-layer tap), 16-channel AE VAE, and flexible Checkpoint/UNET loading with LoRA chaining.",
+    mode: "txt2img",
+    supportedArchitectures: ["krea2"],
+    requiredNodes: [
+      "CLIPLoader",
+      "VAELoader",
+      "CLIPTextEncode",
+      "EmptySD3LatentImage",
+      "KSampler",
+      "VAEDecode",
+      "SaveImage",
+    ],
+    outputNodeId: "9",
+    supportsLora: true,
+    maxLoras: 4,
+    minDim: 512,
+    maxDim: 1536,
+    dimStep: 16,
+    defaults: {
+      steps: 8,
+      cfg: 1.8,
+      sampler: "euler",
+      scheduler: "simple",
+      denoise: 1.0,
+      width: 1024,
+      height: 1024,
+    },
+    tags: ["Krea 2", "Qwen3-VL", "AE VAE", "16-Channel"],
+  },
+  {
+    id: "i2i_krea2_base",
+    version: "1.0.0",
+    name: "Krea 2 Image-to-Image",
+    description:
+      "Krea 2 image-to-image editing pipeline with Qwen3-VL-4B conditioning, AE VAE encoding/decoding, and adjustable denoise strength.",
+    mode: "img2img",
+    supportedArchitectures: ["krea2"],
+    requiredNodes: [
+      "CLIPLoader",
+      "VAELoader",
+      "LoadImage",
+      "ImageScale",
+      "VAEEncode",
+      "CLIPTextEncode",
+      "KSampler",
+      "VAEDecode",
+      "SaveImage",
+    ],
+    outputNodeId: "9",
+    supportsLora: true,
+    maxLoras: 4,
+    minDim: 512,
+    maxDim: 1536,
+    dimStep: 16,
+    defaults: {
+      steps: 8,
+      cfg: 1.8,
+      sampler: "euler",
+      scheduler: "simple",
+      denoise: 0.65,
+      width: 1024,
+      height: 1024,
+    },
+    tags: ["Img2Img", "Krea 2", "AE VAE"],
   },
   {
     id: "upscale_model_v1",

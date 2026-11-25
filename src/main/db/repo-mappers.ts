@@ -1,8 +1,18 @@
 import type {
+  CharacterAdapter,
+  CharacterDataset,
+  CharacterIdentityCore,
+  CharacterKnowledge,
+  CharacterOutfit,
   CharacterProfile,
   CharacterReference,
+  CharacterReferenceApproval,
+  CharacterReferenceCategory,
   CharacterReferenceMode,
   CharacterReferenceRole,
+  CharacterTrainingConfig,
+  CharacterTrainingJob,
+  DatasetItem,
   LoraRecipeItem,
   LoraRecipeSettings,
   ModelArchitecture,
@@ -19,6 +29,7 @@ import type {
   StoryScene,
   StorySceneCastMember,
   StorySceneStatus,
+  VisualTag,
 } from "../../shared/types";
 import { normalizeCanvasOverlays } from "../../shared/canvas-layout";
 
@@ -84,22 +95,175 @@ export function mapCharacterReferenceRow(r: Record<string, unknown>): CharacterR
     weight: Number(r.weight ?? 1),
     position: Number(r.position ?? 0),
     createdAt: String(r.created_at),
+    category: (r.category as CharacterReferenceCategory) ?? "other",
+    approvalStatus: (r.approval_status as CharacterReferenceApproval) ?? "pending",
+    associatedOutfitId: r.associated_outfit_id ? String(r.associated_outfit_id) : null,
+    includedInTraining:
+      r.included_in_training !== undefined && r.included_in_training !== null
+        ? Boolean(r.included_in_training)
+        : true,
+    width: numberOrNull(r.width),
+    height: numberOrNull(r.height),
+    aspectRatio: r.aspect_ratio ? String(r.aspect_ratio) : null,
+    suggestedTags: safeParseJson<VisualTag[]>(r.suggested_tags_json as string | null, []),
+    imageHash: r.image_hash ? String(r.image_hash) : null,
+  };
+}
+
+export function mapCharacterOutfitRow(r: Record<string, unknown>): CharacterOutfit {
+  return {
+    id: String(r.id),
+    characterId: String(r.character_id),
+    name: String(r.name),
+    description: String(r.description ?? ""),
+    promptTokens: safeParseJson<string[]>(String(r.prompt_tokens_json ?? "[]"), []),
+    isDefault: Boolean(r.is_default),
+    previewImagePath: stringOrNull(r.preview_image_path),
+    createdAt: String(r.created_at),
+    updatedAt: String(r.updated_at),
+  };
+}
+
+export function mapCharacterAdapterRow(r: Record<string, unknown>): CharacterAdapter {
+  return {
+    id: String(r.id),
+    characterId: String(r.character_id),
+    baseModelFamily: String(r.base_model_family),
+    checkpointPath: stringOrNull(r.checkpoint_path),
+    checkpointName: stringOrNull(r.checkpoint_name),
+    triggerToken: String(r.trigger_token),
+    fileLocation: String(r.file_location),
+    trainingConfig: safeParseJson<CharacterTrainingConfig | null>(
+      String(r.training_config_json ?? "null"),
+      null
+    ),
+    datasetVersion: stringOrNull(r.dataset_version),
+    rank: Number(r.rank ?? 16),
+    alpha: Number(r.alpha ?? 16),
+    recommendedStrength: Number(r.recommended_strength ?? 0.85),
+    status: (r.status as CharacterAdapter["status"]) ?? "trained",
+    validationImages: safeParseJson<string[]>(
+      String(r.validation_images_json ?? "[]"),
+      []
+    ),
+    createdAt: String(r.created_at),
+    updatedAt: String(r.updated_at),
+  };
+}
+
+export function mapCharacterDatasetRow(r: Record<string, unknown>): CharacterDataset {
+  return {
+    id: String(r.id),
+    characterId: String(r.character_id),
+    version: String(r.version),
+    name: String(r.name),
+    itemCount: Number(r.item_count ?? 0),
+    items: safeParseJson<DatasetItem[]>(String(r.manifest_json ?? "[]"), []),
+    exportPath: stringOrNull(r.export_path),
+    createdAt: String(r.created_at),
+  };
+}
+
+export function mapCharacterTrainingJobRow(r: Record<string, unknown>): CharacterTrainingJob {
+  return {
+    id: String(r.id),
+    characterId: String(r.character_id),
+    adapterId: stringOrNull(r.adapter_id),
+    baseModelFamily: String(r.base_model_family),
+    status: (r.status as CharacterTrainingJob["status"]) ?? "QUEUED",
+    progressStep: Number(r.progress_step ?? 0),
+    progressMax: Number(r.progress_max ?? 0),
+    currentEpoch: numberOrNull(r.current_epoch) ?? 0,
+    totalEpochs: numberOrNull(r.total_epochs) ?? 0,
+    loss: numberOrNull(r.loss),
+    config: safeParseJson<CharacterTrainingConfig>(
+      String(r.config_json ?? "{}"),
+      {} as CharacterTrainingConfig
+    ),
+    errorMessage: stringOrNull(r.error_message),
+    logsText: String(r.logs_text ?? ""),
+    outputAdapterPath: stringOrNull(r.output_adapter_path),
+    submittedAt: String(r.submitted_at),
+    startedAt: stringOrNull(r.started_at),
+    completedAt: stringOrNull(r.completed_at),
   };
 }
 
 export function mapCharacterRow(
   r: Record<string, unknown>,
-  references: CharacterReference[]
+  references: CharacterReference[],
+  outfits: CharacterOutfit[] = [],
+  adapters: CharacterAdapter[] = []
 ): CharacterProfile {
+  const triggerWords = safeParseJson<string[]>(String(r.trigger_words_json), []);
+  const promptPrefix = String(r.prompt_prefix ?? "");
+  const triggerToken = r.trigger_token
+    ? String(r.trigger_token)
+    : triggerWords[0] ||
+      promptPrefix.split(/[\s,]+/)[0] ||
+      `kirea_${String(r.name).toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+
+  const dna: CharacterIdentityCore = {
+    triggerToken,
+    gender: r.gender ? String(r.gender) : undefined,
+    ageCategory: String(r.age_category ?? "young_adult"),
+    species: String(r.species ?? "human"),
+    archetype: r.archetype ? String(r.archetype) : undefined,
+    hairColor: String(r.hair_color ?? ""),
+    hairStyle: String(r.hair_style ?? ""),
+    eyeColor: String(r.eye_color ?? ""),
+    skinTone: String(r.skin_tone ?? ""),
+    facialCharacteristics: String(r.facial_characteristics ?? ""),
+    distinctiveFeatures: safeParseJson<string[]>(
+      String(r.distinctive_features_json ?? "[]"),
+      []
+    ),
+    bodyCharacteristics: String(r.body_characteristics ?? ""),
+    signatureAccessories: safeParseJson<string[]>(
+      String(r.signature_accessories_json ?? "[]"),
+      []
+    ),
+    canonicalDescription: String(r.canonical_description || r.appearance || ""),
+    fixedTraits: safeParseJson<string[]>(
+      String(r.fixed_traits_json ?? "[]"),
+      []
+    ),
+    variableTraits: safeParseJson<string[]>(
+      String(r.variable_traits_json ?? "[]"),
+      []
+    ),
+    preferredStyle: String(r.preferred_style ?? "anime aesthetic"),
+    negativeConstraints: String(r.negative_constraints || r.negative_prompt || ""),
+    dnaLocked: Boolean(r.dna_locked),
+  };
+
+  const knowledge: CharacterKnowledge = {
+    personality: String(r.personality ?? ""),
+    speechStyle: String(r.speech_style ?? ""),
+    background: String(r.background ?? ""),
+    history: String(r.history ?? ""),
+    relationships: safeParseJson<
+      Array<{ target: string; relation: string; notes: string }>
+    >(String(r.relationships_json ?? "[]"), []),
+    motivations: String(r.motivations ?? ""),
+    likes: safeParseJson<string[]>(String(r.likes_json ?? "[]"), []),
+    dislikes: safeParseJson<string[]>(String(r.dislikes_json ?? "[]"), []),
+    rules: safeParseJson<string[]>(String(r.rules_json ?? "[]"), []),
+    worldbuilding: String(r.worldbuilding ?? ""),
+    dialogueExamples: safeParseJson<
+      Array<{ context: string; quote: string }>
+    >(String(r.dialogue_examples_json ?? "[]"), []),
+  };
+
   return {
     id: String(r.id),
     name: String(r.name),
     description: String(r.description ?? ""),
     appearance: String(r.appearance ?? ""),
     clothing: String(r.clothing ?? ""),
-    promptPrefix: String(r.prompt_prefix ?? ""),
+    promptPrefix,
     negativePrompt: String(r.negative_prompt ?? ""),
-    triggerWords: safeParseJson<string[]>(String(r.trigger_words_json), []),
+    triggerWords,
     architecture: (r.architecture as ModelArchitecture) ?? "unknown",
     checkpointPath: r.checkpoint_path ? String(r.checkpoint_path) : null,
     checkpointName: r.checkpoint_name ? String(r.checkpoint_name) : null,
@@ -115,6 +279,12 @@ export function mapCharacterRow(
     createdAt: String(r.created_at),
     updatedAt: String(r.updated_at),
     references,
+    dna,
+    outfits,
+    adapters,
+    knowledge,
+    activeAdapterId: r.active_adapter_id ? String(r.active_adapter_id) : null,
+    activeOutfitId: r.active_outfit_id ? String(r.active_outfit_id) : null,
   };
 }
 

@@ -21,12 +21,6 @@ import type {
 } from "../../shared/types";
 import type { UpdateState } from "../../shared/update-types";
 
-export interface ToastItem {
-  id: string;
-  message: string;
-  tone: "info" | "error";
-}
-
 export const DEFAULT_SETTINGS: AppSettings = {
   runtimeMode: "external",
   externalComfyPath: "",
@@ -108,7 +102,7 @@ export const INITIAL_DRAFT: GenerationRequest = {
   cfg: 6.5,
   sampler: "dpmpp_2m",
   scheduler: "karras",
-  seed: 42,
+  seed: -1,
   randomSeed: true,
   batchCount: 1,
   batchSize: 1,
@@ -151,6 +145,8 @@ export const NAV_ITEMS: Array<{
 export const NAV_GROUPS: Array<{ label: string; items: NavSection[] }> = [
   { label: "Workspace", items: ["home", "create", "video", "explore", "library"] },
   { label: "Studio", items: ["characters", "pixel", "stories", "models", "workflows"] },
-  { label: "System", items: ["queue", "settings"] },
+  { label: "System", items: ["queue"] },
 ];
+
+export const PINNED_NAV_IDS: NavSection[] = ["settings"];
 

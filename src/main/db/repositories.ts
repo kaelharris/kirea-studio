@@ -116,11 +116,13 @@ export class StudioRepository {
   markLoraRecipeUsed = (id: string): void => this.models.markLoraRecipeUsed(id);
   upsertDownload = (task: DownloadTask): void => this.models.upsertDownload(task);
   listDownloads = (limit = 50): DownloadTask[] => this.models.listDownloads(limit);
+  deleteDownload = (id: string): void => this.models.deleteDownload(id);
+  clearCompletedDownloads = (): number => this.models.clearCompletedDownloads();
 
   // Characters
   listCharacters = (): CharacterProfile[] => this.characters.listCharacters();
   getCharacterById = (id: string): CharacterProfile | null => this.characters.getCharacterById(id);
-  saveCharacter = (input: CharacterProfileInput): CharacterProfile =>
+  saveCharacter = (input: Partial<CharacterProfileInput>): CharacterProfile =>
     this.characters.saveCharacter(input);
   deleteCharacter = (id: string): boolean => this.characters.deleteCharacter(id);
   addCharacterReference: CharactersRepository["addCharacterReference"] = (input) =>
@@ -133,6 +135,32 @@ export class StudioRepository {
   removeCharacterReference = (characterId: string, refId: string): CharacterReference | null =>
     this.characters.removeCharacterReference(characterId, refId);
   markCharacterUsed = (id: string): void => this.characters.markCharacterUsed(id);
+
+  // Character DNA: Outfits, Adapters, Datasets, Training
+  listOutfits = (characterId: string) => this.characters.listOutfits(characterId);
+  saveOutfit = (outfit: Parameters<CharactersRepository["saveOutfit"]>[0]) =>
+    this.characters.saveOutfit(outfit);
+  deleteOutfit = (outfitId: string, characterId?: string) =>
+    this.characters.deleteOutfit(outfitId, characterId);
+
+  listAdapters = (characterId: string) => this.characters.listAdapters(characterId);
+  saveAdapter = (adapter: Parameters<CharactersRepository["saveAdapter"]>[0]) =>
+    this.characters.saveAdapter(adapter);
+  deleteAdapter = (adapterId: string, characterId?: string) =>
+    this.characters.deleteAdapter(adapterId, characterId);
+
+  listDatasets = (characterId: string) => this.characters.listDatasets(characterId);
+  saveDataset = (dataset: Parameters<CharactersRepository["saveDataset"]>[0]) =>
+    this.characters.saveDataset(dataset);
+  getDataset = (datasetId: string) => this.characters.getDataset(datasetId);
+
+  listTrainingJobs = (characterId?: string) => this.characters.listTrainingJobs(characterId);
+  saveTrainingJob = (job: Parameters<CharactersRepository["saveTrainingJob"]>[0]) =>
+    this.characters.saveTrainingJob(job);
+  getTrainingJob = (id: string) => this.characters.getTrainingJob(id);
+  getVisualTagCache = (imageHash: string) => this.characters.getVisualTagCache(imageHash);
+  setVisualTagCache = (imageHash: string, tags: Parameters<CharactersRepository["setVisualTagCache"]>[1], taggerVersion: string) =>
+    this.characters.setVisualTagCache(imageHash, tags, taggerVersion);
 
   // Stories & Canvases
   listStories = (): Story[] => this.stories.listStories();
@@ -175,6 +203,9 @@ export class StudioRepository {
   upsertJob = (job: GenerationJob): void => this.generations.upsertJob(job);
   listJobs = (limit = 150): GenerationJob[] => this.generations.listJobs(limit);
   getJobById = (id: string): GenerationJob | null => this.generations.getJobById(id);
+  hasOutputsForJob = (jobId: string): boolean => this.generations.hasOutputsForJob(jobId);
+  deleteJob = (jobId: string): boolean => this.generations.deleteJob(jobId);
+  deleteJobs = (jobIds: string[]): number => this.generations.deleteJobs(jobIds);
   recordCompletedGenerationTx: GenerationsRepository["recordCompletedGenerationTx"] = (
     job,
     images,

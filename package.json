@@ -1,7 +1,7 @@
 {
   "name": "ai-image-studio-desktop",
-  "version": "1.0.9",
-  "description": "Kirea Studio \u00e2\u20ac\u201d Native Windows AI image-generation desktop studio powered by local ComfyUI",
+  "version": "1.1.1",
+  "description": "Kirea Studio â€” Native Windows AI image-generation desktop studio powered by local ComfyUI",
   "main": "dist-electron/main/index.js",
   "author": "kaellabsstudio",
   "license": "MIT",
@@ -30,6 +30,7 @@
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "sharp": "^0.34.5",
+    "sonner": "^2.0.8",
     "ws": "^8.22.2",
     "zod": "^4.3.6"
   },

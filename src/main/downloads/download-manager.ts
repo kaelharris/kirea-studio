@@ -259,6 +259,32 @@ export class DownloadManager extends EventEmitter {
     return true;
   }
 
+  clearCompleted(): number {
+    let cleared = 0;
+    const toRemove: string[] = [];
+    for (const [id, task] of this.tasks.entries()) {
+      if (
+        task.status === "completed" ||
+        task.status === "failed" ||
+        task.status === "cancelled"
+      ) {
+        toRemove.push(id);
+      }
+    }
+    for (const id of toRemove) {
+      this.tasks.delete(id);
+      this.repo.deleteDownload(id);
+      cleared++;
+    }
+    if (typeof this.repo.clearCompletedDownloads === "function") {
+      this.repo.clearCompletedDownloads();
+    }
+    if (cleared > 0) {
+      this.emit("historyCleared", cleared);
+    }
+    return cleared;
+  }
+
   private commitTask(task: DownloadTask): void {
     const copy = { ...task };
     this.tasks.set(copy.id, copy);

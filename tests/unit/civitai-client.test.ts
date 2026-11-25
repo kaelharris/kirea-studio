@@ -503,13 +503,81 @@ describe("CivitaiClient HTTP behavior", () => {
     const full = CivitaiSearchSchema.parse({
       query: "anime portrait",
       baseModel: "MOSS-Image",
+      baseModels: ["SDXL 1.0", "Illustrious"],
       type: "Controlnet",
+      types: "Poses",
+      tag: "character",
+      page: 2,
       sort: "Most Downloaded",
-      period: "AllTime",
+      period: "Year",
       nsfw: false,
+      cursor: "cursor_123",
       limit: 24,
     });
     expect(full.baseModel).toBe("MOSS-Image");
     expect(full.type).toBe("Controlnet");
+    expect(full.types).toBe("Poses");
+    expect(full.tag).toBe("character");
+    expect(full.period).toBe("Year");
+    expect(full.page).toBe(2);
+  });
+
+  it("defaults period to 'Month' in CivitaiClient.searchModels", async () => {
+    let capturedUrl = "";
+    const fetcher = (async (url: string) => {
+      capturedUrl = url;
+      return new Response(JSON.stringify({ items: [] }), { status: 200 });
+    }) as typeof fetch;
+
+    const client = new CivitaiClient({ getApiKey: () => null, fetcher });
+    await client.searchModels({});
+
+    const url = new URL(capturedUrl);
+    expect(url.searchParams.get("period")).toBe("Month");
+  });
+
+  it("never sends 'page' when query is present to avoid Civitai 400 error", async () => {
+    let capturedUrl = "";
+    const fetcher = (async (url: string) => {
+      capturedUrl = url;
+      return new Response(JSON.stringify({ items: [] }), { status: 200 });
+    }) as typeof fetch;
+
+    const client = new CivitaiClient({ getApiKey: () => null, fetcher });
+    await client.searchModels({
+      query: "cyberpunk",
+      page: 3,
+      cursor: "cursor_abc",
+      tag: "character",
+      period: "Month",
+    });
+
+    const url = new URL(capturedUrl);
+    expect(url.searchParams.get("query")).toBe("cyberpunk");
+    expect(url.searchParams.get("page")).toBeNull();
+    expect(url.searchParams.get("cursor")).toBe("cursor_abc");
+    expect(url.searchParams.get("tag")).toBe("character");
+    expect(url.searchParams.get("period")).toBe("Month");
+  });
+
+  it("sends 'page' when query is empty and no cursor is present", async () => {
+    let capturedUrl = "";
+    const fetcher = (async (url: string) => {
+      capturedUrl = url;
+      return new Response(JSON.stringify({ items: [] }), { status: 200 });
+    }) as typeof fetch;
+
+    const client = new CivitaiClient({ getApiKey: () => null, fetcher });
+    await client.searchModels({
+      page: 3,
+      types: "Poses",
+      baseModels: "SDXL 1.0",
+    });
+
+    const url = new URL(capturedUrl);
+    expect(url.searchParams.get("query")).toBeNull();
+    expect(url.searchParams.get("page")).toBe("3");
+    expect(url.searchParams.get("types")).toBe("Poses");
+    expect(url.searchParams.get("baseModels")).toBe("SDXL 1.0");
   });
 });

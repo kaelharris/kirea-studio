@@ -14,10 +14,12 @@ import {
   Lock,
   Maximize2,
   Plus,
+  RotateCcw,
   Sparkles,
   Square,
   Tags,
   Trash2,
+  Unlock,
   Users,
   Wand2,
 } from "lucide-react";
@@ -60,7 +62,11 @@ import {
 } from "../ui/Primitives";
 import { MediaImage } from "../ui/MediaImage";
 import { toMediaUrl } from "../../utils/format";
-import { DEFAULT_HIRES_CONFIG, describeUpscalerLabel } from "./create-helpers";
+import {
+  DEFAULT_HIRES_CONFIG,
+  describeUpscalerLabel,
+  LORA_PREVIEW_SIZES,
+} from "./create-helpers";
 import type { CreateController } from "./useCreateController";
 
 export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ ctrl }) => {
@@ -124,6 +130,8 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
     loraWarnings,
     activeCharacter,
     activeCharacterPlan,
+    activeOutfitId,
+    onSelectOutfit,
     appendToPrompt,
     handleWorkflowChange,
     handleCheckpointChange,
@@ -155,15 +163,22 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
     blockingErrors,
     warnings,
     progressPercent,
+    currentSamplingProfile,
+    samplingMode,
+    setSamplingMode,
+    isSamplingCustomized,
+    restoreRecommendedSamplingProfile,
+    samplingProfileValidation,
   } = ctrl;
   const [coreExpanded, setCoreExpanded] = useState(true);
   const [paramsExpanded, setParamsExpanded] = useState(true);
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
+  const [showAdvancedSampling, setShowAdvancedSampling] = useState(false);
 
   return (
     <div className="space-y-3.5">
       {/* 1. Core Model & Recipe */}
-      <div className="rounded-xl border border-border bg-surface p-3 space-y-2.5">
+      <div className="space-y-2.5">
         <button
           type="button"
           onClick={() => setCoreExpanded((p) => !p)}
@@ -330,7 +345,7 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
               )}
           </div>
             {/* Character Identity */}
-              <div className="p-2.5 rounded-xl bg-bg border border-border space-y-2">
+              <div className="space-y-2 border-t border-divider pt-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-label">
                     Character Identity
@@ -356,9 +371,9 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
 
                 {activeCharacter && (
                   <div
-                    className={`p-2 rounded-lg border space-y-1.5 ${
+                    className={`space-y-2 border-l-2 pl-2 ${
                       activeCharacterPlan?.active
-                        ? "border-accent/40 bg-accent-soft/40"
+                        ? "border-accent/40"
                         : "border-border"
                     }`}
                   >
@@ -368,12 +383,44 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
                           ? "Img2img reference active"
                           : "Identity text only"}
                       </Badge>
+                      {activeCharacter.dna?.dnaLocked && (
+                        <Badge tone="accent">
+                          DNA LOCKED
+                        </Badge>
+                      )}
+                      {activeCharacter.dna?.triggerToken && (
+                        <span className="font-mono text-[10px] bg-accent/10 text-accent px-1.5 py-0.5 border border-accent/20">
+                          {activeCharacter.dna.triggerToken}
+                        </span>
+                      )}
                       {activeCharacterPlan?.active && (
                         <span className="text-[11px] text-fg-subtle tabular-nums">
                           denoise {activeCharacterPlan.denoise}
                         </span>
                       )}
                     </div>
+
+                    {/* Outfit Switcher */}
+                    {activeCharacter.outfits && activeCharacter.outfits.length > 0 && (
+                      <div className="pt-1.5 border-t border-border/50 space-y-1">
+                        <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-label">
+                          <span>Outfit</span>
+                          <span className="text-fg-subtle">{activeCharacter.outfits.length} available</span>
+                        </div>
+                        <Select
+                          value={activeOutfitId ?? ""}
+                          onChange={(e) => onSelectOutfit(e.target.value || null)}
+                          className="h-7 text-xs w-full"
+                        >
+                          <option value="">Default appearance</option>
+                          {activeCharacter.outfits.map((outfit) => (
+                            <option key={outfit.id} value={outfit.id}>
+                              {outfit.name} {outfit.isDefault ? "(Default)" : ""}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+                    )}
 
                     {activeCharacterPlan?.reason === "missing_primary" && (
                       <p className="text-[11px] text-warning leading-relaxed">
@@ -411,7 +458,7 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
                 )}
               </div>
             {/* LoRA Recipe Bar */}
-              <div className="p-2.5 rounded-xl bg-bg border border-border space-y-2">
+              <div className="space-y-2 border-t border-divider pt-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-label">
                     LoRA Recipe
@@ -464,7 +511,7 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
           <div className="space-y-2 pt-2 border-t border-border">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
-                <span className="text-xs font-semibold text-fg-muted">
+                <span className="text-xs font-semibold text-terracotta">
                   LoRA Adapters ({draft.loras.length}/{activeWorkflow?.maxLoras ?? 4})
                 </span>
                 {loraWarnings.length > 0 && (
@@ -473,7 +520,7 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
               </div>
               <Button
                 size="sm"
-                variant="ghost"
+                variant="creative"
                 disabled={
                   loraModels.length === 0 ||
                   draft.loras.length >= (activeWorkflow?.maxLoras ?? 4)
@@ -512,11 +559,17 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
                 >
                   <div className="flex items-start gap-1.5">
                     {model && info?.previewPath && (
-                      <div className="w-9 shrink-0">
+                      <div
+                        className="shrink-0"
+                        style={{
+                          width: LORA_PREVIEW_SIZES.stack,
+                          height: LORA_PREVIEW_SIZES.stack,
+                        }}
+                      >
                         <ModelPreview
                           model={model}
-                          className="h-9 rounded-lg"
-                          iconSizeClass="w-3 h-3"
+                          className="h-full w-full rounded-lg"
+                          iconSizeClass="w-4 h-4"
                         />
                       </div>
                     )}
@@ -625,7 +678,7 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
           </div>
             {/* Img2Img Input Panel */}
           {draft.mode === "img2img" && (
-            <div className="p-3 rounded-xl bg-bg border border-border space-y-3">
+            <div className="space-y-3 border-t border-border pt-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-fg">
                   Reference Image
@@ -713,7 +766,7 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
       </div>
 
       {/* 2. Generation Parameters */}
-      <div className="rounded-xl border border-border bg-surface p-3 space-y-2.5">
+      <div className="space-y-2.5">
         <button
           type="button"
           onClick={() => setParamsExpanded((p) => !p)}
@@ -827,114 +880,285 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
               </div>
             )}
           </div>
-            {/* Sampling Controls */}
-          <div className="space-y-3 pt-2 border-t border-border">
-            <SliderField
-              label="Sampling Steps"
-              value={draft.steps}
-              min={1}
-              max={60}
-              step={1}
-              onChange={(v) => setDraft((p) => ({ ...p, steps: v }))}
-            />
-            <SliderField
-              label="CFG Guidance"
-              value={draft.cfg}
-              min={1}
-              max={15}
-              step={0.5}
-              onChange={(v) => setDraft((p) => ({ ...p, cfg: v }))}
-            />
+            {/* Smart Sampling Profile Header & Controls */}
+            <div className="space-y-2.5 pt-2 border-t border-border">
+              <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-label">
+                    Sampling
+                  </span>
+                  <Badge
+                    tone={
+                      isSamplingCustomized
+                        ? "warning"
+                        : currentSamplingProfile.provenance.confidence === "official"
+                          ? "accent"
+                          : "neutral"
+                    }
+                  >
+                    {isSamplingCustomized
+                      ? "Custom"
+                      : `${currentSamplingProfile.provenance.confidence.toUpperCase()}`}
+                  </Badge>
+                </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="text-[11px] text-fg-subtle">Sampler</label>
-                <Select
-                  value={draft.sampler}
-                  onChange={(e) =>
-                    setDraft((p) => ({ ...p, sampler: e.target.value }))
-                  }
-                  className="h-8 text-xs"
-                >
-                  {samplersAndSchedulers.samplers.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </Select>
+                <div className="flex items-center gap-1">
+                  {isSamplingCustomized && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={restoreRecommendedSamplingProfile}
+                      className="h-6 px-1.5 text-[10px] font-mono uppercase text-accent hover:text-accent hover:bg-accent/10"
+                      title="Restore the recommended sampling settings for this model"
+                    >
+                      <RotateCcw className="w-3 h-3 mr-1" />
+                      Restore
+                    </Button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedSampling((p) => !p)}
+                    className="flex items-center gap-1 text-[11px] font-mono text-fg-subtle hover:text-fg transition-colors px-1 py-0.5 cursor-pointer"
+                    title="Toggle Advanced Sampling Settings (Sampler, Scheduler, CFG)"
+                  >
+                    <span className="text-[10px] uppercase">{showAdvancedSampling ? "Hide" : "Advanced"}</span>
+                    {showAdvancedSampling ? (
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-[11px] text-fg-subtle">Scheduler</label>
-                <Select
-                  value={draft.scheduler}
-                  onChange={(e) =>
-                    setDraft((p) => ({ ...p, scheduler: e.target.value }))
-                  }
-                  className="h-8 text-xs"
-                >
-                  {samplersAndSchedulers.schedulers.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </Select>
+
+              {/* Model Profile Summary Hint */}
+              <div className="text-[11px] font-mono text-fg-muted flex items-center justify-between bg-surface-subtle px-2 py-1 border border-border/60">
+                <span className="truncate">
+                  {currentSamplingProfile.modelFamily.toUpperCase()}{" "}
+                  {currentSamplingProfile.modelVariant && currentSamplingProfile.modelVariant !== "base"
+                    ? `[${currentSamplingProfile.modelVariant.toUpperCase()}]`
+                    : ""}{" "}
+                  · {currentSamplingProfile.sampling.steps} steps ({currentSamplingProfile.sampling.sampler})
+                </span>
+                <span className="shrink-0 text-fg-subtle text-[10px]">
+                  CFG {currentSamplingProfile.sampling.cfg}
+                </span>
               </div>
+
+              {/* Sampling Steps Slider */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-[11px] text-fg-subtle">Sampling Steps</span>
+                  {currentSamplingProfile.lockedParameters?.includes("steps") && (
+                    <Badge tone="neutral" className="text-[9px] py-0">LOCKED</Badge>
+                  )}
+                </div>
+                <SliderField
+                  label=""
+                  value={draft.steps}
+                  min={currentSamplingProfile.recommendedRanges?.steps?.min ?? 1}
+                  max={Math.max(60, currentSamplingProfile.recommendedRanges?.steps?.max ?? 60)}
+                  step={1}
+                  disabled={currentSamplingProfile.lockedParameters?.includes("steps")}
+                  onChange={(v) => {
+                    setDraft((p) => ({ ...p, steps: v }));
+                    setSamplingMode("custom");
+                  }}
+                />
+              </div>
+
+              {/* Advanced Sampling Settings Collapsible */}
+              {showAdvancedSampling && (
+                <div className="space-y-2.5 border-t border-border pt-3 animate-[kirea-panel-in_140ms_ease-out]">
+                  {/* Runtime missing samplers warning banner */}
+                  {!samplingProfileValidation.supported && (
+                    <div className="p-2 border border-warning/40 bg-warning/10 text-warning text-[11px] font-mono space-y-1">
+                      {samplingProfileValidation.warnings.map((w, idx) => (
+                        <p key={idx}>⚠️ {w}</p>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* CFG Guidance */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-[11px] text-fg-subtle">CFG Guidance</span>
+                      {currentSamplingProfile.lockedParameters?.includes("cfg") && (
+                        <Badge tone="neutral" className="text-[9px] py-0">
+                          LOCKED ({currentSamplingProfile.sampling.cfg})
+                        </Badge>
+                      )}
+                    </div>
+                    <SliderField
+                      label=""
+                      value={draft.cfg}
+                      min={currentSamplingProfile.lockedParameters?.includes("cfg") ? draft.cfg : 1}
+                      max={currentSamplingProfile.lockedParameters?.includes("cfg") ? draft.cfg : 15}
+                      step={0.5}
+                      disabled={currentSamplingProfile.lockedParameters?.includes("cfg")}
+                      onChange={(v) => {
+                        setDraft((p) => ({ ...p, cfg: v }));
+                        setSamplingMode("custom");
+                      }}
+                    />
+                    {currentSamplingProfile.lockedParameters?.includes("cfg") && (
+                      <p className="text-[10px] text-fg-subtle font-mono">
+                        CFG is fixed for {currentSamplingProfile.modelFamily} {currentSamplingProfile.modelVariant} architecture.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Sampler and Scheduler Pickers */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-fg-subtle flex items-center justify-between">
+                        <span>Sampler</span>
+                        {draft.sampler === currentSamplingProfile.sampling.sampler && (
+                          <span className="text-[9px] text-accent font-mono font-semibold">REC</span>
+                        )}
+                      </label>
+                      <Select
+                        value={draft.sampler}
+                        onChange={(e) => {
+                          setDraft((p) => ({ ...p, sampler: e.target.value }));
+                          setSamplingMode("custom");
+                        }}
+                        className="h-8 text-xs font-mono"
+                      >
+                        {samplersAndSchedulers.samplers.map((s) => (
+                          <option key={s} value={s}>
+                            {s} {s === currentSamplingProfile.sampling.sampler ? "★" : ""}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-fg-subtle flex items-center justify-between">
+                        <span>Scheduler</span>
+                        {draft.scheduler === currentSamplingProfile.sampling.scheduler && (
+                          <span className="text-[9px] text-accent font-mono font-semibold">REC</span>
+                        )}
+                      </label>
+                      <Select
+                        value={draft.scheduler}
+                        onChange={(e) => {
+                          setDraft((p) => ({ ...p, scheduler: e.target.value }));
+                          setSamplingMode("custom");
+                        }}
+                        className="h-8 text-xs font-mono"
+                      >
+                        {samplersAndSchedulers.schedulers.map((s) => (
+                          <option key={s} value={s}>
+                            {s} {s === currentSamplingProfile.sampling.scheduler ? "★" : ""}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Seed */}
-            <div className="space-y-1">
+            {/* Seed Control with [LOCK_SEED] / [RANDOMIZE] Toggle */}
+            <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-fg-muted font-medium">Seed</span>
-                <label className="inline-flex items-center gap-1.5 text-[11px] text-fg-muted cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={draft.randomSeed}
-                    onChange={(e) =>
-                      setDraft((p) => ({ ...p, randomSeed: e.target.checked }))
-                    }
-                    className="accent-accent"
-                  />
-                  Randomize each run
-                </label>
+                <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-label">
+                  Seed
+                </span>
+                <span className="font-mono text-[10px] uppercase tracking-wider text-fg-subtle">
+                  {draft.seed === -1 || draft.randomSeed ? "DYNAMIC (RANDOM)" : "LOCKED"}
+                </span>
               </div>
-              <div className="flex gap-1.5">
-                <Input
-                  type="number"
-                  min={0}
-                  max={2147483647}
-                  value={draft.seed}
-                  disabled={draft.randomSeed}
-                  onChange={(e) =>
-                    setDraft((p) => ({
-                      ...p,
-                      seed: Math.max(0, Number(e.target.value) || 0),
-                    }))
-                  }
-                  className="h-8 text-xs tabular-nums"
-                />
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  title="Generate new fixed seed"
-                  onClick={() =>
-                    setDraft((p) => ({
-                      ...p,
-                      randomSeed: false,
-                      seed: Math.floor(Math.random() * 2_147_483_647),
-                    }))
-                  }
-                >
-                  <Dices className="w-3.5 h-3.5" />
-                </Button>
+              <div className="flex items-center gap-1.5">
+                <div className="relative flex-1">
+                  {draft.seed === -1 || draft.randomSeed ? (
+                    <div className="flex h-8 items-center px-2.5 rounded-none border-2 border-border bg-well font-mono text-xs font-semibold text-fg-muted tracking-wide select-none">
+                      -1 (RANDOM)
+                    </div>
+                  ) : (
+                    <Input
+                      type="number"
+                      min={0}
+                      max={4294967295}
+                      value={draft.seed}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setDraft((p) => ({
+                          ...p,
+                          seed: Math.max(0, Math.min(4294967295, isNaN(val) ? 0 : val)),
+                          randomSeed: false,
+                        }));
+                      }}
+                      className="h-8 text-xs font-mono tabular-nums rounded-none border-2"
+                    />
+                  )}
+                </div>
+                {draft.seed === -1 || draft.randomSeed ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    title="Lock current generation to a fixed seed"
+                    onClick={() => {
+                      const nextSeed = Math.floor(Math.random() * 4294967295);
+                      setDraft((p) => ({
+                        ...p,
+                        randomSeed: false,
+                        seed: nextSeed,
+                      }));
+                      onToast(`Locked seed to ${nextSeed}.`);
+                    }}
+                    className="h-8 px-2.5 rounded-none border-2 border-[#F2F2EE] font-mono text-[11px] font-bold tracking-wider uppercase"
+                  >
+                    <Lock className="w-3.5 h-3.5 mr-1" strokeWidth={2} />
+                    [LOCK_SEED]
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      title="Roll a new fixed seed"
+                      onClick={() => {
+                        const nextSeed = Math.floor(Math.random() * 4294967295);
+                        setDraft((p) => ({
+                          ...p,
+                          randomSeed: false,
+                          seed: nextSeed,
+                        }));
+                        onToast(`Rolled seed: ${nextSeed}.`);
+                      }}
+                      className="h-8 px-2 rounded-none border-2 font-mono text-[11px]"
+                    >
+                      <Dices className="w-3.5 h-3.5" strokeWidth={2} />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      title="Switch to random seed for each render"
+                      onClick={() => {
+                        setDraft((p) => ({
+                          ...p,
+                          seed: -1,
+                          randomSeed: true,
+                        }));
+                        onToast("Seed unlocked (random on each run).");
+                      }}
+                      className="h-8 px-2.5 rounded-none border-2 border-[#1E3BFF] text-[#1E3BFF] hover:bg-[#1E3BFF] hover:text-[#F2F2EE] font-mono text-[11px] font-bold tracking-wider uppercase"
+                    >
+                      <Unlock className="w-3.5 h-3.5 mr-1" strokeWidth={2} />
+                      [RANDOMIZE]
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
-          </div>
           </div>
         )}
       </div>
 
       {/* 3. Advanced Conditioning */}
-      <div className="rounded-xl border border-border bg-surface p-3 space-y-2.5">
+      <div className="space-y-2.5">
         <button
           type="button"
           onClick={() => setAdvancedExpanded((p) => !p)}
@@ -957,7 +1181,7 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
 
         {advancedExpanded && (
           <div className="space-y-3 pt-2 border-t border-border/60">
-            <div className="p-2.5 rounded-xl bg-bg border border-border space-y-2">{vaeModels.length > 0 && (
+            <div className="space-y-2">{vaeModels.length > 0 && (
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-fg-muted">
                   VAE
@@ -989,7 +1213,7 @@ export const CreateGenerationSidebar: React.FC<{ ctrl: CreateController }> = ({ 
               </div>
             )}</div>
             {/* High-Res Fix (2-Pass Detail) */}
-          <div className="p-3 rounded-xl bg-bg border border-border space-y-3">
+          <div className="space-y-3 border-t border-border pt-3">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="text-xs font-semibold text-fg">

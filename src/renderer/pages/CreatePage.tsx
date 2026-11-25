@@ -53,7 +53,7 @@ export const CreatePage: React.FC<CreatePageProps> = (props) => {
   } = ctrl;
 
   return (
-    <div className="flex h-[calc(100vh-7.5rem)] min-h-[580px] flex-col gap-2.5">
+    <div className="flex min-h-0 flex-1 flex-col gap-2.5">
       <div className="flex shrink-0 flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-h1 text-fg">Create</h1>
@@ -82,9 +82,9 @@ export const CreatePage: React.FC<CreatePageProps> = (props) => {
               </Button>
               <Button
                 size="sm"
-                variant={inspectorOpen ? "secondary" : "ghost"}
+                variant={inspectorOpen ? "creative" : "secondary"}
                 aria-pressed={inspectorOpen}
-                className="hidden min-[1600px]:inline-flex"
+                aria-expanded={inspectorOpen}
                 onClick={() => setInspectorOpen((open) => !open)}
               >
                 {inspectorOpen ? (
@@ -162,12 +162,16 @@ export const CreatePage: React.FC<CreatePageProps> = (props) => {
           }}
           onInspectImage={onInspectImage}
           onToggleFavorite={(id) => void onToggleFavorite(id)}
+          onDeleteImage={props.onDeleteImage}
+          onDeleteJob={props.onDeleteJob}
+          jobs={props.jobs}
+          onToast={props.onToast}
         />
       ) : (
-      <div className="flex min-h-0 flex-1 gap-3">
+      <div className="flex min-h-0 flex-1 gap-0">
       {/* LEFT PARAMETER INSPECTOR */}
       <div
-        className={`hidden shrink-0 flex-col overflow-hidden rounded-xl border bg-surface lg:flex ${
+        className={`hidden shrink-0 flex-col overflow-hidden border-r bg-bg lg:flex ${
           leftPanelOpen
             ? "w-[300px] min-[2200px]:w-[340px] border-border"
             : "w-0 border-transparent"
@@ -211,7 +215,7 @@ export const CreatePage: React.FC<CreatePageProps> = (props) => {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-3.5 space-y-4">
+        <div className="flex-1 overflow-y-auto p-2.5 space-y-3">
           {draft.mode === "upscale" ? (
             <CreateUpscaleSidebar ctrl={ctrl} />
           ) : (

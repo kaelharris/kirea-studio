@@ -24,6 +24,7 @@ import {
   ANIMA_DEFAULT_NEGATIVE,
   getWorkflowById,
   isAnimaWorkflow,
+  isKrea2Workflow,
 } from "./workflow-templates";
 import {
   clampRefinerCreativity,
@@ -547,6 +548,7 @@ export function buildComfyPromptGraph(params: BuildWorkflowParams): {
 
   if (
     template.id === "t2i_moss_image" ||
+    template.id === "t2i_moss_image_turbo" ||
     template.id === "t2i_moss_image_base" ||
     template.id === "t2i_moss_image_layout"
   ) {
@@ -625,6 +627,32 @@ export function buildComfyPromptGraph(params: BuildWorkflowParams): {
         modelRef = [nodeId, 0];
       }
     });
+
+    if (template.id === "t2i_moss_image_turbo") {
+      const hasTurboLora = request.loras.some((l) =>
+        /4_?steps?|turbo/i.test(l.name)
+      );
+      if (!hasTurboLora) {
+        const turboLoraRecord = availableModels.find(
+          (m) =>
+            m.category === "lora" &&
+            /moss.*4_?steps.*lora|4step.*lora/i.test(m.name)
+        );
+        const turboLoraName =
+          turboLoraRecord?.relativePath ??
+          "moss_image_sft_4_steps_lora_v2_600_avg_rank_72_bf16.safetensors";
+        graph["4_turbo"] = {
+          class_type: "LoraLoaderModelOnly",
+          inputs: {
+            lora_name: turboLoraName,
+            strength_model: 1.0,
+            model: modelRef,
+          },
+          _meta: { title: "MOSS 4-Step Turbo LoRA" },
+        };
+        modelRef = ["4_turbo", 0];
+      }
+    }
 
     // Matches ComfyUI's official MOSS-Image t2i template: only single layer 22
     // is skipped, and only through the first half of sampling.
@@ -1261,6 +1289,179 @@ export function buildComfyPromptGraph(params: BuildWorkflowParams): {
     graph["9"] = {
       class_type: "SaveImage",
       inputs: { filename_prefix: filenamePrefix, images: animaOutputImageRef },
+      _meta: { title: "Save Image" },
+    };
+
+    attachHiresFixPass({
+      graph,
+      template,
+      request,
+      resolvedSeed,
+      baseWidth: width,
+      baseHeight: height,
+      modelRef,
+      positiveRef: ["6", 0],
+      negativeRef: ["7", 0],
+      vaeRef: ["29", 0],
+      supportsUpscaleModel,
+    });
+
+    return { template, resolvedSeed, graph };
+  }
+
+  if (template.id === "t2i_krea2_base" || template.id === "i2i_krea2_base") {
+    const isImg2Img = template.id === "i2i_krea2_base";
+    const qwenClip =
+      availableModels.find(
+        (m) =>
+          m.category === "text_encoder" &&
+          /qwen3vl[-_]4b/i.test(m.name)
+      )?.relativePath ?? "qwen3vl_4b_fp8_scaled.safetensors";
+
+    const aeVae =
+      resolveRequestedVae(request, "krea2", availableModels) ??
+      availableModels.find(
+        (m) =>
+          m.category === "vae" &&
+          m.name.toLowerCase().includes("ae")
+      )?.relativePath ??
+      "ae.safetensors";
+
+    const modelRecord = availableModels.find(
+      (m) => m.relativePath === request.checkpoint || m.name === request.checkpoint
+    );
+    const isDiffusionModel = modelRecord?.category === "diffusion_model";
+    const resolvedModelName = resolveModelRelativePath(request.checkpoint, availableModels);
+
+    const graph: ComfyPromptGraph = {};
+
+    if (isDiffusionModel) {
+      graph["28"] = {
+        class_type: "UNETLoader",
+        inputs: { unet_name: resolvedModelName, weight_dtype: "default" },
+        _meta: { title: "Load Krea 2 Diffusion Model" },
+      };
+    } else {
+      graph["28"] = {
+        class_type: "CheckpointLoaderSimple",
+        inputs: { ckpt_name: resolvedModelName },
+        _meta: { title: "Load Krea 2 Checkpoint" },
+      };
+    }
+
+    graph["30"] = {
+      class_type: "CLIPLoader",
+      inputs: { clip_name: qwenClip, type: "krea2", device: "default" },
+      _meta: { title: "Load Qwen3-VL-4B Text Encoder" },
+    };
+
+    graph["29"] = {
+      class_type: "VAELoader",
+      inputs: { vae_name: aeVae },
+      _meta: { title: "Load AE VAE" },
+    };
+
+    let modelRef: [string, number] = ["28", 0];
+    let clipRef: [string, number] = ["30", 0];
+
+    request.loras.slice(0, template.maxLoras).forEach((lora, idx) => {
+      const nodeId = `4${idx}`;
+      const resolvedLoraName = resolveModelRelativePath(lora.name, availableModels);
+      graph[nodeId] = {
+        class_type: "LoraLoader",
+        inputs: {
+          lora_name: resolvedLoraName,
+          strength_model: lora.strengthModel,
+          strength_clip: lora.strengthClip,
+          model: modelRef,
+          clip: clipRef,
+        },
+        _meta: { title: `Krea 2 LoRA ${idx + 1}` },
+      };
+      modelRef = [nodeId, 0];
+      clipRef = [nodeId, 1];
+    });
+
+    graph["6"] = {
+      class_type: "CLIPTextEncode",
+      inputs: { text: request.prompt, clip: clipRef },
+      _meta: { title: "Positive Prompt" },
+    };
+
+    graph["7"] = {
+      class_type: "CLIPTextEncode",
+      inputs: {
+        text: request.negativePrompt.trim() || "worst quality, low quality, blurry",
+        clip: clipRef,
+      },
+      _meta: { title: "Negative Prompt" },
+    };
+
+    let latentRef: [string, number];
+    let kreaDenoise = 1.0;
+
+    if (isImg2Img) {
+      if (!uploadedInputFilename) {
+        throw new Error("Krea 2 image-to-image workflow requires an input image.");
+      }
+      graph["10"] = {
+        class_type: "LoadImage",
+        inputs: { image: uploadedInputFilename },
+        _meta: { title: "Input Image" },
+      };
+      graph["11"] = {
+        class_type: "ImageScale",
+        inputs: {
+          image: ["10", 0],
+          upscale_method: "lanczos",
+          width,
+          height,
+          crop: "center",
+        },
+        _meta: { title: "Resize Input Image" },
+      };
+      graph["12"] = {
+        class_type: "VAEEncode",
+        inputs: { pixels: ["11", 0], vae: ["29", 0] },
+        _meta: { title: "VAE Encode Latent" },
+      };
+      latentRef = ["12", 0];
+      kreaDenoise = Math.min(1, Math.max(0.05, request.denoise));
+    } else {
+      graph["5"] = {
+        class_type: "EmptySD3LatentImage",
+        inputs: { width, height, batch_size: 1 },
+        _meta: { title: "Empty 16-Channel Latent" },
+      };
+      latentRef = ["5", 0];
+    }
+
+    graph["3"] = {
+      class_type: "KSampler",
+      inputs: {
+        seed: resolvedSeed,
+        steps: request.steps,
+        cfg: request.cfg,
+        sampler_name: request.sampler,
+        scheduler: request.scheduler,
+        denoise: kreaDenoise,
+        model: modelRef,
+        positive: ["6", 0],
+        negative: ["7", 0],
+        latent_image: latentRef,
+      },
+      _meta: { title: "KSampler" },
+    };
+
+    graph["8"] = {
+      class_type: "VAEDecode",
+      inputs: { samples: ["3", 0], vae: ["29", 0] },
+      _meta: { title: "VAE Decode" },
+    };
+
+    graph["9"] = {
+      class_type: "SaveImage",
+      inputs: { filename_prefix: filenamePrefix, images: ["8", 0] },
       _meta: { title: "Save Image" },
     };
 

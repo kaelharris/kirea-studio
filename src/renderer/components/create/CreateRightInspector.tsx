@@ -11,7 +11,6 @@ import {
   ImagePlus,
   Lock,
   Maximize2,
-  PanelRightClose,
   Plus,
   Sparkles,
   Square,
@@ -95,7 +94,6 @@ export const CreateRightInspector: React.FC<{ ctrl: CreateController }> = ({ ctr
     setRecipeDescription,
     savingRecipe,
     inspectorOpen,
-    setInspectorOpen,
     inspectorTab,
     setInspectorTab,
     primaryModels,
@@ -156,7 +154,7 @@ export const CreateRightInspector: React.FC<{ ctrl: CreateController }> = ({ ctr
     <>
       <aside
         aria-label="Inspector"
-        className={`hidden shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-surface min-[1600px]:flex ${
+        className={`${inspectorOpen ? "flex" : "hidden"} shrink-0 flex-col overflow-hidden border-l bg-bg ${
           inspectorOpen ? "w-[264px] min-[2200px]:w-[320px]" : "w-0 border-transparent"
         }`}
       >
@@ -183,23 +181,15 @@ export const CreateRightInspector: React.FC<{ ctrl: CreateController }> = ({ ctr
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            onClick={() => setInspectorOpen(false)}
-            aria-label="Collapse inspector"
-            className="rounded p-1 text-fg-subtle transition-colors hover:text-fg"
-          >
-            <PanelRightClose className="h-3.5 w-3.5" />
-          </button>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {inspectorTab === "result" ? (
-            <div className="space-y-5">
+            <div className="space-y-3.5">
               <section className="space-y-2">
                 <h2 className="label-mono text-label">Current output</h2>
                 {activeJob ? (
-                  <div className="rounded-lg border border-border bg-bg/60 p-2.5">
+                  <div className="space-y-2 border-l-2 border-accent/40 pl-2">
                     <p className="text-small font-semibold text-fg">
                       {activeJob.status === "RUNNING"
                         ? `Sampling ${activeJob.progressStep} / ${activeJob.progressMax}`
@@ -224,7 +214,7 @@ export const CreateRightInspector: React.FC<{ ctrl: CreateController }> = ({ ctr
                     <button
                       type="button"
                       onClick={() => onInspectImage(latestImage)}
-                      className="block w-full overflow-hidden rounded-lg border border-border transition-colors hover:border-accent"
+                      className="block w-full overflow-hidden rounded-lg transition-opacity hover:opacity-90"
                     >
                       <MediaImage
                         src={toMediaUrl(latestImage.filePath)}
@@ -377,7 +367,7 @@ export const CreateRightInspector: React.FC<{ ctrl: CreateController }> = ({ ctr
                         {draft.loras.map((lora) => (
                           <li
                             key={lora.name}
-                            className="flex items-baseline justify-between gap-2 rounded-md border border-border bg-bg/60 px-2 py-1"
+                            className="flex items-baseline justify-between gap-2 border-b border-divider px-1 py-1.5"
                           >
                             <span
                               title={lora.name}

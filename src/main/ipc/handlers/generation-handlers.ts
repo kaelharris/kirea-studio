@@ -74,6 +74,15 @@ export function registerGenerationHandlers(
     ctx.jobOrchestrator.retryJob(z.string().min(1).max(100).parse(jobIdRaw))
   );
 
+  handle(IPC_CHANNELS.JOBS_DELETE, (_event, payload: unknown) => {
+    if (Array.isArray(payload)) {
+      const ids = z.array(z.string().min(1).max(100)).parse(payload);
+      return ctx.jobOrchestrator.deleteJobs(ids);
+    }
+    const id = z.string().min(1).max(100).parse(payload);
+    return ctx.jobOrchestrator.deleteJob(id);
+  });
+
   // --- Library, Collections & Prompts ---
   handle(IPC_CHANNELS.LIBRARY_LIST_MEDIA, (_event, queryRaw?: unknown) => {
     const query = LibraryMediaQuerySchema.parse(queryRaw);

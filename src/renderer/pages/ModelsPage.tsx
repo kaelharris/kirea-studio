@@ -105,6 +105,7 @@ interface ModelsPageProps {
     patch: ModelMetadataPatch
   ) => Promise<ModelRecord>;
   onImportPreview: (modelId: string, sourceFilePath?: string) => Promise<ModelRecord | null>;
+  onClearDownloadHistory?: () => void;
   onUpdateSettings: (patch: Partial<AppSettings>) => Promise<void>;
   onOpenSettings: () => void;
   onToast: (msg: string, tone?: "info" | "error") => void;
@@ -125,6 +126,7 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
   onDeleteModel,
   onUpdateModelMetadata,
   onImportPreview,
+  onClearDownloadHistory,
   onUpdateSettings,
   onOpenSettings,
   onToast,
@@ -147,7 +149,25 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
   const [hubType, setHubType] = useState<"all" | CivitaiModelType>("all");
   const [hubBase, setHubBase] = useState<"all" | CivitaiBaseModel>("all");
   const [hubSort, setHubSort] = useState<CivitaiSort>("Most Downloaded");
-  const [hubPeriod, setHubPeriod] = useState<CivitaiPeriod>("Week");
+  const [hubPeriod, setHubPeriod] = useState<CivitaiPeriod>("Month");
+  const [hubCategoryChip, setHubCategoryChip] = useState<
+    | "ALL"
+    | "CHARACTER"
+    | "STYLE"
+    | "CONCEPT"
+    | "CLOTHING"
+    | "BASE MODEL"
+    | "BACKGROUND"
+    | "TOOL"
+    | "POSES"
+    | "ASSETS"
+    | "VEHICLE"
+    | "BUILDINGS"
+    | "OBJECTS"
+    | "ACTION"
+    | "ANIMAL"
+  >("ALL");
+  const [hubBaseModelSub, setHubBaseModelSub] = useState("SDXL 1.0");
   const [hubTab, setHubTab] = useState<
     "hot" | "trending" | "checkpoints" | "loras" | "recent"
   >("hot");
@@ -306,6 +326,15 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
           limit: HUB_PAGE_SIZE,
           cursor: cursor ?? undefined,
         };
+
+        if (hubCategoryChip === "POSES") {
+          query.types = "Poses";
+        } else if (hubCategoryChip === "BASE MODEL") {
+          query.baseModels = hubBaseModelSub;
+        } else if (hubCategoryChip !== "ALL") {
+          query.tag = hubCategoryChip.toLowerCase();
+        }
+
         const result = await window.kirea.searchCivitaiModels(query);
         if (requestId !== hubRequestRef.current) return;
         setHubItems((prev) => {
@@ -329,7 +358,17 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
         }
       }
     },
-    [hubDebounced, hubType, hubBase, hubSort, hubPeriod, hubProvider, settings.nsfwFilter]
+    [
+      hubDebounced,
+      hubType,
+      hubBase,
+      hubSort,
+      hubPeriod,
+      hubCategoryChip,
+      hubBaseModelSub,
+      hubProvider,
+      settings.nsfwFilter,
+    ]
   );
 
   useEffect(() => {
@@ -682,6 +721,10 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
           setHubSort={setHubSort}
           hubPeriod={hubPeriod}
           setHubPeriod={setHubPeriod}
+          hubCategoryChip={hubCategoryChip}
+          setHubCategoryChip={setHubCategoryChip}
+          hubBaseModelSub={hubBaseModelSub}
+          setHubBaseModelSub={setHubBaseModelSub}
           hubTab={hubTab}
           selectHubTab={selectHubTab}
           hubProvider={hubProvider}
@@ -728,6 +771,7 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
           onPauseHfDownload={(t) => void window.kirea.pauseDownload(t.id)}
           onResumeHfDownload={(t) => void window.kirea.resumeDownload(t.id)}
           onCancelHfDownload={(t) => void window.kirea.cancelDownload(t.id)}
+          onClearHistory={onClearDownloadHistory}
           onOpenPath={(p) => void window.kirea.openPath(p)}
         />
       )}
