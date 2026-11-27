@@ -495,7 +495,7 @@ code {
   position: relative;
   width: 100%;
   max-width: none;
-  padding-inline: clamp(16px, 3vw, 40px);
+  padding-inline: 10px;
 }
 
 .hero__frame {

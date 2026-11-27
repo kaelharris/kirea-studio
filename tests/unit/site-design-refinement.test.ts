@@ -54,7 +54,7 @@ describe("Kirea site design refinement", () => {
     expect(header).toContain("height: var(--header-height);");
     expect(header).toContain("background: rgba(15, 16, 21, 0.96);");
     expect(heroStage).toContain("padding-block: var(--header-height) 0;");
-    expect(css).toContain("padding-inline: clamp(16px, 3vw, 40px);");
+    expect(css).toContain("padding-inline: 10px;");
     expect(css).toContain("height: calc(100svh - var(--header-height));");
     expect(css).toContain("width: min(100%, 620px);");
     expect(css).toContain("font-size: clamp(34px, 3.8vw, 54px);");
