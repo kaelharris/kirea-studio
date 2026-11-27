@@ -15,7 +15,7 @@ if (header) {
 
   const syncHeader = () => {
     header.classList.toggle("is-scrolled", window.scrollY > 14);
-    const shouldCompact = window.scrollY > 32;
+    const shouldCompact = window.scrollY > 180;
     if (shouldCompact === compact) return;
 
     if (!shouldCompact) {

@@ -28,7 +28,7 @@ describe("Kirea site design refinement", () => {
     const css = read("site/styles.css");
     const js = read("site/main.js");
     expect(js).toContain("is-compact");
-    expect(js).toContain("window.scrollY > 32");
+    expect(js).toContain("window.scrollY > 180");
     expect(js).toContain("window.setTimeout");
     expect(js).toContain("140");
     const compactHeader = css.match(/\.site-header\.is-compact\s*\{([^}]*)\}/)?.[1] || "";
