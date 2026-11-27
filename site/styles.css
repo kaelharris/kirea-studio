@@ -1089,6 +1089,8 @@ code {
 }
 
 .showcase__panel {
+  display: grid;
+  align-items: center;
   min-height: 0;
   align-self: stretch;
 }

@@ -97,6 +97,8 @@ describe("Kirea site design refinement", () => {
     expect(css).toContain("animation: showcase-shot-in 900ms var(--ease) both");
     const showcasePanel = css.match(/\.showcase__panel\s*\{([^}]*)\}/)?.[1] || "";
     expect(showcasePanel).toContain("align-self: stretch;");
+    expect(showcasePanel).toContain("display: grid;");
+    expect(showcasePanel).toContain("align-items: center;");
     const pinnedShowcase = css.match(/\.sc-act--pinned \.app-window--showcase\s*\{([^}]*)\}/)?.[1] || "";
     const pinnedStack = css.match(/\.sc-act--pinned \.showcase__stack\s*\{([^}]*)\}/)?.[1] || "";
     expect(pinnedShowcase).toContain("align-self: center;");
