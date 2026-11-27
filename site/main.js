@@ -1,12 +1,14 @@
 import "./scrollcraft.js";
 
 const header = document.querySelector("[data-header]");
+const hero = document.querySelector("[data-hero]");
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const mobileView = window.matchMedia("(max-width: 860px)");
 
 if (header) {
   let compact = false;
   let compactTimer = 0;
+  let compactThreshold = hero ? hero.offsetHeight * 0.5 : window.innerHeight * 0.5;
 
   const setCompact = (next) => {
     compact = next;
@@ -15,7 +17,7 @@ if (header) {
 
   const syncHeader = () => {
     header.classList.toggle("is-scrolled", window.scrollY > 14);
-    const shouldCompact = window.scrollY > 180;
+    const shouldCompact = window.scrollY > compactThreshold;
     if (shouldCompact === compact) return;
 
     if (!shouldCompact) {
@@ -33,9 +35,21 @@ if (header) {
     }
   };
 
+  const measureHero = () => {
+    compactThreshold = hero ? hero.offsetHeight * 0.5 : window.innerHeight * 0.5;
+    syncHeader();
+  };
+
   syncHeader();
   window.addEventListener("scroll", syncHeader, { passive: true });
+  window.addEventListener("resize", measureHero);
   window.addEventListener("pagehide", () => window.clearTimeout(compactTimer));
+
+  if (hero && "ResizeObserver" in window) {
+    const heroObserver = new ResizeObserver(measureHero);
+    heroObserver.observe(hero);
+    window.addEventListener("pagehide", () => heroObserver.disconnect(), { once: true });
+  }
 }
 
 const profileGroup = document.querySelector("[data-profile-group]");

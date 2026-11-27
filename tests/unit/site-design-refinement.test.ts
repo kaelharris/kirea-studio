@@ -24,11 +24,13 @@ describe("Kirea site design refinement", () => {
     expect(html).toContain("./assets/brand/logoAsset-2.svg");
   });
 
-  it("delays a subtle header compact and mark-only logo transition after slight scrolling", () => {
+  it("delays a subtle header compact and mark-only logo transition until half the hero", () => {
     const css = read("site/styles.css");
     const js = read("site/main.js");
     expect(js).toContain("is-compact");
-    expect(js).toContain("window.scrollY > 180");
+    expect(js).toContain("compactThreshold");
+    expect(js).toContain("hero.offsetHeight * 0.5");
+    expect(js).toContain("ResizeObserver");
     expect(js).toContain("window.setTimeout");
     expect(js).toContain("140");
     const compactHeader = css.match(/\.site-header\.is-compact\s*\{([^}]*)\}/)?.[1] || "";
@@ -157,12 +159,16 @@ describe("Kirea site design refinement", () => {
     expect(html).not.toContain("ComfyUI is a separate GPL-3.0 project");
     expect(html).not.toContain("site-footer__hash");
     expect(css).toContain("min-height: 620px");
-    expect(css).toContain(".site-footer__brand .brand__mark");
     expect(css).toContain("width: 44px;");
-    expect(css).toContain(".site-footer__brand .brand__word");
-    expect(css).toContain("font-size: 20px;");
-    const footerWord = css.match(/\.site-footer__brand \.brand__word span\s*\{([^}]*)\}/)?.[1] || "";
-    expect(footerWord).toContain("margin-left: 0;");
+    const footerBrand = css.match(/\.site-footer__brand \.brand\s*\{([^}]*)\}/)?.[1] || "";
+    const footerMark = css.match(/\.site-footer__brand \.brand__mark\s*\{([^}]*)\}/)?.[1] || "";
+    const footerWord = css.match(/\.site-footer__brand \.brand__word\s*\{([^}]*)\}/)?.[1] || "";
+    expect(footerBrand).toContain("gap: 18px;");
+    expect(footerMark).toContain("width: 56px;");
+    expect(footerMark).toContain("height: 56px;");
+    expect(footerWord).toContain("font-size: 28px;");
+    const footerStudio = css.match(/\.site-footer__brand \.brand__word span\s*\{([^}]*)\}/)?.[1] || "";
+    expect(footerStudio).toContain("margin-left: 0;");
     expect(css).toContain(".site-footer__bottom");
     const footerBottom = css.match(/\.site-footer__bottom\s*\{([^}]*)\}/)?.[1] || "";
     expect(footerBottom).toContain("background: transparent;");

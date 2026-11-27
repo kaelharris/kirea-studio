@@ -1646,18 +1646,18 @@ code {
 }
 
 .site-footer__brand .brand {
-  gap: 14px;
+  gap: 18px;
   margin-bottom: 22px;
 }
 
 .site-footer__brand .brand__mark {
-  width: 40px;
-  height: 40px;
+  width: 56px;
+  height: 56px;
   border-radius: 10px;
 }
 
 .site-footer__brand .brand__word {
-  font-size: 20px;
+  font-size: 28px;
   letter-spacing: 0.06em;
 }
 
