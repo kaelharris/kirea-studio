@@ -1729,7 +1729,6 @@ code {
 .site-footer__bottom {
   margin-top: auto;
   padding: 18px 0;
-  border-top: 1px solid var(--line);
   background: transparent;
   color: var(--subtle);
   font-size: 11px;
