@@ -376,6 +376,7 @@
               <li
                 class="world"
                 data-world
+                data-engine-logos
                 data-title="Pixel Studio"
                 data-copy="Seeded pixel art for characters, items, tilesets and effects, with sprite-sheet exports."
                 data-tech="PNG · sprite sheet · GIF/APNG · Godot · Unity · Phaser"
@@ -419,6 +420,11 @@
                     Hugging Face
                   </span>
                 </span>
+                <span class="engine-logos" data-engine-logos hidden>
+                  <img class="engine-logo" src="./assets/brand/godot.svg" width="20" height="20" alt="Godot" />
+                  <img class="engine-logo" src="./assets/brand/unity.svg" width="20" height="20" alt="Unity" />
+                  <img class="engine-logo engine-logo--phaser" src="./assets/brand/phaser.svg" width="34" height="14" alt="Phaser" />
+                </span>
               </p>
             </div>
           </div>
@@ -440,6 +446,9 @@
           <div class="showcase__inner">
             <div class="shell showcase__meta">
               <h2 id="tour-title" class="sc-display sc-display--md">See KIREA in action.</h2>
+              <p class="showcase__description" id="showcase-description" data-showcase-copy>
+                Live RTX GPU telemetry, local ComfyUI engine status, active jobs queue, and multi-modal studio launchpad.
+              </p>
               <div class="showcase__tabs" role="tablist" aria-label="Application screens">
                 <button
                   type="button"
@@ -600,9 +609,6 @@
                   />
                 </span>
                 <span class="shell app-window__foot">
-                  <span id="showcase-description" data-showcase-copy>
-                    Live RTX GPU telemetry, local ComfyUI engine status, active jobs queue, and multi-modal studio launchpad.
-                  </span>
                   <span class="app-window__expand">View fullscreen</span>
                 </span>
               </button>

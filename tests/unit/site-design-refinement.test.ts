@@ -24,15 +24,31 @@ describe("Kirea site design refinement", () => {
     expect(html).toContain("./assets/brand/logoAsset-2.svg");
   });
 
-  it("frames hero media full-width with a tight inset and overlaps a real Home screenshot", () => {
+  it("frames hero media full-height with wider gutters, no top margin, and smaller copy", () => {
     const html = read("site/index.html");
     const css = read("site/styles.css");
     expect(html).toContain('class="hero__frame"');
     expect(html).toContain('class="hero__preview"');
     expect(html).toContain("./assets/shots/home-dark.webp");
-    expect(css).toContain("max-width: none;");
-    expect(css).toContain("padding-inline: 5px;");
-    expect(css).toContain("border-radius: 14px;");
+    expect(css).toContain("padding-block: 0;");
+    expect(css).toContain("padding-inline: clamp(16px, 3vw, 40px);");
+    expect(css).toContain("height: 100svh;");
+    expect(css).toContain("width: min(100%, 620px);");
+    expect(css).toContain("font-size: clamp(34px, 3.8vw, 54px);");
+  });
+
+  it("shows official engine marks for Pixel Studio exports", () => {
+    const html = read("site/index.html");
+    const css = read("site/styles.css");
+    const js = read("site/main.js");
+    expect(html).toContain("data-engine-logos");
+    expect(html).toContain("./assets/brand/godot.svg");
+    expect(html).toContain("./assets/brand/unity.svg");
+    expect(html).toContain("./assets/brand/phaser.svg");
+    expect(js).toContain("data-engine-logos");
+    expect(js).toContain('orbitSection.querySelector(".engine-logos")');
+    expect(js).not.toContain('orbitSection.querySelector("[data-engine-logos]")');
+    expect(css).toContain(".engine-logos[hidden]");
   });
 
   it("widens the studio orbit, enlarges the muse, and keeps text above cards", () => {
@@ -46,6 +62,22 @@ describe("Kirea site design refinement", () => {
     expect(css).toContain("@keyframes showcase-shot-in");
   });
 
+  it("splits the product tour into 30% copy and 70% rounded screenshot space", () => {
+    const html = read("site/index.html");
+    const css = read("site/styles.css");
+    expect(html).toContain("showcase__description");
+    expect(html.indexOf("showcase__description")).toBeLessThan(html.indexOf("showcase__panel"));
+    expect(css).toContain("grid-template-columns: minmax(0, 0.3fr) minmax(0, 0.7fr)");
+    expect(css).toContain("border-radius: 20px;");
+    expect(css).toContain("animation: showcase-shot-in 900ms var(--ease) both");
+    const showcasePanel = css.match(/\.showcase__panel\s*\{([^}]*)\}/)?.[1] || "";
+    expect(showcasePanel).toContain("align-self: stretch;");
+    const pinnedShowcase = css.match(/\.sc-act--pinned \.app-window--showcase\s*\{([^}]*)\}/)?.[1] || "";
+    const pinnedStack = css.match(/\.sc-act--pinned \.showcase__stack\s*\{([^}]*)\}/)?.[1] || "";
+    expect(pinnedShowcase).toContain("align-self: center;");
+    expect(pinnedStack).toContain("aspect-ratio: 1600 / 940;");
+  });
+
   it("restores the local 3D tilt and settles it at the final image position", () => {
     const css = read("site/styles.css");
     const js = read("site/main.js");
@@ -54,6 +86,10 @@ describe("Kirea site design refinement", () => {
     expect(css).not.toContain("local-art-drift");
     expect(js).toContain("initLocalTilt");
     expect(js).toContain("0.3");
+    expect(css).toContain("aspect-ratio: 1254 / 1176;");
+    const localImage = css.match(/\.local__frame img\s*\{([^}]*)\}/)?.[1] || "";
+    expect(localImage).toContain("height: 100%;");
+    expect(localImage).not.toContain("height: calc(100% + 32px)");
   });
 
   it("uses interruptible interpolation and compositor-friendly motion", () => {
@@ -73,6 +109,14 @@ describe("Kirea site design refinement", () => {
     expect(css).toContain("height: min(720px, 82svh)");
   });
 
+  it("tightens requirements spacing without collapsing the content", () => {
+    const css = read("site/styles.css");
+    expect(css).toContain("padding-block: clamp(48px, 6vw, 80px);");
+    expect(css).toContain("margin-bottom: 28px;");
+    expect(css).toContain("gap: 32px;");
+    expect(css).toContain("padding: 10px 0 12px;");
+  });
+
   it("renders a taller standalone footer with bottom copyright and floating back-to-top", () => {
     const html = read("site/index.html");
     const css = read("site/styles.css");
@@ -87,6 +131,9 @@ describe("Kirea site design refinement", () => {
     expect(html).not.toContain("site-footer__hash");
     expect(css).toContain("min-height: 620px");
     expect(css).toContain(".site-footer__brand .brand__mark");
+    expect(css).toContain("width: 44px;");
+    expect(css).toContain(".site-footer__brand .brand__word");
+    expect(css).toContain("font-size: 20px;");
     expect(css).toContain(".site-footer__bottom");
     expect(css).not.toContain(".site-footer__legal");
     expect(css).toContain(".back-to-top");

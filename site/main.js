@@ -100,6 +100,7 @@ function initOrrery() {
   const copyEl = orbitSection.querySelector("[data-orrery-copy]");
   const techEl = orbitSection.querySelector("[data-orrery-tech]");
   const providersEl = orbitSection.querySelector("[data-orrery-providers]");
+  const engineEl = orbitSection.querySelector(".engine-logos");
   const indexEl = orbitSection.querySelector("[data-orrery-index]");
   const plateEl = orbitSection.querySelector("[data-orrery-plate]");
   const count = cards.length;
@@ -137,11 +138,13 @@ function initOrrery() {
     if (titleEl) titleEl.textContent = card.dataset.title || "";
     if (copyEl) copyEl.textContent = card.dataset.copy || "";
     const showProviders = Boolean(providersEl && card.hasAttribute("data-model-hub"));
+    const showEngines = Boolean(engineEl && card.hasAttribute("data-engine-logos"));
     if (techEl) {
       techEl.textContent = card.dataset.tech || "";
-      techEl.hidden = showProviders;
+      techEl.hidden = showProviders || showEngines;
     }
     if (providersEl) providersEl.hidden = !showProviders;
+    if (engineEl) engineEl.hidden = !showEngines;
     if (indexEl) indexEl.textContent = String(index + 1).padStart(2, "0");
 
     for (const [i, item] of cards.entries()) {
