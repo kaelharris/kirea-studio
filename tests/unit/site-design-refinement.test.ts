@@ -88,7 +88,11 @@ describe("Kirea site design refinement", () => {
     const css = read("site/styles.css");
     expect(html).toContain("showcase__description");
     expect(html.indexOf("showcase__description")).toBeLessThan(html.indexOf("showcase__panel"));
+    expect(html).not.toContain("View fullscreen");
+    expect(html).not.toContain("app-window__foot");
+    expect(css).not.toContain(".app-window__foot");
     expect(css).toContain("grid-template-columns: minmax(0, 0.3fr) minmax(0, 0.7fr)");
+    expect(css).toContain("padding-right: clamp(32px, 7vw, 112px);");
     expect(css).toContain("border-radius: 20px;");
     expect(css).toContain("animation: showcase-shot-in 900ms var(--ease) both");
     const showcasePanel = css.match(/\.showcase__panel\s*\{([^}]*)\}/)?.[1] || "";

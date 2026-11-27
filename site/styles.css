@@ -1060,6 +1060,7 @@ code {
   align-items: center;
   min-height: 0;
   padding-top: 80px;
+  padding-right: clamp(32px, 7vw, 112px);
   padding-bottom: 40px;
 }
 
@@ -1107,29 +1108,6 @@ code {
 .app-window:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
-}
-
-.app-window__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px 20px;
-  min-height: 44px;
-  padding-block: 9px;
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.app-window__expand {
-  flex-shrink: 0;
-  color: var(--sand);
-  font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.app-window:is(:hover, :focus-visible) .app-window__expand {
-  color: var(--fg);
 }
 
 .showcase__stack {
@@ -1192,7 +1170,7 @@ code {
 
   html:not(.no-js) .sc-act--pinned .app-window--showcase {
     align-self: center;
-    grid-template-rows: auto auto;
+    grid-template-rows: auto;
   }
 
   html:not(.no-js) .sc-act--pinned .showcase__stack {
@@ -2155,6 +2133,7 @@ html.no-js .download-card {
   .showcase__inner {
     grid-template-columns: 1fr;
     padding-top: 56px;
+    padding-right: 0;
     padding-bottom: 24px;
   }
 
