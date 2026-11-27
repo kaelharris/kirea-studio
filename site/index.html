@@ -72,16 +72,17 @@
 
     <header class="site-header" data-header>
       <div class="shell site-header__inner">
-        <div class="site-header__start">
+        <nav class="site-header__nav site-header__nav--left" aria-label="Primary sections">
+          <a href="#studios">Studios</a>
+          <a href="#tour">Product tour</a>
+          <a href="#local">Local-first</a>
+        </nav>
+
+        <div class="site-header__center">
           <a class="brand" href="#top" aria-label="KIREA Studio, back to top">
-            <span class="brand__mark" aria-hidden="true"></span>
+            <img class="brand__mark brand__mark--asset" src="./assets/brand/logoAsset-2.svg" width="26" height="26" alt="" />
             <span class="brand__word">KIREA <span>Studio</span></span>
           </a>
-          <p class="site-header__where" aria-hidden="true">
-            <span data-nav-index>01</span>
-            <span class="site-header__where-slash">/</span>
-            <span data-nav-name>Overview</span>
-          </p>
         </div>
 
         <div class="site-header__tools">
@@ -94,17 +95,6 @@
             <img class="brand-icon" src="./assets/brand/github-mark.svg" width="16" height="16" alt="" />
             GitHub <span aria-hidden="true">↗</span>
           </a>
-          <button
-            class="nav-toggle"
-            type="button"
-            aria-label="Toggle sections menu"
-            aria-expanded="false"
-            aria-controls="site-menu"
-            data-menu-toggle
-          >
-            <span class="nav-toggle__icon" aria-hidden="true"></span>
-            <span class="nav-toggle__label">Sections</span>
-          </button>
           <a
             class="button button--primary button--small site-header__cta"
             href="https://github.com/kaelharris/kirea-studio/releases/download/v1.1.1/Kirea-Studio-Setup-1.1.1-win-x64.exe"
@@ -113,29 +103,6 @@
           </a>
         </div>
       </div>
-
-      <nav class="site-menu" id="site-menu" data-menu aria-label="Sections" aria-hidden="true">
-        <ol class="site-menu__list">
-          <li><a href="#top" data-nav-link="overview"><span class="site-menu__num">01</span>Overview</a></li>
-          <li><a href="#studios" data-nav-link="studios"><span class="site-menu__num">02</span>Studios</a></li>
-          <li><a href="#tour" data-nav-link="tour"><span class="site-menu__num">03</span>Product</a></li>
-          <li><a href="#local" data-nav-link="local"><span class="site-menu__num">04</span>Local-first</a></li>
-          <li><a href="#requirements" data-nav-link="requirements"><span class="site-menu__num">05</span>Requirements</a></li>
-          <li><a href="#download" data-nav-link="download"><span class="site-menu__num">06</span>Download</a></li>
-        </ol>
-        <a
-          class="site-menu__repo"
-          href="https://github.com/kaelharris/kirea-studio"
-          target="_blank"
-          rel="noreferrer"
-        >
-          <span class="brand-label">
-            <img class="brand-icon" src="./assets/brand/github-mark.svg" width="16" height="16" alt="" />
-            GitHub repository
-          </span>
-          <span aria-hidden="true">↗</span>
-        </a>
-      </nav>
 
       <div class="site-progress" aria-hidden="true"><span data-progress></span></div>
     </header>
@@ -153,74 +120,97 @@
         tabindex="-1"
       >
         <div class="sc-stage hero__stage" data-sc-stage>
-          <div class="hero__media" aria-hidden="true">
-            <picture>
-              <source media="(width <= 560px)" srcset="./assets/art/kirea-hero-phone-390.webp 390w, ./assets/art/kirea-hero-phone-780.webp 780w" sizes="100vw" />
-              <source media="(560px < width <= 860px)" srcset="./assets/art/kirea-hero-tablet-768.webp 768w, ./assets/art/kirea-hero-tablet-1072.webp 1072w" sizes="100vw" />
-              <source media="(width > 860px) and (min-aspect-ratio: 17/10)" srcset="./assets/art/kirea-hero-wide-1664.webp 1664w" sizes="100vw" />
+          <div class="shell hero__shell">
+            <div class="hero__frame">
+              <div class="hero__media" aria-hidden="true">
+                <picture>
+                  <source media="(width <= 560px)" srcset="./assets/art/kirea-hero-phone-390.webp 390w, ./assets/art/kirea-hero-phone-780.webp 780w" sizes="100vw" />
+                  <source media="(560px < width <= 860px)" srcset="./assets/art/kirea-hero-tablet-768.webp 768w, ./assets/art/kirea-hero-tablet-1072.webp 1072w" sizes="100vw" />
+                  <source media="(width > 860px) and (min-aspect-ratio: 17/10)" srcset="./assets/art/kirea-hero-wide-1664.webp 1664w" sizes="100vw" />
+                  <img
+                    class="hero__art"
+                    src="./assets/art/kirea-hero-desktop-1504.webp"
+                    srcset="./assets/art/kirea-hero-desktop-1504.webp 1504w"
+                    sizes="100vw"
+                    width="1504"
+                    height="940"
+                    alt=""
+                    fetchpriority="high"
+                    decoding="async"
+                  />
+                </picture>
+                <video
+                  class="hero__art hero__video"
+                  src="./assets/art/kirea-hero-loop.mp4"
+                  width="1920"
+                  height="1080"
+                  preload="none"
+                  muted
+                  loop
+                  playsinline
+                ></video>
+                <div class="hero__haze" data-sc-parallax="-0.25"></div>
+              </div>
+              <div class="hero__scrim" aria-hidden="true"></div>
+
+              <div class="hero__inner">
+                <div class="hero__copy">
+                  <h1 id="hero-title" class="hero__title">
+                    <span>Your creative universe.</span>
+                    <span>One desktop application.</span>
+                  </h1>
+                  <p class="hero__lede">
+                    A local-first Windows desktop studio for AI image and video, model management,
+                    workflows, characters and pixel art. Connect your own ComfyUI.
+                  </p>
+                  <div class="hero__actions">
+                    <a
+                      class="button button--primary"
+                      href="https://github.com/kaelharris/kirea-studio/releases/download/v1.1.1/Kirea-Studio-Setup-1.1.1-win-x64.exe"
+                    >
+                      Download for Windows
+                    </a>
+                    <a
+                      class="button button--quiet"
+                      href="https://github.com/kaelharris/kirea-studio"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <img class="brand-icon" src="./assets/brand/github-mark.svg" width="16" height="16" alt="" />
+                      View on GitHub <span class="ext" aria-hidden="true">↗</span>
+                    </a>
+                  </div>
+                  <div class="hero__meta">
+                    <span class="compat-chip">Windows 10/11 · x64</span>
+                    <span class="hero__local">
+                      <span class="status-dot" aria-hidden="true"></span>
+                      Local-first. Connects to your ComfyUI at <code>127.0.0.1:8188</code>.
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div class="hero__mist" aria-hidden="true" data-sc-parallax="0.35"></div>
+            </div>
+
+            <figure class="hero__preview">
+              <div class="hero__preview-chrome" aria-hidden="true">
+                <span class="hero__preview-dots"><i></i><i></i><i></i></span>
+                <span>Kirea Studio / Home</span>
+              </div>
               <img
-                class="hero__art"
-                src="./assets/art/kirea-hero-desktop-1504.webp"
-                srcset="./assets/art/kirea-hero-desktop-1504.webp 1504w"
-                sizes="100vw"
-                width="1504"
+                src="./assets/shots/home-dark.webp"
+                width="1600"
                 height="940"
-                alt=""
-                fetchpriority="high"
+                alt="Kirea Studio Home screen with local ComfyUI status, GPU telemetry, recent creations and active queue."
+                loading="eager"
                 decoding="async"
               />
-            </picture>
-            <video
-              class="hero__art hero__video"
-              src="./assets/art/kirea-hero-loop.mp4"
-              width="1920"
-              height="1080"
-              preload="none"
-              muted
-              loop
-              playsinline
-            ></video>
-            <div class="hero__haze" data-sc-parallax="-0.25"></div>
+              <figcaption>
+                <span>Inside Kirea Studio</span>
+                <span>Real application screenshot</span>
+              </figcaption>
+            </figure>
           </div>
-          <div class="hero__scrim" aria-hidden="true"></div>
-
-          <div class="shell hero__inner">
-            <div class="hero__copy">
-              <h1 id="hero-title" class="hero__title">
-                <span>Your creative universe.</span>
-                <span>One desktop application.</span>
-              </h1>
-              <p class="hero__lede">
-                A local-first Windows desktop studio for AI image and video, model management,
-                workflows, characters and pixel art. Connect your own ComfyUI.
-              </p>
-              <div class="hero__actions">
-                <a
-                  class="button button--primary"
-                  href="https://github.com/kaelharris/kirea-studio/releases/download/v1.1.1/Kirea-Studio-Setup-1.1.1-win-x64.exe"
-                >
-                  Download for Windows
-                </a>
-                <a
-                  class="button button--quiet"
-                  href="https://github.com/kaelharris/kirea-studio"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <img class="brand-icon" src="./assets/brand/github-mark.svg" width="16" height="16" alt="" />
-                  View on GitHub <span class="ext" aria-hidden="true">↗</span>
-                </a>
-              </div>
-              <div class="hero__meta">
-                <span class="compat-chip">Windows 10/11 · x64</span>
-                <span class="hero__local">
-                  <span class="status-dot" aria-hidden="true"></span>
-                  Local-first. Connects to your ComfyUI at <code>127.0.0.1:8188</code>.
-                </span>
-              </div>
-            </div>
-          </div>
-          <div class="hero__mist" aria-hidden="true" data-sc-parallax="0.35"></div>
         </div>
       </section>
 
@@ -411,7 +401,6 @@
             </ul>
 
             <div class="orrery__plate" aria-hidden="true" data-orrery-plate>
-              <p class="orrery__index"><span data-orrery-index>01</span> / 06</p>
               <h3 class="orrery__name" data-orrery-title>Image Studio</h3>
               <p class="orrery__copy" data-orrery-copy>
                 Text-to-image, inpaint canvas, 4× upscaling, 10-LoRA stacks, Magic Prompt and live previews.
@@ -697,7 +686,6 @@
                   alt="An old walnut workbench, paper and tools catch late daylight beside a tall atelier window."
                   loading="lazy"
                   decoding="async"
-                  data-sc-parallax="0.3"
                 />
               </picture>
               <figcaption>Local Studio · original artwork</figcaption>
@@ -736,7 +724,6 @@
                   <dd>
                     RTX 4070 Ti SUPER · 16 GB VRAM
                     <span>The verified runtime reference machine</span>
-                    <img class="spec__gpu-mark" src="./assets/brand/geforce-rtx.png" width="3000" height="1286" alt="NVIDIA GeForce RTX" loading="lazy" />
                   </dd>
                 </div>
                 <div class="spec">
@@ -812,8 +799,7 @@
       <section
         class="close"
         id="download"
-        data-sc-act="pin"
-        data-sc-span="1.2"
+        data-sc-act="flow"
         data-sc-drift="#0f1015"
         aria-labelledby="download-title"
         data-nav-section="download"
@@ -865,31 +851,66 @@
               </div>
             </div>
           </div>
-
-          <footer class="site-footer">
-            <div class="shell site-footer__inner">
-              <div>
-                <img class="site-footer__mark" src="./assets/brand/kael-labs-color.png" width="1682" height="277" alt="KAEL LABS" loading="lazy" />
-                <nav class="site-footer__nav" aria-label="Project">
-                  <a class="brand-label" href="https://github.com/kaelharris/kirea-studio" target="_blank" rel="noreferrer">
-                    <img class="brand-icon" src="./assets/brand/github-mark.svg" width="16" height="16" alt="" />
-                    GitHub
-                  </a>
-                  <a href="https://github.com/kaelharris/kirea-studio/tree/main/docs" target="_blank" rel="noreferrer">Documentation</a>
-                  <a href="https://github.com/kaelharris/kirea-studio/releases/latest" target="_blank" rel="noreferrer">Releases</a>
-                  <a href="https://github.com/kaelharris/kirea-studio/issues" target="_blank" rel="noreferrer">Issues</a>
-                  <a href="https://github.com/kaelharris/kirea-studio/blob/main/LICENSE" target="_blank" rel="noreferrer">License</a>
-                </nav>
-              </div>
-              <div class="site-footer__legal">
-                <p>© 2026 kaellabsstudio. Kirea Studio is MIT licensed.</p>
-                <p>ComfyUI is a separate GPL-3.0 project and is not bundled.</p>
-              </div>
-              <a class="site-footer__top" href="#top">Back to top <span aria-hidden="true">↑</span></a>
-            </div>
-          </footer>
         </div>
       </section>
+
+      <footer class="site-footer">
+        <div class="shell site-footer__inner">
+          <div class="site-footer__grid">
+            <div class="site-footer__brand">
+              <a class="brand" href="#top" aria-label="KIREA Studio, back to top">
+                <img class="brand__mark brand__mark--asset" src="./assets/brand/logoAsset-2.svg" width="26" height="26" alt="" />
+                <span class="brand__word">KIREA <span>Studio</span></span>
+              </a>
+              <p>Local-first AI image, video, model, workflow, character and pixel creation on your own Windows machine.</p>
+              <a class="button button--quiet button--small" href="https://github.com/kaelharris/kirea-studio" target="_blank" rel="noreferrer">
+                <img class="brand-icon" src="./assets/brand/github-mark.svg" width="16" height="16" alt="" />
+                View on GitHub <span aria-hidden="true">↗</span>
+              </a>
+            </div>
+
+            <div class="site-footer__column">
+              <h2>Product</h2>
+              <a href="#top">Overview</a>
+              <a href="#studios">Studios</a>
+              <a href="#tour">Product tour</a>
+              <a href="#local">Local-first</a>
+              <a href="#requirements">Requirements</a>
+            </div>
+
+            <div class="site-footer__column">
+              <h2>Resources</h2>
+              <a href="https://github.com/kaelharris/kirea-studio/tree/main/docs" target="_blank" rel="noreferrer">Documentation <span aria-hidden="true">↗</span></a>
+              <a href="https://github.com/kaelharris/kirea-studio/blob/main/docs/ARCHITECTURE.md" target="_blank" rel="noreferrer">Architecture <span aria-hidden="true">↗</span></a>
+              <a href="https://github.com/kaelharris/kirea-studio/releases/latest" target="_blank" rel="noreferrer">Releases <span aria-hidden="true">↗</span></a>
+              <a href="https://github.com/kaelharris/kirea-studio/issues" target="_blank" rel="noreferrer">Issues <span aria-hidden="true">↗</span></a>
+              <a href="https://github.com/kaelharris/kirea-studio/blob/main/LICENSE" target="_blank" rel="noreferrer">License <span aria-hidden="true">↗</span></a>
+            </div>
+
+            <div class="site-footer__column site-footer__download">
+              <h2>Download</h2>
+              <p class="site-footer__version">Kirea Studio v1.1.1</p>
+              <p>Windows 10/11 · x64 · 146 MB</p>
+              <a class="button button--primary button--small" href="https://github.com/kaelharris/kirea-studio/releases/download/v1.1.1/Kirea-Studio-Setup-1.1.1-win-x64.exe">
+                Download for Windows
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <div class="site-footer__bottom">
+          <div class="shell">
+            <p class="site-footer__copyright">© 2026 kaellabsstudio. Kirea Studio is MIT licensed.</p>
+          </div>
+        </div>
+      </footer>
+
+      <a class="back-to-top" href="#top" aria-label="Back to top">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 19V5" />
+          <path d="m5 12 7-7 7 7" />
+        </svg>
+      </a>
     </main>
 
     <dialog class="lightbox" data-lightbox aria-labelledby="lightbox-caption">

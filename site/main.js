@@ -112,7 +112,7 @@ function initOrrery() {
   let radiusX = 0;
   let radiusY = 0;
 
-  const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+  const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
   function setMode() {
     const stack = mobileView.matches;
@@ -123,7 +123,7 @@ function initOrrery() {
       card.style.opacity = "";
       card.style.zIndex = "";
     }
-    radiusX = path.offsetWidth / 2;
+    radiusX = (path.offsetWidth / 2) * 1.08;
     radiusY = path.offsetHeight / 2;
   }
 
@@ -177,7 +177,7 @@ function initOrrery() {
     const reduced = reducedMotion.matches;
     const step = Math.min(count - 1, Math.floor(t));
     const fraction = t - step;
-    const rotation = reduced ? 0 : step + ease(fraction);
+    const rotation = reduced ? 0 : step + easeOutCubic(fraction);
 
     for (let i = 0; i < count; i += 1) {
       const card = cards[i];
@@ -413,85 +413,71 @@ function initShowcase() {
 
 /* ------------------------------------------------------------- navigation -- */
 
-function initNavigation() {
-  const sections = Array.from(document.querySelectorAll("[data-nav-section]"));
-  if (!sections.length) return;
+function initLocalTilt() {
+  const frame = document.querySelector(".local__frame");
+  if (!frame) return;
 
-  const menu = document.querySelector("[data-menu]");
-  const toggle = document.querySelector("[data-menu-toggle]");
-  const links = Array.from(document.querySelectorAll("[data-nav-link]"));
-  const indexEl = document.querySelector("[data-nav-index]");
-  const nameEl = document.querySelector("[data-nav-name]");
-  const progress = document.querySelector("[data-progress]");
+  let currentTilt = 0;
+  let targetTilt = 0;
+  let tiltFrame = 0;
+  let tiltRequest = 0;
 
-  const labels = {
-    overview: { index: "01", name: "Overview" },
-    studios: { index: "02", name: "Studios" },
-    tour: { index: "03", name: "Product" },
-    local: { index: "04", name: "Local-first" },
-    requirements: { index: "05", name: "Requirements" },
-    download: { index: "06", name: "Download" },
-  };
+  function animateTilt() {
+    currentTilt += (targetTilt - currentTilt) * 0.14;
+    frame.style.setProperty("--local-tilt", `${currentTilt.toFixed(2)}deg`);
 
-  let current = "";
-
-  function setMenu(open) {
-    if (!menu || !toggle) return;
-    menu.classList.toggle("is-open", open);
-    menu.setAttribute("aria-hidden", String(!open));
-    toggle.setAttribute("aria-expanded", String(open));
-  }
-
-  if (toggle && menu) {
-    toggle.addEventListener("click", () => {
-      setMenu(!menu.classList.contains("is-open"));
-    });
-
-    document.addEventListener("keydown", (event) => {
-      if (event.key !== "Escape" || !menu.classList.contains("is-open")) return;
-      setMenu(false);
-      toggle.focus();
-    });
-
-    document.addEventListener("pointerdown", (event) => {
-      if (!menu.classList.contains("is-open")) return;
-      if (menu.contains(event.target) || toggle.contains(event.target)) return;
-      setMenu(false);
-    });
-
-    for (const link of links) {
-      link.addEventListener("click", () => setMenu(false));
+    if (Math.abs(targetTilt - currentTilt) > 0.02) {
+      tiltFrame = window.requestAnimationFrame(animateTilt);
+      return;
     }
+
+    currentTilt = targetTilt;
+    frame.style.setProperty("--local-tilt", `${currentTilt.toFixed(2)}deg`);
+    tiltFrame = 0;
   }
+
+  function updateTilt() {
+    tiltRequest = 0;
+    if (reducedMotion.matches || mobileView.matches) {
+      currentTilt = 0;
+      targetTilt = 0;
+      frame.style.setProperty("--local-tilt", "0deg");
+      if (tiltFrame) window.cancelAnimationFrame(tiltFrame);
+      tiltFrame = 0;
+      return;
+    }
+
+    const rect = frame.getBoundingClientRect();
+    const start = window.innerHeight * 0.9;
+    const finish = window.innerHeight * 0.3;
+    const progress = clamp01((start - rect.top) / (start - finish));
+    targetTilt = (1 - progress) * 12;
+    if (!tiltFrame) tiltFrame = window.requestAnimationFrame(animateTilt);
+  }
+
+  function requestTilt() {
+    if (!tiltRequest) tiltRequest = window.requestAnimationFrame(updateTilt);
+  }
+
+  window.addEventListener("scroll", requestTilt, { passive: true });
+  window.addEventListener("resize", requestTilt);
+  reducedMotion.addEventListener?.("change", requestTilt);
+  mobileView.addEventListener?.("change", requestTilt);
+  updateTilt();
+}
+
+function initNavigation() {
+  const progress = document.querySelector("[data-progress]");
+  const backToTop = document.querySelector(".back-to-top");
 
   function updateNav() {
-    const probe = window.scrollY + window.innerHeight * 0.42;
-    let key = "overview";
-
-    for (const section of sections) {
-      const top = section.getBoundingClientRect().top + window.scrollY;
-      if (top <= probe) key = section.dataset.navSection || key;
-    }
-
-    if (key !== current) {
-      current = key;
-      const label = labels[key] || labels.overview;
-      if (indexEl) indexEl.textContent = label.index;
-      if (nameEl) nameEl.textContent = label.name;
-
-      for (const link of links) {
-        const selected = link.dataset.navLink === key;
-        link.classList.toggle("is-active", selected);
-        if (selected) link.setAttribute("aria-current", "true");
-        else link.removeAttribute("aria-current");
-      }
-    }
-
     if (progress) {
       const max = document.documentElement.scrollHeight - window.innerHeight;
       const ratio = max > 0 ? clamp01(window.scrollY / max) : 0;
       progress.style.transform = `scaleX(${ratio.toFixed(4)})`;
     }
+
+    backToTop?.classList.toggle("is-visible", window.scrollY > 600);
   }
 
   let navFrame = 0;
@@ -519,6 +505,7 @@ if (scrollCraft) {
     initOrrery();
     initHero(scrollEngine.acts);
     initShowcase();
+    initLocalTilt();
     initNavigation();
   } catch (error) {
     console.error("[kirea] scroll engine failed to mount", error);
