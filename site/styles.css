@@ -1663,7 +1663,7 @@ code {
 
 .site-footer__brand .brand__word span {
   display: inline;
-  margin-left: 8px;
+  margin-left: 0;
   font-family: var(--font-sans);
   font-size: inherit;
   font-weight: 800;

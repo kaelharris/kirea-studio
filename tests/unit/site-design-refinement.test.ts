@@ -161,6 +161,8 @@ describe("Kirea site design refinement", () => {
     expect(css).toContain("width: 44px;");
     expect(css).toContain(".site-footer__brand .brand__word");
     expect(css).toContain("font-size: 20px;");
+    const footerWord = css.match(/\.site-footer__brand \.brand__word span\s*\{([^}]*)\}/)?.[1] || "";
+    expect(footerWord).toContain("margin-left: 0;");
     expect(css).toContain(".site-footer__bottom");
     const footerBottom = css.match(/\.site-footer__bottom\s*\{([^}]*)\}/)?.[1] || "";
     expect(footerBottom).toContain("background: transparent;");
