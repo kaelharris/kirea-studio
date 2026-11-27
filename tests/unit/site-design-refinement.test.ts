@@ -24,15 +24,20 @@ describe("Kirea site design refinement", () => {
     expect(html).toContain("./assets/brand/logoAsset-2.svg");
   });
 
-  it("frames hero media full-height with wider gutters, no top margin, and smaller copy", () => {
+  it("frames hero media below a dedicated header band with wider gutters and smaller copy", () => {
     const html = read("site/index.html");
     const css = read("site/styles.css");
     expect(html).toContain('class="hero__frame"');
     expect(html).toContain('class="hero__preview"');
     expect(html).toContain("./assets/shots/home-dark.webp");
-    expect(css).toContain("padding-block: 0;");
+    expect(css).toContain("--header-height: 72px;");
+    const header = css.match(/\.site-header\s*\{([^}]*)\}/)?.[1] || "";
+    const heroStage = css.match(/\.hero__stage\s*\{([^}]*)\}/)?.[1] || "";
+    expect(header).toContain("height: var(--header-height);");
+    expect(header).toContain("background: rgba(15, 16, 21, 0.96);");
+    expect(heroStage).toContain("padding-block: var(--header-height) 0;");
     expect(css).toContain("padding-inline: clamp(16px, 3vw, 40px);");
-    expect(css).toContain("height: 100svh;");
+    expect(css).toContain("height: calc(100svh - var(--header-height));");
     expect(css).toContain("width: min(100%, 620px);");
     expect(css).toContain("font-size: clamp(34px, 3.8vw, 54px);");
   });

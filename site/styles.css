@@ -75,6 +75,7 @@
   --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
   --shell: 1480px;
   --gutter: clamp(22px, 5vw, 80px);
+  --header-height: 72px;
   --radius: 8px;
   --ease: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-io: cubic-bezier(0.77, 0, 0.175, 1);
@@ -250,33 +251,19 @@ code {
   position: fixed;
   inset: 0 0 auto;
   z-index: 60;
-  padding-block: 16px;
-  border-bottom: 1px solid transparent;
-  transition:
-    background-color 240ms var(--ease),
-    border-color 240ms var(--ease);
-}
-
-.site-header::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 -18px;
-  z-index: -1;
-  background: linear-gradient(180deg, rgba(12, 12, 16, 0.66), rgba(12, 12, 16, 0));
-  pointer-events: none;
-  opacity: 1;
-  transition: opacity 240ms var(--ease);
-}
-
-.site-header.is-scrolled::before {
-  opacity: 0;
+  display: flex;
+  align-items: center;
+  height: var(--header-height);
+  padding-block: 0;
+  border-bottom: 1px solid var(--line);
+  background: rgba(15, 16, 21, 0.96);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  transition: background-color 240ms var(--ease);
 }
 
 .site-header.is-scrolled {
-  background: rgba(16, 16, 20, 0.76);
-  border-bottom-color: var(--line);
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  background: rgba(16, 16, 20, 0.92);
 }
 
 .site-header__inner {
@@ -445,7 +432,7 @@ code {
 .hero__stage {
   display: flex;
   align-items: flex-start;
-  padding-block: 0;
+  padding-block: var(--header-height) 0;
   isolation: isolate;
   background: var(--bg-deep);
   opacity: var(--hero-visibility, 1);
@@ -461,7 +448,7 @@ code {
 
 .hero__frame {
   position: relative;
-  height: 100svh;
+  height: calc(100svh - var(--header-height));
   min-height: 540px;
   overflow: hidden;
   isolation: isolate;
