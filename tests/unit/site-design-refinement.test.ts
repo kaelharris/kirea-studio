@@ -24,6 +24,22 @@ describe("Kirea site design refinement", () => {
     expect(html).toContain("./assets/brand/logoAsset-2.svg");
   });
 
+  it("delays a subtle header compact and mark-only logo transition after slight scrolling", () => {
+    const css = read("site/styles.css");
+    const js = read("site/main.js");
+    expect(js).toContain("is-compact");
+    expect(js).toContain("window.scrollY > 32");
+    expect(js).toContain("window.setTimeout");
+    expect(js).toContain("140");
+    const compactHeader = css.match(/\.site-header\.is-compact\s*\{([^}]*)\}/)?.[1] || "";
+    const headerWord = css.match(/\.site-header \.brand__word\s*\{([^}]*)\}/)?.[1] || "";
+    const compactWord = css.match(/\.site-header\.is-compact \.brand__word\s*\{([^}]*)\}/)?.[1] || "";
+    expect(compactHeader).toContain("height: calc(var(--header-height) - 8px);");
+    expect(headerWord).toContain("transition:");
+    expect(compactWord).toContain("max-width: 0;");
+    expect(compactWord).toContain("opacity: 0;");
+  });
+
   it("frames hero media below a dedicated header band with wider gutters and smaller copy", () => {
     const html = read("site/index.html");
     const css = read("site/styles.css");

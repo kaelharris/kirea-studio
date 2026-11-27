@@ -5,9 +5,37 @@ const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const mobileView = window.matchMedia("(max-width: 860px)");
 
 if (header) {
-  const syncHeader = () => header.classList.toggle("is-scrolled", window.scrollY > 14);
+  let compact = false;
+  let compactTimer = 0;
+
+  const setCompact = (next) => {
+    compact = next;
+    header.classList.toggle("is-compact", compact);
+  };
+
+  const syncHeader = () => {
+    header.classList.toggle("is-scrolled", window.scrollY > 14);
+    const shouldCompact = window.scrollY > 32;
+    if (shouldCompact === compact) return;
+
+    if (!shouldCompact) {
+      window.clearTimeout(compactTimer);
+      compactTimer = 0;
+      setCompact(false);
+      return;
+    }
+
+    if (!compactTimer) {
+      compactTimer = window.setTimeout(() => {
+        compactTimer = 0;
+        setCompact(true);
+      }, 140);
+    }
+  };
+
   syncHeader();
   window.addEventListener("scroll", syncHeader, { passive: true });
+  window.addEventListener("pagehide", () => window.clearTimeout(compactTimer));
 }
 
 const profileGroup = document.querySelector("[data-profile-group]");

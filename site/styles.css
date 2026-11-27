@@ -259,11 +259,63 @@ code {
   background: rgba(15, 16, 21, 0.96);
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
-  transition: background-color 240ms var(--ease);
+  transition:
+    height 280ms var(--ease),
+    background-color 240ms var(--ease);
 }
 
 .site-header.is-scrolled {
   background: rgba(16, 16, 20, 0.92);
+}
+
+.site-header.is-compact {
+  height: calc(var(--header-height) - 8px);
+}
+
+.site-header .brand {
+  transition: gap 280ms var(--ease);
+}
+
+.site-header .brand__mark {
+  transition: transform 280ms var(--ease);
+}
+
+.site-header .brand__word {
+  display: inline-block;
+  max-width: 180px;
+  overflow: hidden;
+  vertical-align: middle;
+  white-space: nowrap;
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    max-width 320ms var(--ease),
+    opacity 180ms var(--ease),
+    transform 320ms var(--ease);
+}
+
+.site-header.is-compact .brand {
+  gap: 0;
+}
+
+.site-header.is-compact .brand__mark {
+  transform: scale(0.92);
+}
+
+.site-header.is-compact .brand__word {
+  max-width: 0;
+  opacity: 0;
+  transform: translateX(-6px);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-header,
+  .site-header .brand,
+  .site-header .brand__mark,
+  .site-header .brand__word {
+    transition-duration: 0ms;
+  }
 }
 
 .site-header__inner {
