@@ -1728,7 +1728,7 @@ code {
   margin-top: auto;
   padding: 18px 0;
   border-top: 1px solid var(--line);
-  background: #090a0d;
+  background: transparent;
   color: var(--subtle);
   font-size: 11px;
   text-align: center;

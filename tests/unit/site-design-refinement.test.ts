@@ -160,6 +160,9 @@ describe("Kirea site design refinement", () => {
     expect(css).toContain(".site-footer__brand .brand__word");
     expect(css).toContain("font-size: 20px;");
     expect(css).toContain(".site-footer__bottom");
+    const footerBottom = css.match(/\.site-footer__bottom\s*\{([^}]*)\}/)?.[1] || "";
+    expect(footerBottom).toContain("background: transparent;");
+    expect(css).not.toContain("background: #090a0d;");
     expect(css).not.toContain(".site-footer__legal");
     expect(css).toContain(".back-to-top");
   });
